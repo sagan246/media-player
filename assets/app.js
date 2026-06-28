@@ -2,6 +2,9 @@
     let tracks = [];
     let videos = [];
     let interviews = [];
+    let tracksLoaded = false;
+    let videosLoaded = false;
+    let interviewsLoaded = false;
 
     let selectedId = null;
     let playingId = null;
@@ -31,6 +34,9 @@
     let audioContext = null, analyserNode = null, audioSourceNode = null, visualizerData = null, visualizerFrame = null, visualizerMode = localStorage.getItem("visualizerMode") || "bars";
     const selectedIds = new Set();
     const MEDIA_TYPES = ["music", "video", "health", "interviews"];
+    const MOBILE_BREAKPOINT = 860;
+    const VIDEO_EMPTY_TITLE = "Select a video";
+    const VIDEO_EMPTY_META = "Videos play locally from media\\Video.";
     // Small DOM/API helpers keep the rest of the file readable.
     const byId = id => document.getElementById(id);
     const on = (el, event, handler) => el.addEventListener(event, handler);
@@ -97,6 +103,9 @@
     function categoryOf(t){if(t.folder&&t.folder!=="(root)")return String(t.folder).split("/")[0]; return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
     function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
     function albumOf(t){return t.album || "(No album)";}
+    function artUrl(t){return t.artwork_thumb_url || t.artwork_url || "";}
+    function smallArtUrl(t){return t.artwork_thumb_small_url || artUrl(t);}
+    function fullArtUrl(t){return t.artwork_url || t.artwork_thumb_url || "";}
     function groupOf(t){if(groupMode==="category") return categoryOf(t); if(groupMode==="album") return albumOf(t); return folderOf(t);}
     function searchQuery(){return String(searchEl.value||"").trim().toLowerCase();}
     function containsSearch(values){const q=searchQuery(); if(!q)return true; return values.some(value=>String(value||"").toLowerCase().includes(q));}
@@ -228,13 +237,13 @@
     function albumArtists(list){return [...new Set(list.map(t=>t.artist).filter(Boolean))].slice(0,4);}
     function albumSizeMb(list){return list.reduce((sum,t)=>sum+(Number(t.size_mb)||0),0).toFixed(1);}
     function albumWarnings(list, formats){const warnings=[]; const missingArt=list.filter(t=>!t.has_artwork).length; const missingDate=list.filter(t=>!t.date).length; const missingTrack=list.filter(t=>!t.tracknumber).length; if(missingArt)warnings.push(`${missingArt} missing art`); if(missingDate)warnings.push(`${missingDate} missing date`); if(missingTrack)warnings.push(`${missingTrack} missing track #`); if(formats.length>1)warnings.push(`Mixed formats: ${formats.join(", ")}`); return warnings;}
-    function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover" src="${art.artwork_url}" alt="">`:`<div class="albumDetailCover">No Art</div>`;}
+    function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover" src="${fullArtUrl(art)}" alt="" loading="lazy" decoding="async">`:`<div class="albumDetailCover">No Art</div>`;}
     function albumWarningHtml(warnings){return warnings.length?warnings.map(w=>`<span class="pill missing">${esc(w)}</span>`).join(""):`<span class="pill">Album metadata looks tidy</span>`;}
     function renderAlbumDetail(list){if(selectedAlbum==="All"||!list.length)return ""; const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats); const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]); return `<section class="albumDetail visible"><div>${albumCoverHtml(list)}</div><div class="albumDetailInfo"><h2>${esc(selectedAlbum)}</h2><div class="albumDetailMeta">${esc(artists.join(", ")||"Unknown artist")}${years.length?` - ${esc(years.join(", "))}`:""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"track")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(albumSizeMb(list))} MB</span></div>${actions}<div class="albumWarnings">${albumWarningHtml(warnings)}</div></div></section>`;}
     // Albums sort by their earliest track year, so multi-year albums stay together.
     function albumSortYear(list){const years=list.map(t=>Number(String(t.date||"").slice(0,4))).filter(y=>Number.isFinite(y)&&y>0); return years.length?Math.min(...years):-1;}
     function albumEntries(source){const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name)) albums.set(name,[]); albums.get(name).push(t);} return [...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}));}
-    function albumCardHtml(name,list){const art=list.find(t=>t.has_artwork); const years=[...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort(); const isPlaying=list.some(t=>t.id===playingId); const actions=cardActionsHtml([{action:"play",valueName:"album",value:name,label:"Play album",icon:"&#9654;",primary:true},{action:"add",valueName:"album",value:name,label:"Add album to queue",icon:"+",add:true},{action:"shuffle",valueName:"album",value:name,label:"Shuffle album",icon:"&#8644;"}]); return `<div class="albumCard ${isPlaying?"playingNow":""}" data-album="${esc(name)}" tabindex="0">${actions}<button class="artButton" data-action="select" data-album="${esc(name)}">${art?`<img class="albumArt" src="${art.artwork_url}" alt="">`:"No Art"}</button><div class="albumName">${esc(name)}</div><div class="albumMeta">${countLabel(list.length,"track")}${years.length?` - ${esc(years.join(", "))}`:""}</div></div>`;}
+    function albumCardHtml(name,list){const art=list.find(t=>t.has_artwork); const years=[...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort(); const isPlaying=list.some(t=>t.id===playingId); const actions=cardActionsHtml([{action:"play",valueName:"album",value:name,label:"Play album",icon:"&#9654;",primary:true},{action:"add",valueName:"album",value:name,label:"Add album to queue",icon:"+",add:true},{action:"shuffle",valueName:"album",value:name,label:"Shuffle album",icon:"&#8644;"}]); return `<div class="albumCard ${isPlaying?"playingNow":""}" data-album="${esc(name)}" tabindex="0">${actions}<button class="artButton" data-action="select" data-album="${esc(name)}">${art?`<img class="albumArt" src="${artUrl(art)}" alt="" loading="lazy" decoding="async">`:"No Art"}</button><div class="albumName">${esc(name)}</div><div class="albumMeta">${countLabel(list.length,"track")}${years.length?` - ${esc(years.join(", "))}`:""}</div></div>`;}
     function albumSectionName(list){const counts=new Map(); for(const t of list){const name=categoryOf(t); counts.set(name,(counts.get(name)||0)+1);} return [...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}))[0]?.[0]||"(root)";}
     function albumSections(ordered){const buckets=new Map(); for(const [name,list] of ordered){const bucket=albumSectionName(list); if(!buckets.has(bucket))buckets.set(bucket,[]); buckets.get(bucket).push([name,list]);} return [...buckets.entries()].sort(musicCategoryCompare);}
     function albumYearName(list){const year=albumSortYear(list); return year>0?String(year):"Unknown Year";}
@@ -249,7 +258,7 @@
     function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
     function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(edit)on(edit,"click",()=>enterEditMode());}
     function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):(albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join("")); bindAlbumButtons(source); bindAlbumCards(source); bindAlbumDetailActions();}
-    function renderRows(){const list=filtered(); const rowDates=list.map(t=>String(t.date||"").trim()); const albumSingleDate=selectedAlbum!=="All"&&rowDates.length>0&&rowDates.every(Boolean)&&new Set(rowDates).size===1; document.body.classList.toggle("albumSingleDate",albumSingleDate); viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup; renderStats(list); renderSortHeaders(); let lastAlbum=null; rowsEl.innerHTML=list.map(t=>{const album=albumOf(t); const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:""; lastAlbum=album; const trackNo=String(t.tracknumber||"").split("/")[0]; return `${divider}<tr data-id="${t.id}" class="${t.id===selectedId?"selected":""} ${t.id===playingId?"playingNow":""}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${t.id}" ${selectedIds.has(t.id)?"checked":""}></td><td>${t.has_artwork?`<img class="coverThumb" src="${t.artwork_url}" alt="">`:`<span class="noArt">?</span>`}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(t.title)}<br><span class="rowBadges"><span class="pill ${t.has_artwork?"":"missing"}">${t.has_artwork?"Art":"No art"}</span> ${badges(t)}</span></td><td class="artistCell">${esc(t.artist)}</td><td class="albumCell">${esc(t.album)}</td><td>${esc(t.date)}</td><td class="pathCell">${esc(t.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${t.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${t.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;}).join(""); rowsEl.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",e=>{if(e.target.closest(".rowActions")||e.target.classList.contains("rowCheck"))return; const id=Number(r.dataset.id); if(appMode==="listen") playSingleTrack(id); else selectTrack(id);})); rowsEl.querySelectorAll(".playSong").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); playSingleTrack(Number(btn.dataset.id));})); rowsEl.querySelectorAll(".addSongQueue").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const t=tracks.find(x=>x.id===Number(btn.dataset.id)); if(t)addToMusicQueue([t]);})); rowsEl.querySelectorAll(".rowCheck").forEach(c=>c.addEventListener("change",()=>{const id=Number(c.dataset.id); c.checked?selectedIds.add(id):selectedIds.delete(id); renderSelection();})); renderSelection();}
+    function renderRows(){const list=filtered(); const rowDates=list.map(t=>String(t.date||"").trim()); const albumSingleDate=selectedAlbum!=="All"&&rowDates.length>0&&rowDates.every(Boolean)&&new Set(rowDates).size===1; document.body.classList.toggle("albumSingleDate",albumSingleDate); viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup; renderStats(list); renderSortHeaders(); let lastAlbum=null; rowsEl.innerHTML=list.map(t=>{const album=albumOf(t); const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:""; lastAlbum=album; const trackNo=String(t.tracknumber||"").split("/")[0]; return `${divider}<tr data-id="${t.id}" class="${t.id===selectedId?"selected":""} ${t.id===playingId?"playingNow":""}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${t.id}" ${selectedIds.has(t.id)?"checked":""}></td><td>${t.has_artwork?`<img class="coverThumb" src="${smallArtUrl(t)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(t.title)}<br><span class="rowBadges"><span class="pill ${t.has_artwork?"":"missing"}">${t.has_artwork?"Art":"No art"}</span> ${badges(t)}</span></td><td class="artistCell">${esc(t.artist)}</td><td class="albumCell">${esc(t.album)}</td><td>${esc(t.date)}</td><td class="pathCell">${esc(t.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${t.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${t.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;}).join(""); rowsEl.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",e=>{if(e.target.closest(".rowActions")||e.target.classList.contains("rowCheck"))return; const id=Number(r.dataset.id); if(appMode==="listen") playSingleTrack(id); else selectTrack(id);})); rowsEl.querySelectorAll(".playSong").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); playSingleTrack(Number(btn.dataset.id));})); rowsEl.querySelectorAll(".addSongQueue").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const t=tracks.find(x=>x.id===Number(btn.dataset.id)); if(t)addToMusicQueue([t]);})); rowsEl.querySelectorAll(".rowCheck").forEach(c=>c.addEventListener("change",()=>{const id=Number(c.dataset.id); c.checked?selectedIds.add(id):selectedIds.delete(id); renderSelection();})); renderSelection();}
     function updatePlayingHighlights(){const t=tracks.find(x=>x.id===playingId); rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.classList.toggle("playingNow",Number(row.dataset.id)===playingId)); albumGridEl.querySelectorAll(".albumCard").forEach(card=>card.classList.toggle("playingNow",!!t&&card.dataset.album===albumOf(t)));}
     function renderAll(){renderGroups(); renderAlbums(); renderRows();}
     // Video browsing treats folders like albums. Cover images come from cover.jpg/png/webp.
@@ -267,7 +276,7 @@
     function videoActionsHtml(id){return cardActionsHtml([{action:"play",actionAttr:"video-action",valueName:"id",value:id,label:"Play video",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-action",valueName:"id",value:id,label:"Add video to queue",icon:"+",add:true}]);}
     function videoGroupActionsHtml(group){return cardActionsHtml([{action:"play",actionAttr:"video-group-action",valueName:"group",value:group,label:"Play section",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-group-action",valueName:"group",value:group,label:"Add section to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"video-group-action",valueName:"group",value:group,label:"Shuffle section",icon:"&#8644;"}]);}
     function setVideoGridMode(mode){videoGridEl.classList.toggle("videoFileMode",mode==="files"); videoGridEl.classList.toggle("videoCollectionMode",mode==="collections"); if(mode!=="files")videoGridEl.classList.remove("videoFolderOpen");}
-    function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb">${cover?`<img src="${cover.folder_cover_url}" alt="">`:""}</div>`;}
+    function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb">${cover?`<img src="${cover.folder_cover_url}" alt="" loading="lazy" decoding="async">`:""}</div>`;}
     function videoCollectionCardHtml(name,list,kind="folder"){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const actions=kind==="section"?videoGroupActionsHtml(name):videoFolderActionsHtml(name); return `<div class="videoCard videoFolderCard" data-${kind}="${esc(name)}" title="${esc(name)}" role="button" tabindex="0">${actions}${videoFolderCoverHtml(list)}<div class="videoName">${esc(groupLabel(name))}</div><div class="videoMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""}</div></div>`;}
     function videoFolderDetailHtml(name,list){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const size=list.reduce((sum,v)=>sum+(Number(v.size_mb)||0),0).toFixed(1); const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]); return `<section class="videoAlbumDetail noCover"><button id="videoBackToAlbums" class="secondary iconControl albumClose" title="Back to video albums" aria-label="Back to video albums">&#10005;</button><div class="videoAlbumInfo"><h2>${esc(groupLabel(name))}</h2><div class="videoAlbumMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""} - ${esc(size)} MB</div>${actions}</div></section>`;}
     function videoSectionGroups(){const groups=new Map(); for(const v of videos){const name=v.category||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].sort(videoFolderSort);}
@@ -298,7 +307,7 @@
     function openHealthAction(action){if(action.startsWith("track:")){const id=Number(action.slice(6)); const t=tracks.find(x=>x.id===id); if(t)openMusicReview(albumOf(t),id); return;} if(action.startsWith("album:")){openMusicReview(action.slice(6)); return;}}
     // Interviews are plain text files, grouped by their cleaned source/title.
     function renderInterviews(){renderInterviewStats(); const ordered=[...interviews].filter(i=>containsSearch([i.source,i.year,i.filename,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"})); if((selectedInterviewId===null||!ordered.some(i=>i.id===selectedInterviewId))&&ordered.length)selectedInterviewId=ordered[0].id; interviewItemsEl.innerHTML=ordered.length?ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join(""):`<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`; interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{selectedInterviewId=Number(btn.dataset.id); setOpen(interviewListEl,false); renderInterviews();})); const current=interviews.find(i=>i.id===selectedInterviewId&&ordered.some(match=>match.id===i.id))||ordered[0]; if(!current){interviewReaderEl.innerHTML=`<h2>Interviews</h2><div class="interviewReaderMeta">No matching text files found.</div>`; return;} interviewReaderEl.innerHTML=`<h2>${esc(current.source)}</h2><div class="interviewReaderMeta">${esc(current.year||"Unknown year")}</div><div class="interviewText">${esc(current.content)}</div>`;}
-    function videoThumb(v){if(v.has_thumbnail)return `<img src="${v.thumbnail_url}" alt="">`; return v.browser_friendly?"Preview":esc(String(v.format||"video").toUpperCase());}
+    function videoThumb(v){if(v.has_thumbnail)return `<img src="${v.thumbnail_url}" alt="" loading="lazy" decoding="async">`; return v.browser_friendly?"Preview":esc(String(v.format||"video").toUpperCase());}
     function isVideoFolder(group){return group!=="All"&&(selectedVideoAsFolder||!isVideoCategory(group))&&videos.some(v=>v.folder===group);}
     function bindVideoFolderDetail(list){const play=byId("videoFolderPlay"), shuffleBtn=byId("videoFolderShuffle"), add=byId("videoFolderAdd"), back=byId("videoBackToAlbums"); if(play)on(play,"click",()=>playVideoList(list)); if(shuffleBtn)on(shuffleBtn,"click",()=>playVideoList(list,true)); if(add)on(add,"click",()=>addToVideoQueue(list)); if(back)on(back,"click",closeVideoFolder);}
     function renderVideos(){if(renderVideoSections())return; if((selectedVideoGroup==="All"||isVideoCategory(selectedVideoGroup))&&renderVideoFolderCards(selectedVideoGroup))return; setVideoGridMode("files"); const list=videoFiltered(); const folderOpen=isVideoFolder(selectedVideoGroup); videoGridEl.classList.toggle("videoFolderOpen",folderOpen); videoViewTitleEl.textContent=selectedVideoGroup==="All"?"All Videos":groupLabel(selectedVideoGroup); renderVideoStats(list); const detail=folderOpen?videoFolderDetailHtml(selectedVideoGroup,list):""; videoGridEl.innerHTML=detail+(list.length?list.map(v=>`<div class="videoCard ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" title="${esc(v.path)}" role="button" tabindex="0">${videoActionsHtml(v.id)}<div class="videoName">${esc(v.title)}</div><div class="videoMeta">${videoMetaSummary(v)}</div>${v.browser_friendly?"":`<div class="videoWarn">Browser may not play this format</div>`}</div>`).join(""):`<div class="videoCard"><div class="videoName">Nothing matched</div><div class="videoMeta">Try a different folder.</div></div>`); if(folderOpen)bindVideoFolderDetail(list); videoGridEl.querySelectorAll("button[data-video-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const id=Number(btn.dataset.id), action=btn.dataset.videoAction; if(action==="add"){const v=videos.find(x=>x.id===id); if(v)addToVideoQueue([v]); return;} playVideoList(list,false,id);})); videoGridEl.querySelectorAll(".videoCard[data-id]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; playVideoList(list,false,Number(card.dataset.id));}); card.addEventListener("keydown",e=>{if(e.key==="Enter")playVideoList(list,false,Number(card.dataset.id));});});}
@@ -307,12 +316,12 @@
     function addToVideoQueue(list){const ids=list.map(v=>v.id).filter(id=>!videoQueue.includes(id)); if(!ids.length)return; const wasEmpty=videoQueue.length===0; videoQueue.push(...ids); showQueueToast(ids.length===1?"Added video to queue":`Added ${ids.length} videos to queue`); pulseQueueButton(videoQueueToggleEl); if(wasEmpty){videoQueueIndex=0; playVideoQueueIndex(0);} else {updateVideoQueueLabel(); renderVideoQueue();}}
     function playVideoQueueIndex(index){if(index<0||index>=videoQueue.length)return; videoQueueIndex=index; selectVideo(videoQueue[videoQueueIndex]); renderVideoQueue();}
     function selectVideo(id){const v=videos.find(x=>x.id===id); if(!v)return; player.pause(); selectedVideoId=id; videoPlayerEl.src=v.video_url; videoPlayerEl.play(); videoTitleEl.textContent=v.title; videoMetaEl.textContent=`${videoMetaSummary(v)}${v.browser_friendly?"":" - may need conversion for browser playback"}`; updateVideoQueueLabel(); renderVideos();}
-    function removeVideoQueueIndex(index){if(index<0||index>=videoQueue.length)return; videoQueue.splice(index,1); if(index<videoQueueIndex)videoQueueIndex--; else if(index===videoQueueIndex){if(videoQueue.length){videoQueueIndex=Math.min(index,videoQueue.length-1); playVideoQueueIndex(videoQueueIndex);}else{videoQueueIndex=-1; videoPlayerEl.pause(); videoPlayerEl.removeAttribute("src"); selectedVideoId=null; videoTitleEl.textContent="Select a video"; videoMetaEl.textContent="Videos play locally from media\\\\Video."; renderVideos();}} updateVideoQueueLabel(); renderVideoQueue();}
+    function removeVideoQueueIndex(index){if(index<0||index>=videoQueue.length)return; videoQueue.splice(index,1); if(index<videoQueueIndex)videoQueueIndex--; else if(index===videoQueueIndex){if(videoQueue.length){videoQueueIndex=Math.min(index,videoQueue.length-1); playVideoQueueIndex(videoQueueIndex);}else{videoQueueIndex=-1; stopVideoPlayback(); renderVideos();}} updateVideoQueueLabel(); renderVideoQueue();}
     function moveVideoQueueItem(fromIndex,toIndex){if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=videoQueue.length||toIndex>=videoQueue.length)return; const current=videoQueue[videoQueueIndex]; const [item]=videoQueue.splice(fromIndex,1); videoQueue.splice(toIndex,0,item); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); updateVideoQueueLabel(); renderVideoQueue();}
     function updateVideoQueueLabel(){videoQueueToggleEl.innerHTML=`${buttonIcon("queue")}<span>${videoQueue.length}</span>`;}
     function videoQueueArtHtml(v){
       return v.has_folder_cover
-        ? `<img src="${v.folder_cover_url}" alt="">`
+        ? `<img src="${v.folder_cover_url}" alt="" loading="lazy" decoding="async">`
         : `<div class="noArt">?</div>`;
     }
     function videoQueueSubtitle(v){
@@ -424,7 +433,7 @@
               index,
               active:index===queueIndex,
               draggable:true,
-              artworkHtml:t.has_artwork ? `<img src="${t.artwork_url}" alt="">` : `<div class="noArt">?</div>`,
+              artworkHtml:t.has_artwork ? `<img src="${smallArtUrl(t)}" alt="">` : `<div class="noArt">?</div>`,
               title:t.title,
               subtitle:`${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
             });
@@ -503,30 +512,41 @@
     // Media Session controls the iPhone lock screen / Dynamic Island buttons.
     // Explicitly clearing seek handlers nudges iOS toward track prev/next.
     function setupMediaSessionActions(){if(!("mediaSession" in navigator))return; const set=(action,handler)=>{try{navigator.mediaSession.setActionHandler(action,handler);}catch{}}; set("play",()=>player.play()); set("pause",()=>player.pause()); set("previoustrack",()=>queue.length?playQueueIndex(Math.max(0,queueIndex-1)):null); set("nexttrack",()=>queue.length?playQueueIndex(Math.min(queue.length-1,queueIndex+1)):null); set("seekbackward",null); set("seekforward",null); set("seekto",null);}
-    function updateMediaSession(t){if(!("mediaSession" in navigator)||!t)return; setupMediaSessionActions(); const artwork=t.has_artwork?[{src:t.artwork_url,sizes:"512x512",type:"image/jpeg"}]:[]; try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title||"Unknown title",artist:t.artist||"Unknown artist",album:t.album||"",artwork}); navigator.mediaSession.playbackState=player.paused?"paused":"playing";}catch{}}
-    function updateNow(){const t=tracks.find(x=>x.id===playingId); playPauseBtn.textContent=player.paused?"\u25b6":"\u275a\u275a"; playPauseBtn.title=player.paused?"Play":"Pause"; playPauseBtn.setAttribute("aria-label",player.paused?"Play":"Pause"); updateMusicQueueLabels(); updatePlayingHighlights(); if(!t){nowInfoEl.innerHTML=`<div class="noArt">?</div><div class="nowText"><div class="nowTitle">Nothing playing</div><div class="nowSub">Choose a song, album, or category</div></div>`; renderNowPlaying(null); return;} updateMediaSession(t); nowInfoEl.innerHTML=`${t.has_artwork?`<img src="${t.artwork_url}" alt="">`:`<div class="noArt">?</div>`}<div class="nowText"><div class="nowTitle">${esc(t.title)}</div><div class="nowSub">${esc(t.artist||"Unknown artist")}</div></div>`; renderNowPlaying(t); if(!player.paused&&!player.ended)requestAnimationFrame(startVisualizer);}
+    function updateMediaSession(t){if(!("mediaSession" in navigator)||!t)return; setupMediaSessionActions(); const artwork=t.has_artwork?[{src:artUrl(t),sizes:"512x512",type:"image/jpeg"}]:[]; try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title||"Unknown title",artist:t.artist||"Unknown artist",album:t.album||"",artwork}); navigator.mediaSession.playbackState=player.paused?"paused":"playing";}catch{}}
+    function updateNow(){const t=tracks.find(x=>x.id===playingId); playPauseBtn.textContent=player.paused?"\u25b6":"\u275a\u275a"; playPauseBtn.title=player.paused?"Play":"Pause"; playPauseBtn.setAttribute("aria-label",player.paused?"Play":"Pause"); updateMusicQueueLabels(); updatePlayingHighlights(); if(!t){nowInfoEl.innerHTML=`<div class="noArt">?</div><div class="nowText"><div class="nowTitle">Nothing playing</div><div class="nowSub">Choose a song, album, or category</div></div>`; renderNowPlaying(null); return;} updateMediaSession(t); nowInfoEl.innerHTML=`${t.has_artwork?`<img src="${smallArtUrl(t)}" alt="">`:`<div class="noArt">?</div>`}<div class="nowText"><div class="nowTitle">${esc(t.title)}</div><div class="nowSub">${esc(t.artist||"Unknown artist")}</div></div>`; renderNowPlaying(t); if(!player.paused&&!player.ended)requestAnimationFrame(startVisualizer);}
     function fmt(seconds){if(!Number.isFinite(seconds))return "0:00"; const m=Math.floor(seconds/60), s=Math.floor(seconds%60); return `${m}:${String(s).padStart(2,"0")}`;}
     // App mode and data loading.
     async function loadConfig(){try{appConfig=await fetchJson("/api/config");}catch{appConfig={editable:true,editRequiresPassword:false};} if(appConfig.editRequiresPassword&&editToken){try{const status=await fetchJson("/api/edit-status",{headers:editHeaders()}); if(!status.unlocked){editToken=""; localStorage.removeItem("editToken");}}catch{editToken=""; localStorage.removeItem("editToken");}} document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
     function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
-
-      // Load each media type together so Refresh feels snappy even with a large library.
-      const [trackData, videoData, interviewData] = await Promise.all([
-        fetchJson("/api/tracks"),
-        fetchJson("/api/videos"),
-        fetchJson("/api/interviews"),
-      ]);
-
+      const trackData = await fetchJson("/api/tracks");
       tracks = trackData.tracks;
-      videos = videoData.videos;
-      interviews = interviewData.interviews || [];
+      tracksLoaded = true;
+      if(refresh && videosLoaded) await loadVideos();
+      if(refresh && interviewsLoaded) await loadInterviews();
       renderCurrentMedia();
 
       if(keepId !== null && tracks.some(t=>t.id === keepId)){
         selectTrack(keepId);
       }
+    }
+    async function loadVideos(){
+      const videoData = await fetchJson("/api/videos");
+      videos = videoData.videos || [];
+      videosLoaded = true;
+      if(mediaType==="video")renderVideoAll();
+    }
+    async function loadInterviews(){
+      const interviewData = await fetchJson("/api/interviews");
+      interviews = interviewData.interviews || [];
+      interviewsLoaded = true;
+      if(mediaType==="interviews")renderInterviews();
+    }
+    async function ensureMediaLoaded(type){
+      if(type==="video"&&!videosLoaded) await loadVideos();
+      if(type==="interviews"&&!interviewsLoaded) await loadInterviews();
+      if((type==="music"||type==="health")&&!tracksLoaded) await loadTracks();
     }
     function setGroupMode(mode){groupMode=mode; resetMusicSelection(); renderAll();}
     async function unlockEditMode(){if(!appConfig.editable)return false; if(!appConfig.editRequiresPassword||editToken)return true; const password=prompt("Edit metadata password"); if(!password)return false; try{const result=await fetchJson("/api/edit-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})}); if(!result.ok){alert(result.error||"Wrong edit password."); return false;} editToken=result.token||""; if(editToken)localStorage.setItem("editToken",editToken); return true;}catch(err){alert(err.message||"Could not unlock Edit Mode."); return false;}}
@@ -536,7 +556,7 @@
     function setModeButtons(mode){setActive(byId("listenMode"),mode==="listen"); setActive(byId("editMode"),mode==="edit");}
     function setAppMode(mode,{resetHome=false}={}){if(!appConfig.editable&&mode==="edit")mode="listen"; if(mode==="edit"&&appConfig.editRequiresPassword&&!editToken){mode="listen";} const leavingEdit=appMode==="edit"&&mode==="listen"; appMode=mode; if(mode==="listen"){musicFilterEl.value="all"; selectedIds.clear(); if(resetHome||leavingEdit)resetMusicHomeState();} setBodyMode("listen",mode==="listen"); setBodyMode("edit",mode==="edit"); setModeButtons(mode); if(mediaType==="music")renderAll();}
     function enterListenMode(){setMediaType("music"); setAppMode("listen",{resetHome:true}); window.scrollTo({top:0,behavior:"smooth"});}
-    function isMobileLayout(){return window.innerWidth<=860;}
+    function isMobileLayout(){return window.innerWidth<=MOBILE_BREAKPOINT;}
     function updateBrowseToggle(){document.body.classList.toggle("browseCollapsed",browseCollapsed&&!isMobileLayout()); document.querySelectorAll(".browseToggle").forEach(btn=>{btn.innerHTML=buttonIcon("browse"); btn.title=browseCollapsed&&!isMobileLayout()?"Show browse panel":"Browse"; btn.setAttribute("aria-label", btn.title);});}
     function toggleBrowse(){
       if(isMobileLayout()){
@@ -549,12 +569,21 @@
     }
     function setDeviceClass(){document.body.classList.toggle("mobileUi", isMobileLayout()); updateBrowseToggle();}
     function setTheme(){document.body.classList.add("dark");}
+    function stopVideoPlayback(){
+      if(!videoPlayerEl) return;
+      videoPlayerEl.pause();
+      videoPlayerEl.removeAttribute("src");
+      videoPlayerEl.load();
+      selectedVideoId = null;
+      videoTitleEl.textContent = VIDEO_EMPTY_TITLE;
+      videoMetaEl.textContent = VIDEO_EMPTY_META;
+    }
     function setMediaType(type){
       if(!appConfig.editable && type === "health") type = "music";
       mediaType = type;
       // Phones/tablets are playback-first. Editing remains desktop-only so the
       // small layout does not expose destructive metadata controls.
-      if(window.matchMedia("(max-width:860px)").matches && appMode === "edit") setAppMode("listen");
+      if(isMobileLayout() && appMode === "edit") setAppMode("listen");
 
       MEDIA_TYPES.forEach(name=>setBodyMode(name, type === name));
       musicTabEl.classList.toggle("inactive", type !== "music");
@@ -571,9 +600,10 @@
       if(type === "video"){
         setOpen(queueDrawerEl, false);
       } else {
-        videoPlayerEl.pause();
+        stopVideoPlayback();
       }
       renderCurrentMedia();
+      ensureMediaLoaded(type).catch(err=>console.error("[library] load failed", err));
     }
     // Event binding lives at the end so startup is easy to follow.
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}

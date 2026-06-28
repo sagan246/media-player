@@ -8,6 +8,7 @@ embedded artwork for MP3/FLAC files.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import hmac
 import json
@@ -19,8 +20,9 @@ import time
 from dataclasses import asdict
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -29,6 +31,9 @@ DEFAULT_MEDIA_DIR = REPO_DIR / "media"
 DEFAULT_CONFIG = SCRIPT_DIR / "taeyeon_media_player_config.json"
 AUDIO_DEBUG_LOG = SCRIPT_DIR / "taeyeon_media_player_audio_debug.log"
 VISITOR_LOG = SCRIPT_DIR / "taeyeon_media_player_visitors.jsonl"
+ART_THUMB_CACHE_DIR = SCRIPT_DIR / "taeyeon_media_player_cache" / "art_thumbs"
+ART_THUMB_DISPLAY_SIZE = 512
+ART_THUMB_ICON_SIZE = 96
 VENDOR_DIR = SCRIPT_DIR / "vendor"
 if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
@@ -36,6 +41,10 @@ if VENDOR_DIR.exists():
 
 from media_library import Library  # noqa: E402
 from metadata_tag_tools import EDITABLE_FIELDS, decode_image_payload, save_artwork_for_paths, save_metadata  # noqa: E402
+try:  # noqa: E402
+    from PIL import Image
+except ImportError:  # noqa: E402
+    Image = None
 
 
 def content_type_for(path: Path) -> str:
@@ -104,7 +113,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json(self, payload: object, status: int = 200) -> None:
         """! @brief Send a JSON response using the shared response helper."""
-        self.send_bytes(json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8", status)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        if len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            compressed = gzip.compress(body, compresslevel=5)
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Content-Length", str(len(compressed)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(compressed)
+            return
+        self.send_bytes(body, "application/json; charset=utf-8", status)
 
     def send_ok(self, **payload: object) -> None:
         self.send_json({"ok": True, **payload})
@@ -224,12 +245,26 @@ class Handler(BaseHTTPRequestHandler):
     def public_track(self, track: object) -> dict[str, object]:
         """! @brief Return a track record safe for the active serving mode."""
         data = asdict(track)
+        thumb_url = self.art_thumbnail_url(str(data.get("artwork_url", "")))
+        data["artwork_thumb_url"] = thumb_url
+        data["artwork_thumb_small_url"] = self.add_query_param(thumb_url, "s", str(ART_THUMB_ICON_SIZE))
         if self.web_share:
             data["path"] = ""
             data["filename"] = ""
             data["missing_fields"] = []
             data["review_flags"] = []
         return data
+
+    def art_thumbnail_url(self, artwork_url: str) -> str:
+        """! @brief Convert a full artwork URL into the cached thumbnail endpoint."""
+        return artwork_url.replace("/art/", "/art-thumb/", 1) if artwork_url else ""
+
+    def add_query_param(self, url: str, key: str, value: str) -> str:
+        """! @brief Append one query parameter to a local URL without caring if it already has a query."""
+        if not url:
+            return ""
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{key}={value}"
 
     def public_video(self, video: object) -> dict[str, object]:
         """! @brief Return a video record without local path details in web-share mode."""
@@ -284,6 +319,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path.startswith("/art/"):
             self.handle_art(parsed.path)
+            return
+        if parsed.path.startswith("/art-thumb/"):
+            self.handle_art_thumbnail(parsed.path, parsed.query)
             return
         if parsed.path.startswith("/audio/"):
             self.handle_audio(parsed.path)
@@ -482,6 +520,50 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+
+    def handle_art_thumbnail(self, path_text: str, query_text: str) -> None:
+        """! @brief Serve a small cached JPEG thumbnail for album/list artwork."""
+        track_id = self.parse_last_int(path_text)
+        if track_id is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        with self.library.lock:
+            artwork = self.library.artwork.get(track_id)
+        if artwork is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if Image is None:
+            self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+            return
+
+        query = parse_qs(query_text)
+        version = "".join(ch for ch in query.get("v", ["0"])[0] if ch.isalnum())[:32] or "0"
+        size = self.thumbnail_size(query)
+        cache_path = ART_THUMB_CACHE_DIR / f"{track_id}-{version}-{size}.jpg"
+        if cache_path.is_file():
+            self.send_file(cache_path, cache_control="public, max-age=604800")
+            return
+
+        try:
+            ART_THUMB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            with Image.open(BytesIO(artwork.data)) as image:
+                image = image.convert("RGB")
+                image.thumbnail((size, size), Image.Resampling.LANCZOS)
+                output = BytesIO()
+                image.save(output, format="JPEG", quality=82, optimize=True, progressive=True)
+            cache_path.write_bytes(output.getvalue())
+            self.send_bytes(output.getvalue(), "image/jpeg", cache_control="public, max-age=604800")
+        except Exception:
+            # If Pillow cannot decode a rare embedded image, fall back to original art.
+            self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+
+    def thumbnail_size(self, query: dict[str, list[str]]) -> int:
+        """! @brief Clamp requested artwork thumbnails to the sizes useful for this UI."""
+        try:
+            requested_size = int(query.get("s", [str(ART_THUMB_DISPLAY_SIZE)])[0])
+        except ValueError:
+            requested_size = ART_THUMB_DISPLAY_SIZE
+        return max(64, min(requested_size, ART_THUMB_DISPLAY_SIZE))
 
     def handle_audio(self, path_text: str) -> None:
         """! @brief Stream audio by track ID without reading tags during playback."""
