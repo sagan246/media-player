@@ -67,6 +67,25 @@ python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 87
 
 Then open the computer's LAN IP from the other device.
 
+Windows launchers are also available in `windows_commands/`:
+
+```text
+start_taeyeon_media_player.cmd
+start_taeyeon_media_player_web_share.cmd
+start_taeyeon_media_player_web_share_with_cloudflare.cmd
+show_web_share_visitors.cmd
+```
+
+## Web Share Mode
+
+Use web-share mode when exposing the player through a tunnel or other internet-facing setup:
+
+```powershell
+python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 8767 --web-share
+```
+
+Web-share mode is playback-only. It disables metadata editing, hides local file paths from API responses, and writes private visit records to `taeyeon_media_player_visitors.jsonl`.
+
 ## Edit Mode
 
 Edit mode can write directly to MP3 and FLAC files.
@@ -102,6 +121,7 @@ These files/folders are created while running and are safe to regenerate:
 taeyeon_media_player_cache/
 taeyeon_media_player_scan_cache.json
 taeyeon_media_player_audio_debug.log
+taeyeon_media_player_visitors.jsonl
 __pycache__/
 ```
 

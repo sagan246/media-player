@@ -97,7 +97,8 @@
     body.listen.music.albumSelected #topQueueToggle,
     body.listen.music.albumSelected #albumViewMode,
     body.listen.music.albumSelected #listenMode,
-    body.listen.music.albumSelected #editMode { display:none; }
+    body.listen.music.albumSelected #editMode,
+    body.listen.music.albumSelected .iconLink { display:none; }
     body.music.albumSelected .controls { position:sticky; top:12px; z-index:4; justify-content:flex-end; align-items:flex-start; min-height:0; height:0; padding:0; background:transparent; pointer-events:none; }
     body.music.albumSelected .controls .viewTitle { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
     .overlayClose { flex:0 0 auto; width:44px; height:44px; border-radius:999px; pointer-events:auto; background:rgba(0,0,0,.22); border-color:rgba(148,163,184,.08); backdrop-filter:blur(10px); font-size:24px; }
@@ -449,7 +450,7 @@
       #musicFilter, #refresh { display:none; }
       body.interviews .bar { padding:8px 10px; }
       body.interviews main { padding-top:8px; }
-      #listenMode, #editMode { display:none; }
+      #listenMode, #editMode, .iconLink { display:none; }
       .stats { display:none; }
       main { padding-top:10px; }
       body.listen.music main,
@@ -511,6 +512,7 @@
       .videoGrid.videoCollectionMode { max-height:none; overflow:visible; }
       .albumCard,
       .videoGrid.videoCollectionMode .videoFolderCard { display:grid; gap:6px; padding:0; border-color:transparent; background:transparent; box-shadow:none; overflow:visible; }
+      .albumCard.playingNow { overflow:hidden; }
       .albumCard:hover, .albumCard.active,
       .videoCard:hover, .videoCard.active { border-color:transparent; background:transparent; }
       .albumCard .artButton { width:100%; aspect-ratio:1/1; border-radius:0; }

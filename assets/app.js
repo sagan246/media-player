@@ -94,7 +94,7 @@
     // Text helpers and library grouping rules.
     function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
     function editHeaders(extra={}){return editToken?{...extra,"X-Edit-Token":editToken}:extra;}
-    function categoryOf(t){return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
+    function categoryOf(t){if(t.folder&&t.folder!=="(root)")return String(t.folder).split("/")[0]; return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
     function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
     function albumOf(t){return t.album || "(No album)";}
     function groupOf(t){if(groupMode==="category") return categoryOf(t); if(groupMode==="album") return albumOf(t); return folderOf(t);}

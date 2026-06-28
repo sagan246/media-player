@@ -8,6 +8,7 @@ embedded artwork for MP3/FLAC files.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import json
 import mimetypes
@@ -27,6 +28,7 @@ REPO_DIR = SCRIPT_DIR.parents[1]
 DEFAULT_MEDIA_DIR = REPO_DIR / "media"
 DEFAULT_CONFIG = SCRIPT_DIR / "taeyeon_media_player_config.json"
 AUDIO_DEBUG_LOG = SCRIPT_DIR / "taeyeon_media_player_audio_debug.log"
+VISITOR_LOG = SCRIPT_DIR / "taeyeon_media_player_visitors.jsonl"
 VENDOR_DIR = SCRIPT_DIR / "vendor"
 if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
@@ -76,9 +78,11 @@ class Handler(BaseHTTPRequestHandler):
 
     library: Library
     editable = True
+    web_share = False
     edit_password = ""
     edit_tokens: set[str] = set()
     edit_auth_lock = threading.Lock()
+    visitor_keys: set[str] = set()
     log_lock = threading.Lock()
 
     def log_message(self, format: str, *args: object) -> None:
@@ -144,6 +148,40 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def visitor_identity(self) -> tuple[str, str]:
+        """! @brief Return a privacy-light visitor key and user agent."""
+        forwarded = self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "")
+        remote_ip = forwarded.split(",", 1)[0].strip() if forwarded else self.client_address[0]
+        user_agent = self.headers.get("User-Agent", "")
+        digest = hashlib.sha256(f"{remote_ip}|{user_agent}".encode("utf-8", errors="replace")).hexdigest()[:24]
+        return digest, user_agent[:220]
+
+    def record_web_visit(self) -> None:
+        """! @brief Privately log page visits for web-share usage counts.
+
+        The log intentionally stores a hashed visitor key, not the raw IP.
+        It is server-side only and never returned to the browser API.
+        """
+        if not self.web_share:
+            return
+        visitor_key, user_agent = self.visitor_identity()
+        with self.log_lock:
+            first_visit = visitor_key not in self.visitor_keys
+            self.visitor_keys.add(visitor_key)
+            with VISITOR_LOG.open("a", encoding="utf-8") as log:
+                log.write(
+                    json.dumps(
+                        {
+                            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "visitor": visitor_key,
+                            "first_visit_this_run": first_visit,
+                            "user_agent": user_agent,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+
     def send_file(self, path: Path, cache_control: str = "no-store") -> None:
         """! @brief Send a small static file or cached image.
 
@@ -157,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_tracks_api(self) -> None:
         with self.library.lock:
-            tracks = [asdict(track) for track in self.library.tracks]
+            tracks = [self.public_track(track) for track in self.library.tracks]
         self.send_json(
             {
                 "tracks": tracks,
@@ -169,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_videos_api(self) -> None:
         with self.library.lock:
-            videos = [asdict(video) for video in self.library.videos]
+            videos = [self.public_video(video) for video in self.library.videos]
         self.send_json(
             {
                 "videos": videos,
@@ -180,13 +218,40 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_interviews_api(self) -> None:
         with self.library.lock:
-            interviews = [asdict(interview) for interview in self.library.interviews]
+            interviews = [self.public_interview(interview) for interview in self.library.interviews]
         self.send_json({"interviews": interviews, "total": len(interviews)})
+
+    def public_track(self, track: object) -> dict[str, object]:
+        """! @brief Return a track record safe for the active serving mode."""
+        data = asdict(track)
+        if self.web_share:
+            data["path"] = ""
+            data["filename"] = ""
+            data["missing_fields"] = []
+            data["review_flags"] = []
+        return data
+
+    def public_video(self, video: object) -> dict[str, object]:
+        """! @brief Return a video record without local path details in web-share mode."""
+        data = asdict(video)
+        if self.web_share:
+            data["path"] = ""
+            data["filename"] = ""
+        return data
+
+    def public_interview(self, interview: object) -> dict[str, object]:
+        """! @brief Return an interview record without source file names in web-share mode."""
+        data = asdict(interview)
+        if self.web_share:
+            data["path"] = ""
+            data["filename"] = ""
+        return data
 
     def do_GET(self) -> None:  # noqa: N802
         # Read routes: app shell, cached library data, artwork, and media streams.
         parsed = urlparse(self.path)
         if parsed.path == "/":
+            self.record_web_visit()
             self.send_file(HTML_PATH)
             return
         if parsed.path.startswith("/assets/"):
@@ -196,7 +261,13 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_tracks_api()
             return
         if parsed.path == "/api/config":
-            self.send_json({"editable": self.editable, "editRequiresPassword": bool(self.edit_password)})
+            self.send_json(
+                {
+                    "editable": self.editable,
+                    "editRequiresPassword": bool(self.edit_password),
+                    "webShare": self.web_share,
+                }
+            )
             return
         if parsed.path == "/api/edit-status":
             self.send_ok(unlocked=self.edit_is_unlocked())
@@ -526,6 +597,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--media-dir", default=DEFAULT_MEDIA_DIR, type=Path)
     parser.add_argument("--config", default=DEFAULT_CONFIG, type=Path, help="Optional JSON config file.")
     parser.add_argument("--read-only", action="store_true", help="Run the library as a player without metadata editing.")
+    parser.add_argument(
+        "--web-share",
+        action="store_true",
+        help="Run an internet-shareable read-only mode that hides local paths and logs private visit counts.",
+    )
     parser.add_argument("--edit-password", default="", help="Require this password before Edit Mode can write metadata.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8766, type=int)
@@ -560,16 +636,21 @@ def main() -> int:
     if not media_dir.is_dir():
         raise SystemExit(f"Media folder not found: {media_dir}")
     config = load_config(args.config)
-    Handler.editable = bool(config.get("editable", True)) and not args.read_only
+    web_share = bool(config.get("web_share", False)) or args.web_share
+    Handler.web_share = web_share
+    Handler.editable = bool(config.get("editable", True)) and not args.read_only and not web_share
     Handler.edit_password = args.edit_password or str(config.get("edit_password", "") or "")
     Handler.edit_tokens = set()
+    Handler.visitor_keys = set()
     Handler.library = Library(media_dir)
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Taeyeon Media Player running at http://{args.host}:{args.port}/")
-    print(f"Mode: {'editable' if Handler.editable else 'read-only'}")
+    print(f"Mode: {'web-share read-only' if Handler.web_share else 'editable' if Handler.editable else 'read-only'}")
     if Handler.editable and Handler.edit_password:
         print("Edit Mode: password protected")
+    if Handler.web_share:
+        print(f"Visitor log: {VISITOR_LOG}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

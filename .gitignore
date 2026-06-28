@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.log
+*.jsonl
 *_cache.json
 taeyeon_media_player_cache/
 docs/doxygen/
