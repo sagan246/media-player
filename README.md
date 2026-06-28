@@ -32,7 +32,7 @@ media/
   Video/
     Taeyeon Concert/
     ...
-  (2021-2014) Interviews (txt)/
+  Interviews/
     2021 Interview Name.txt
 ```
 

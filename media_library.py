@@ -46,7 +46,7 @@ class Library:
         self.media_dir = media_dir
         self.music_dir = media_dir / "Music" if (media_dir / "Music").is_dir() else media_dir
         self.video_dir = media_dir / "Video"
-        self.interviews_dir = media_dir / "(2021-2014) Interviews (txt)"
+        self.interviews_dir = media_dir / "Interviews"
         self.tracks: list[Track] = []
         self.paths: list[Path] = []
         self.artwork: dict[int, Artwork] = {}
