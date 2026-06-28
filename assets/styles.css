@@ -26,7 +26,7 @@
     .appTabs { display:flex; gap:8px; align-items:center; margin-top:0; }
     .mediaTab { min-width:92px; height:38px; border-radius:8px; }
     .mediaTab.inactive { background:var(--panel); color:var(--text); border-color:var(--line); }
-    input,select,button { height:36px; border:1px solid var(--line); border-radius:7px; background:color-mix(in srgb, var(--panel) 86%, black); color:var(--text); padding:0 10px; font:inherit; }
+    input,select,button,.iconLink { height:36px; border:1px solid var(--line); border-radius:7px; background:color-mix(in srgb, var(--panel) 86%, black); color:var(--text); padding:0 10px; font:inherit; }
     input { width:100%; }
     #searchBox { flex:0 1 320px; max-width:320px; }
     #musicFilter { flex:0 0 210px; width:210px; }
@@ -35,6 +35,8 @@
     input[type=range] { accent-color:var(--accent); }
     button { cursor:pointer; background:linear-gradient(180deg, var(--accent-strong), var(--accent)); color:white; border-color:rgba(111,153,242,.34); font-weight:700; box-shadow:0 8px 18px rgba(63,111,216,.10); }
     button.secondary, button.ghost { background:rgba(255,255,255,.025); color:var(--text); border-color:rgba(148,163,184,.18); box-shadow:none; }
+    .iconLink { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; background:rgba(255,255,255,.025); border-color:rgba(148,163,184,.18); box-shadow:none; }
+    .iconLink:hover { background:var(--accent-soft); }
     button.ghost.active { background:var(--accent-soft); border-color:var(--accent); }
     button:disabled { opacity:.45; cursor:not-allowed; }
     .mediaTab,
