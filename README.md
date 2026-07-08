@@ -1,51 +1,93 @@
 # Taeyeon Media Player
 
-A local-first web media player for a Taeyeon-focused music/video archive.
+A local-first web media player for a Taeyeon-focused music, video, lyrics, and
+interview archive.
 
-It scans local folders, reads audio metadata and embedded artwork, plays music and
-videos from your own machine, and optionally edits MP3/FLAC metadata.
+The app runs on your computer and serves your own files through a browser UI. It
+can be used locally, on your home network, through a private VPN such as
+Tailscale, or in read-only web-share mode through a temporary tunnel.
 
-Media files are **not included**.
+Media files are **not included** in this repository.
 
 ## Features
 
-- Music library with album/category browsing
-- Video library with folder-style "video albums"
-- Interview/text-file reader
-- Queue support for music and video
-- Mobile-friendly listening UI
-- Now Playing screen with visualizer
-- HTTP Range streaming for fast FLAC/video playback and seeking
-- Optional edit mode for MP3/FLAC metadata and embedded artwork
-- Library health view for missing artwork, dates, and review flags
+- Music library with album, category, newest/oldest, and year views
+- Video library with folder-style video albums and optional folder covers
+- Interview reader for local `.txt` files
+- Music and video queues with resume support
+- Mobile-friendly listening UI with Now Playing and queue screens
+- Audio visualizer on the Now Playing screen
+- Local lyrics sidecars shown on supported songs
+- Listening stats page with day, week, month, year, and all-time summaries
+- HTTP Range streaming for fast MP3, FLAC, M4A, and video playback/seek
+- Optional Edit Mode for MP3/FLAC metadata and embedded artwork
+- Read-only web-share mode that hides local paths and disables editing
+- Windows launcher scripts and a small launcher GUI
 
-## Expected Folder Layout
+## Expected Media Layout
 
-Point the app at a media folder. The app works best with this shape:
+Point the app at a media folder. The current library is designed around this
+shape:
 
 ```text
 media/
   Music/
     Taeyeon Official/
     Taeyeon OST/
+    Taeyeon Live, Covers & Radio/
     Girls' Generation/
+    Girls' Generation-TTS/
   Video/
     Taeyeon Concert/
+    Group Concert/
     ...
   Interviews/
     2021 Interview Name.txt
+  Lyrics/
+    Album Name/
+      Song Title.txt
+  artwork/
+    Album Name.jpg
 ```
 
-Video folder covers can be added by placing one of these files inside a video
-folder:
+The app is forgiving about the exact music subfolders, but the top-level
+`Music`, `Video`, `Interviews`, and `Lyrics` folders are the intended layout.
+
+## Artwork And Covers
+
+Audio artwork is normally read from embedded MP3/FLAC tags.
+
+Video folder covers are regular image files placed inside the video folder. Use
+one of these names:
 
 ```text
 cover.jpg
+cover.jpeg
 cover.png
 cover.webp
 ```
 
-## Start
+Individual videos do not need embedded artwork. Folder covers are used for video
+album cards.
+
+## Local Lyrics
+
+Lyrics are read from sidecar text files under `Lyrics/`.
+
+Recommended layout:
+
+```text
+Lyrics/
+  Panorama - The Best of TAEYEON/
+    Panorama.txt
+    Letter To Myself.txt
+```
+
+Use the album folder name when possible. Song filenames should match the song
+title closely. Characters that Windows does not allow in filenames can be left
+out or replaced with a simple dash.
+
+## Start The Player
 
 Run the server with Python:
 
@@ -59,36 +101,72 @@ Then open:
 http://127.0.0.1:8766/
 ```
 
-To allow another device on your home network, bind to all interfaces:
+To let your phone or tablet connect on the same home network, bind to all
+interfaces:
 
 ```powershell
 python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 8766
 ```
 
-Then open the computer's LAN IP from the other device.
-
-Windows launchers are also available in `windows_commands/`:
+Then open your computer's LAN address from the other device, for example:
 
 ```text
+http://10.0.0.160:8766/
+```
+
+## Windows Launchers
+
+Windows helper scripts live in `windows_commands/`.
+
+```text
+open_taeyeon_media_player_launcher_gui.cmd
 start_taeyeon_media_player.cmd
+start_taeyeon_media_player_phone_lan.cmd
+start_taeyeon_media_player_private_tailscale.cmd
 start_taeyeon_media_player_web_share.cmd
 start_taeyeon_media_player_web_share_with_cloudflare.cmd
 show_web_share_visitors.cmd
 ```
 
-## Web Share Mode
+The launcher GUI is the easiest way to choose local, phone/LAN, Tailscale, or
+Cloudflare web-share mode.
 
-Use web-share mode when exposing the player through a tunnel or other internet-facing setup:
+## Web-Share Mode
+
+Use web-share mode for temporary internet-facing playback:
 
 ```powershell
 python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 8767 --web-share
 ```
 
-Web-share mode is playback-only. It disables metadata editing, hides local file paths from API responses, and writes private visit records to `taeyeon_media_player_visitors.jsonl`.
+Web-share mode:
+
+- disables metadata editing
+- hides local file paths from API responses
+- keeps playback enabled
+- records privacy-light visitor entries in `taeyeon_media_player_visitors.jsonl`
+
+Visitor entries use a hashed visitor key rather than storing raw IP addresses.
+
+## Optional Edit Password
+
+Edit Mode can be protected with a password:
+
+```powershell
+python taeyeon_media_player.py --media-dir G:\cod\media --edit-password "your-password"
+```
+
+You can also copy the example config:
+
+```powershell
+copy taeyeon_media_player_config.example.json taeyeon_media_player_config.json
+```
+
+The local config file is ignored by git.
 
 ## Edit Mode
 
-Edit mode can write directly to MP3 and FLAC files.
+Edit Mode writes directly to MP3 and FLAC files.
 
 Supported edits:
 
@@ -103,16 +181,6 @@ Supported edits:
 
 Use a copy or backup of your media if you are experimenting.
 
-## Configuration
-
-Copy the example config if you want to customize edit behavior:
-
-```powershell
-copy taeyeon_media_player_config.example.json taeyeon_media_player_config.json
-```
-
-The local config file is ignored by git.
-
 ## Generated Files
 
 These files/folders are created while running and are safe to regenerate:
@@ -121,21 +189,28 @@ These files/folders are created while running and are safe to regenerate:
 taeyeon_media_player_cache/
 taeyeon_media_player_scan_cache.json
 taeyeon_media_player_audio_debug.log
+taeyeon_media_player_stats.sqlite3
 taeyeon_media_player_visitors.jsonl
+docs/doxygen/
 __pycache__/
 ```
+
+They are local runtime artifacts and should not be committed.
 
 ## Source Map
 
 ```text
 taeyeon_media_player.py      Server, API routes, streaming, edit routes
-media_library.py             Music/video/interview scanning and artwork cache
+media_library.py             Music/video/interview scanning, lyrics, artwork cache
+listening_stats.py           SQLite-backed listening stats summaries
 metadata_editor_models.py    Track, Video, and Interview data models
 metadata_tag_tools.py        MP3/FLAC metadata and artwork writing
 metadata_browser.py          Audio metadata and artwork reading
+launcher_gui.py              Windows launcher GUI
 assets/index.html            Browser app shell
-assets/app.js                UI, playback, queues, mobile behavior
+assets/app.js                UI, playback, queues, stats, mobile behavior
 assets/styles.css            Visual design and responsive layout
+windows_commands/            Windows helper launch scripts
 ```
 
 ## Developer Docs
@@ -157,5 +232,6 @@ docs/doxygen/html/
 ## Notes
 
 This app is designed for personal/local media libraries. It does not upload your
-media anywhere. If you expose it outside your home network, add your own access
-controls and be careful with edit mode.
+media anywhere by itself. If you expose it outside your home network, use
+read-only web-share mode, avoid Edit Mode, and treat the temporary link like
+something other people could open if they receive it.
