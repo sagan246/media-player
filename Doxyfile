@@ -11,7 +11,7 @@ CREATE_SUBDIRS         = NO
 INPUT                  = . assets README.md
 FILE_PATTERNS          = *.py *.js *.html *.css *.md
 RECURSIVE              = YES
-EXCLUDE                = vendor taeyeon_media_player_cache __pycache__ .git docs/doxygen
+EXCLUDE                = vendor tools taeyeon_media_player_cache __pycache__ .git docs/doxygen
 EXCLUDE_PATTERNS       = *_cache.json *.log
 
 QUIET                  = YES
@@ -35,3 +35,17 @@ REFERENCES_RELATION    = YES
 
 MARKDOWN_SUPPORT       = YES
 AUTOLINK_SUPPORT       = YES
+
+# Graphviz/dot diagrams. These add clickable call/caller graphs to function
+# pages, plus higher-level include and directory dependency diagrams.
+HAVE_DOT               = YES
+DOT_PATH               = G:/cod/programs/taeyeon_media_player/tools/graphviz-15.1.0-win64/Graphviz-15.1.0-win64/bin
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+DIRECTORY_GRAPH        = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES

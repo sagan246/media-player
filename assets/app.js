@@ -21,13 +21,20 @@
 
     let sortKey = "date";
     let sortDir = "desc";
+    let tableSortActive = false;
     let videoSort = localStorage.getItem("videoSort") || "newest";
     let albumViewMode = localStorage.getItem("albumViewMode") || "newest";
+    const STATS_RANGES = [["day","Day"],["week","Week"],["month","Month"],["year","Year"],["all","All Time"]];
+    let statsPeriod = localStorage.getItem("statsPeriod") || "week";
+    let statsDay = localStorage.getItem("statsDay") || localDateString();
+    const legacyStatsRangeEnd = localStorage.getItem("statsRangeEnd") || localDateString();
+    const statsRangeAnchors = {week:localStorage.getItem("statsRangeEnd:week")||legacyStatsRangeEnd,month:localStorage.getItem("statsRangeEnd:month")||legacyStatsRangeEnd,year:localStorage.getItem("statsRangeEnd:year")||legacyStatsRangeEnd};
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
     let appConfig = {editable:true, editRequiresPassword:false};
     let editToken = localStorage.getItem("editToken") || "";
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
+    if(!STATS_RANGES.some(([value])=>value===statsPeriod)) statsPeriod = "week";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
     if(!["off","all","one"].includes(videoRepeatMode)) videoRepeatMode = "off";
     let browseCollapsed = localStorage.getItem("browseCollapsed") === "true";
@@ -38,9 +45,10 @@
     let nowPlayingRenderedTrackId = null, nowPlayingRenderedArtSrc = "";
     let restoredMusicState = false, lastQueueSaveAt = 0;
     let restoredVideoState = false, restoringVideoStateNow = false, lastVideoSaveAt = 0;
+    let listeningStats = null, statsSession = null, lastStatsSentAt = 0;
     let audioContext = null, analyserNode = null, audioSourceNode = null, visualizerData = null, visualizerFrame = null, visualizerMode = localStorage.getItem("visualizerMode") || "rain";
     const selectedIds = new Set();
-    const MEDIA_TYPES = ["music", "video", "health", "interviews"];
+    const MEDIA_TYPES = ["music", "video", "health", "interviews", "statsPage"];
     const MOBILE_BREAKPOINT = 860;
     const VIDEO_EMPTY_TITLE = "Select a video";
     const VIDEO_EMPTY_META = "Videos play locally from media\\Video.";
@@ -56,7 +64,11 @@
     const toggleOpen = el => setOpen(el, !el.classList.contains("open"));
     const setActive = (el, active) => el.classList.toggle("active", active);
     const setBodyMode = (name, active) => document.body.classList.toggle(name, active);
-    async function fetchJson(url, options){return (await fetch(url, options)).json();}
+    async function fetchJson(url, options={}){
+      const response = await fetch(url, {cache:"no-store", ...options});
+      if(!response.ok) throw new Error(`${url} returned ${response.status}`);
+      return response.json();
+    }
     // Frequently used DOM nodes. Keeping them named here avoids repeated lookups
     // and makes the render functions below less noisy.
     const rowsEl = byId("rows");
@@ -91,6 +103,7 @@
     const musicTabEl = byId("musicTab");
     const videoTabEl = byId("videoTab");
     const interviewsTabEl = byId("interviewsTab");
+    const statsTabEl = byId("statsTab");
     const healthTabEl = byId("healthTab");
     const videoGridEl = byId("videoGrid");
     const videoPlayerEl = byId("videoPlayer");
@@ -106,8 +119,109 @@
     const interviewItemsEl = byId("interviewItems");
     const interviewReaderEl = byId("interviewReader");
     const healthPanelEl = byId("healthPanel");
+    const listeningStatsPanelEl = byId("listeningStatsPanel");
     // Text helpers and library grouping rules.
     function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+    function localDateString(dateValue=new Date()){
+      const date = dateValue instanceof Date ? dateValue : new Date(`${dateValue}T00:00:00`);
+      const offset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offset).toISOString().slice(0,10);
+    }
+    function shiftDate(dateText, days){
+      const date = new Date(`${dateText || localDateString()}T00:00:00`);
+      date.setDate(date.getDate() + days);
+      return localDateString(date);
+    }
+    function statsSteppablePeriod(){return ["week","month","year"].includes(statsPeriod);}
+    function dateFromText(dateText){return new Date(`${dateText || localDateString()}T00:00:00`);}
+    function monthStart(dateText){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
+    function monthEnd(dateText){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+    }
+    function yearStart(dateText){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear(), 0, 1));
+    }
+    function yearEnd(dateText){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear(), 11, 31));
+    }
+    function weekStart(dateText){
+      const date = dateFromText(dateText);
+      date.setDate(date.getDate() - date.getDay());
+      return localDateString(date);
+    }
+    function weekEnd(dateText){return shiftDate(weekStart(dateText), 6);}
+    function shiftMonthAnchor(dateText, direction){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear(), date.getMonth() + direction, 1));
+    }
+    function shiftYearAnchor(dateText, direction){
+      const date = dateFromText(dateText);
+      return localDateString(new Date(date.getFullYear() + direction, 0, 1));
+    }
+    function statsCurrentRangeStart(period=statsPeriod){
+      const today = localDateString();
+      if(period==="week")return weekStart(today);
+      if(period==="month")return monthStart(today);
+      if(period==="year")return yearStart(today);
+      return today;
+    }
+    function statsViewedRangeStart(){
+      return statsRangeDates().start;
+    }
+    function statsAtCurrentRange(){
+      return statsSteppablePeriod() && statsViewedRangeStart() >= statsCurrentRangeStart();
+    }
+    function statsRangeAnchor(period=statsPeriod){
+      return statsRangeAnchors[period] || localDateString();
+    }
+    function setStatsRangeAnchor(period, value){
+      statsRangeAnchors[period] = value;
+      localStorage.setItem(`statsRangeEnd:${period}`, value);
+      return value;
+    }
+    function statsRangeDates(){
+      const anchor = statsRangeAnchor();
+      if(statsPeriod==="week"){
+        return {start:weekStart(anchor), end:weekEnd(anchor)};
+      }
+      if(statsPeriod==="month"){
+        return {start:monthStart(anchor), end:monthEnd(anchor)};
+      }
+      if(statsPeriod==="year"){
+        return {start:yearStart(anchor), end:yearEnd(anchor)};
+      }
+      const end = anchor > localDateString() ? localDateString() : anchor;
+      return {start:end, end};
+    }
+    function statsRangeLabel(){
+      const {start,end}=statsRangeDates();
+      if(statsPeriod==="year")return start.slice(0,4);
+      return start.slice(0,4)===end.slice(0,4) ? `${start.slice(5)} to ${end.slice(5)}` : `${start} to ${end}`;
+    }
+    function shiftStatsRange(direction){
+      const today = localDateString();
+      let anchor = statsPeriod==="week"
+        ? shiftDate(statsRangeAnchor(), direction * 7)
+        : statsPeriod==="month"
+        ? shiftMonthAnchor(statsRangeAnchor(), direction)
+        : statsPeriod==="year"
+        ? shiftYearAnchor(statsRangeAnchor(), direction)
+        : shiftDate(statsRangeAnchor(), direction);
+      const candidateStart = statsPeriod==="week" ? weekStart(anchor) : statsPeriod==="month" ? monthStart(anchor) : statsPeriod==="year" ? yearStart(anchor) : anchor;
+      if(candidateStart > statsCurrentRangeStart())anchor = today;
+      setStatsRangeAnchor(statsPeriod, anchor);
+      loadListeningStats();
+    }
+    function saveLocalSetting(key, value){
+      localStorage.setItem(key, value);
+      return value;
+    }
     function editHeaders(extra={}){return editToken?{...extra,"X-Edit-Token":editToken}:extra;}
     function categoryOf(t){if(t.folder&&t.folder!=="(root)")return String(t.folder).split("/")[0]; return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
     function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
@@ -371,13 +485,13 @@
     function openMusicGroup(group){selectedGroup=group; selectedAlbum="All"; renderAll();}
     function openMusicAlbum(album){selectedAlbum=album; renderAll();}
     function closeMusicAlbum(){selectedAlbum="All"; renderAll();}
-    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); selectedAlbum="All"; if(albumViewMode==="sections"||albumViewMode==="years")searchEl.value=""; renderAll();}
+    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); tableSortActive=false; selectedAlbum="All"; if(albumViewMode==="sections"||albumViewMode==="years")searchEl.value=""; renderAll();}
     function openVideoGroup(group){selectedVideoGroup=group; selectedVideoAsFolder=false; renderVideoAll();}
     function openVideoFolder(folder){selectedVideoGroup=folder; selectedVideoAsFolder=true; renderVideoAll();}
     function closeVideoFolder(){selectedVideoGroup="All"; selectedVideoAsFolder=false; renderVideoAll();}
     // Music filtering/rendering. These functions decide what the current music page shows.
     function baseFiltered(){const filter=musicFilterEl.value; return tracks.filter(t=>{if(selectedGroup!=="All"&&groupOf(t)!==selectedGroup)return false; if(selectedAlbum!=="All"&&albumOf(t)!==selectedAlbum)return false; if(filter==="art:with"&&!t.has_artwork)return false; if(filter==="art:missing"&&t.has_artwork)return false; if(!passesFieldFilter(t))return false; if(!containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]))return false; return true;});}
-    function filtered(){const list=baseFiltered(); return selectedAlbum!=="All"?albumTrackList(list):sortedList(list);}
+    function filtered(){const list=baseFiltered(); if(selectedAlbum!=="All")return albumTrackList(list); return appMode==="listen"&&!tableSortActive?currentPlaybackList():sortedList(list);}
     function renderGroups(){
       const counts = new Map();
       counts.set("All", tracks.length);
@@ -394,7 +508,7 @@
       renderBrowseItems(groups, name=>name===selectedGroup, openMusicGroup);
     }
     function renderStats(list){const total=tracks.length; if(appMode==="listen"){const albums=new Set(list.map(albumOf)).size; renderStatsPills([[total,"tracks"],[albums,"albums shown"],[list.length,"songs shown"]]); return;} const withArt=tracks.filter(t=>t.has_artwork).length, missing=list.filter(t=>t.missing_fields.length).length, review=list.filter(t=>t.review_flags.length).length; renderStatsPills([[total,"tracks"],[withArt,"with artwork"],[total-withArt,"missing artwork"],[missing,"shown missing data"],[review,"shown review"],[list.length,"shown"]]);}
-    function renderSortHeaders(){document.querySelectorAll("th.sortable").forEach(th=>{th.classList.toggle("sorted",th.dataset.sort===sortKey); th.classList.toggle("asc",th.dataset.sort===sortKey&&sortDir==="asc"); th.classList.toggle("desc",th.dataset.sort===sortKey&&sortDir==="desc");});}
+    function renderSortHeaders(){const showSort=appMode!=="listen"||selectedAlbum!=="All"||tableSortActive; document.querySelectorAll("th.sortable").forEach(th=>{const active=showSort&&th.dataset.sort===sortKey; th.classList.toggle("sorted",active); th.classList.toggle("asc",active&&sortDir==="asc"); th.classList.toggle("desc",active&&sortDir==="desc");});}
     function renderSelection(){selectedCountEl.textContent=`${selectedIds.size} selected`; const shown=filtered().map(t=>t.id); selectShownEl.checked=shown.length>0&&shown.every(id=>selectedIds.has(id)); const selectedArt=byId("saveSelectedArt"); if(selectedArt){selectedArt.disabled=selectedIds.size===0; selectedArt.textContent=selectedIds.size?`Replace ${selectedIds.size} Selected`:"Replace Selected Art";}}
     function badges(t){const bits=[]; if(t.missing_fields.length) bits.push(`<span class="pill missing">Missing: ${esc(t.missing_fields.join(", "))}</span>`); if(t.review_flags.length) bits.push(`<span class="pill missing">Review</span>`); return bits.join(" ");}
     function albumSource(){return tracks.filter(t=>(selectedGroup==="All"||groupOf(t)===selectedGroup)&&containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]));}
@@ -406,7 +520,7 @@
     function albumWarnings(list, formats){const warnings=[]; const missingArt=list.filter(t=>!t.has_artwork).length; const missingDate=list.filter(t=>!t.date).length; const missingTrack=list.filter(t=>!t.tracknumber).length; if(missingArt)warnings.push(`${missingArt} missing art`); if(missingDate)warnings.push(`${missingDate} missing date`); if(missingTrack)warnings.push(`${missingTrack} missing track #`); if(formats.length>1)warnings.push(`Mixed formats: ${formats.join(", ")}`); return warnings;}
     function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover" src="${fullArtUrl(art)}" alt="" loading="lazy" decoding="async">`:`<div class="albumDetailCover">No Art</div>`;}
     function albumWarningHtml(warnings){return warnings.length?warnings.map(w=>`<span class="pill missing">${esc(w)}</span>`).join(""):`<span class="pill">Album metadata looks tidy</span>`;}
-    function renderAlbumDetail(list){if(selectedAlbum==="All"||!list.length)return ""; const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats); const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]); return `<section class="albumDetail visible"><div>${albumCoverHtml(list)}</div><div class="albumDetailInfo"><h2>${esc(selectedAlbum)}</h2><div class="albumDetailMeta">${esc(artists.join(", ")||"Unknown artist")}${years.length?` - ${esc(years.join(", "))}`:""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"track")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(albumSizeMb(list))} MB</span></div>${actions}<div class="albumWarnings">${albumWarningHtml(warnings)}</div></div></section>`;}
+    function renderAlbumDetail(list){if(selectedAlbum==="All"||!list.length)return ""; const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats); const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumQueue",label:"Open queue",icon:`${buttonIcon("queue")}<span>${queue.length}</span>`},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]); return `<section class="albumDetail visible"><div>${albumCoverHtml(list)}</div><div class="albumDetailInfo"><h2>${esc(selectedAlbum)}</h2><div class="albumDetailMeta">${esc(artists.join(", ")||"Unknown artist")}${years.length?` - ${esc(years.join(", "))}`:""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"track")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(albumSizeMb(list))} MB</span></div>${actions}<div class="albumWarnings">${albumWarningHtml(warnings)}</div></div></section>`;}
     // Albums sort by their earliest track year, so multi-year albums stay together.
     function albumSortYear(list){const years=list.map(t=>Number(String(t.date||"").slice(0,4))).filter(y=>Number.isFinite(y)&&y>0); return years.length?Math.min(...years):-1;}
     function albumEntries(source){const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name)) albums.set(name,[]); albums.get(name).push(t);} return [...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}));}
@@ -423,7 +537,7 @@
     function sourceAlbumList(source, album){return albumTrackList(source.filter(t=>albumOf(t)===album));}
     function bindAlbumButtons(source){albumGridEl.querySelectorAll("button[data-action]").forEach(btn=>btn.addEventListener("click",(e)=>{e.stopPropagation(); btn.blur(); const album=btn.dataset.album, action=btn.dataset.action; if(action==="resume-play")return; if(action==="select"){openMusicAlbum(album); return;} const list=sourceAlbumList(source,album); if(action==="add"){addToMusicQueue(list); return;} playList(list, action==="shuffle");}));}
     function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
-    function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(edit)on(edit,"click",()=>enterEditMode());}
+    function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), queueBtn=byId("albumQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(queueBtn)on(queueBtn,"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); if(edit)on(edit,"click",()=>enterEditMode());}
     function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); const homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumDetailActions();}
     function renderRows(){const list=filtered(); const rowDates=list.map(t=>String(t.date||"").trim()); const albumSingleDate=selectedAlbum!=="All"&&rowDates.length>0&&rowDates.every(Boolean)&&new Set(rowDates).size===1; document.body.classList.toggle("albumSingleDate",albumSingleDate); viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup; renderStats(list); renderSortHeaders(); let lastAlbum=null; rowsEl.innerHTML=list.map(t=>{const album=albumOf(t); const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:""; lastAlbum=album; const trackNo=String(t.tracknumber||"").split("/")[0]; return `${divider}<tr data-id="${t.id}" class="${t.id===selectedId?"selected":""} ${t.id===playingId?"playingNow":""}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${t.id}" ${selectedIds.has(t.id)?"checked":""}></td><td>${t.has_artwork?`<img class="coverThumb" src="${smallArtUrl(t)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(t.title)}<br><span class="rowBadges"><span class="pill ${t.has_artwork?"":"missing"}">${t.has_artwork?"Art":"No art"}</span> ${badges(t)}</span></td><td class="artistCell">${esc(t.artist)}</td><td class="albumCell">${esc(t.album)}</td><td>${esc(t.date)}</td><td class="pathCell">${esc(t.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${t.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${t.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;}).join(""); rowsEl.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",e=>{if(e.target.closest(".rowActions")||e.target.classList.contains("rowCheck"))return; const id=Number(r.dataset.id); if(appMode==="listen") playSingleTrack(id); else selectTrack(id);})); rowsEl.querySelectorAll(".playSong").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); playSingleTrack(Number(btn.dataset.id));})); rowsEl.querySelectorAll(".addSongQueue").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const t=tracks.find(x=>x.id===Number(btn.dataset.id)); if(t)addToMusicQueue([t]);})); rowsEl.querySelectorAll(".rowCheck").forEach(c=>c.addEventListener("change",()=>{const id=Number(c.dataset.id); c.checked?selectedIds.add(id):selectedIds.delete(id); renderSelection();})); renderSelection();}
     function updatePlayingHighlights(){const t=tracks.find(x=>x.id===playingId); rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.classList.toggle("playingNow",Number(row.dataset.id)===playingId)); albumGridEl.querySelectorAll(".albumCard").forEach(card=>card.classList.toggle("playingNow",!!t&&card.dataset.album===albumOf(t)));}
@@ -572,13 +686,14 @@
     function playList(list, randomize=false, startId=null){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; queue=playable.map(t=>t.id); queueIndex=startId===null?0:Math.max(0,queue.indexOf(startId)); saveMusicState({force:true}); playQueueIndex(queueIndex);}
     // When a track is opened from an album page, Next should continue through
     // the album and then later albums in the current browse order.
-    function albumPlaybackContext(startId){const current=tracks.find(t=>t.id===startId); if(!current||selectedAlbum==="All")return [current].filter(Boolean); const source=albumSource(); const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name))albums.set(name,[]); albums.get(name).push(t);} const ordered=[...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"})); const albumIndex=ordered.findIndex(([name])=>name===selectedAlbum); if(albumIndex<0)return albumTrackList(albumList(selectedAlbum)); const list=[]; for(const [_name,tracksForAlbum] of ordered.slice(albumIndex)){list.push(...albumTrackList(tracksForAlbum));} return list.length?list:[current];}
+    function albumPlaybackContext(startId){const current=tracks.find(t=>t.id===startId); if(!current||selectedAlbum==="All")return [current].filter(Boolean); const ordered=albumDisplayEntries(albumSource()); const albumIndex=ordered.findIndex(([name])=>name===selectedAlbum); if(albumIndex<0)return albumTrackList(albumList(selectedAlbum)); const list=[]; for(const [_name,tracksForAlbum] of ordered.slice(albumIndex)){list.push(...albumTrackList(tracksForAlbum));} return list.length?list:[current];}
     function playSingleTrack(id){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id); return;} playList([t], false, id);}
     // If the queue was empty, adding songs starts playback immediately. If
     // something is already playing, additions are non-disruptive.
     function addToMusicQueue(list){const ids=list.map(t=>t.id).filter(id=>!queue.includes(id)); if(!ids.length)return; const wasEmpty=queue.length===0; queue.push(...ids); showQueueToast(ids.length===1?"Added to queue":`Added ${ids.length} to queue`); pulseQueueButton(topQueueLabelEl); if(wasEmpty){queueIndex=0; saveMusicState({force:true}); playQueueIndex(0);} else {saveMusicState({force:true}); updateNow(); renderQueue();}}
     function playQueueIndex(index){
       if(index<0||index>=queue.length)return;
+      flushListeningStats({force:true});
       queueIndex=index;
       const t=tracks.find(x=>x.id===queue[queueIndex]);
       if(!t)return;
@@ -588,6 +703,7 @@
       selectedId=t.id;
       player.src=t.audio_url;
       player.load();
+      resetStatsSession(t.id);
       console.debug("[audio] audio url requested", t.audio_url);
       saveMusicState({force:true});
       playCurrentAudio().finally(()=>{
@@ -645,7 +761,13 @@
       bindQueueList(queueListEl, playQueueIndex, removeQueueIndex);
       bindQueueDrag(queueListEl, moveQueueItem);
     }
-    function updateMusicQueueLabels(){topQueueLabelEl.innerHTML=`${buttonIcon("queue")}<span>${queue.length}</span>`;}
+    function updateMusicQueueLabels(){
+      topQueueLabelEl.innerHTML=`${buttonIcon("queue")}<span>${queue.length}</span>`;
+      [byId("npQueue"), byId("albumQueue")].forEach(btn=>{
+        const count=btn?.querySelector("span");
+        if(count)count.textContent=String(queue.length);
+      });
+    }
     function savedVolume(){const value=Number(localStorage.getItem("playerVolume")); return Number.isFinite(value)?Math.min(1,Math.max(0,value)):Number(volumeBar.value);}
     function setPlayerVolume(value,{persist=true}={}){
       const volume=Math.min(1,Math.max(0,Number(value)));
@@ -688,7 +810,7 @@
     /** @brief Previous/play/next controls and desktop volume for Now Playing. */
     function nowPlayingControlsHtml(){
       const playIcon = player.paused ? "&#9654;" : "&#10074;&#10074;";
-      return `<div class="nowPlayingControls"><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button><button id="npRepeat" class="secondary iconControl repeatButton" title="${esc(repeatLabel(repeatMode))}" aria-label="${esc(repeatLabel(repeatMode))}">${repeatIconHtml(repeatMode)}</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(player.volume)}"></label></div>`;
+      return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${queue.length}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button><button id="npRepeat" class="secondary iconControl repeatButton" title="${esc(repeatLabel(repeatMode))}" aria-label="${esc(repeatLabel(repeatMode))}">${repeatIconHtml(repeatMode)}</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(player.volume)}"></label></div>`;
     }
     function nowPlayingLyricsHtml(t){
       if(!t.has_lyrics)return "";
@@ -715,6 +837,8 @@
         npPlay.setAttribute("aria-label", npPlay.title);
       }
       updateRepeatButton(byId("npRepeat"), repeatMode);
+      const npQueueCount=byId("npQueue")?.querySelector("span");
+      if(npQueueCount)npQueueCount.textContent=String(queue.length);
     }
     // Full-screen Now Playing is rebuilt from current state so it stays in sync
     // with seek time, volume, visualizer mode, and file format.
@@ -770,6 +894,7 @@
       on(byId("npNext"),"click",()=>playQueueIndex(queueIndex+1));
       on(byId("npPlayPause"),"click",toggleAudioPlayback);
       on(byId("npRepeat"),"click",cycleMusicRepeat);
+      on(byId("npQueue"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();});
       on(npSeek,"input",()=>{seeking=true;});
       on(npSeek,"change",()=>{if(player.duration) player.currentTime=(Number(npSeek.value)/1000)*player.duration; seeking=false;});
     }
@@ -796,9 +921,218 @@
       if(!player.paused&&!player.ended)requestAnimationFrame(startVisualizer);
     }
     function fmt(seconds){if(!Number.isFinite(seconds))return "0:00"; const m=Math.floor(seconds/60), s=Math.floor(seconds%60); return `${m}:${String(s).padStart(2,"0")}`;}
+    function fmtDuration(seconds){if(!Number.isFinite(seconds)||seconds<=0)return "0m"; const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60); return h?`${h}h ${m}m`:`${Math.max(1,m)}m`;}
+    function statsTrackPayload(t){
+      return {title:t.title||"Unknown title", artist:t.artist||"Unknown artist", album:t.album||"No album", format:t.format||"", duration:knownDurations.get(t.id)||player.duration||0};
+    }
+    async function postListeningStats(payload){
+      try{await fetchJson("/api/listening-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
+      catch(err){console.warn("[stats] record failed", err);}
+    }
+    function resetStatsSession(trackId=playingId){
+      const t=tracks.find(x=>x.id===trackId);
+      statsSession=t?{trackId:t.id,lastTime:Number.isFinite(player.currentTime)?player.currentTime:0,pendingSeconds:0,playCounted:false}:null;
+      lastStatsSentAt=Date.now();
+    }
+    function playCountThreshold(){
+      const duration=Number(player.duration)||0;
+      return duration>0?Math.min(30,Math.max(10,duration*.5)):30;
+    }
+    function flushListeningStats({force=false,countPlay=false}={}){
+      if(!statsSession)return;
+      const t=tracks.find(x=>x.id===statsSession.trackId);
+      if(!t)return;
+      const seconds=Math.max(0,statsSession.pendingSeconds);
+      if(seconds<1&&!countPlay&&!force)return;
+      statsSession.pendingSeconds=0;
+      postListeningStats({track:statsTrackPayload(t),seconds,count_play:countPlay});
+      if(mediaType==="statsPage")loadListeningStats();
+    }
+    function updateListeningStatsProgress(){
+      if(playingId===null||player.paused||player.ended)return;
+      if(!statsSession||statsSession.trackId!==playingId)resetStatsSession(playingId);
+      if(!statsSession)return;
+      const current=Number(player.currentTime)||0;
+      const delta=current-statsSession.lastTime;
+      statsSession.lastTime=current;
+      if(delta>0&&delta<8)statsSession.pendingSeconds+=delta;
+      const countPlay=!statsSession.playCounted&&current>=playCountThreshold();
+      if(countPlay)statsSession.playCounted=true;
+      if(countPlay||statsSession.pendingSeconds>=15||Date.now()-lastStatsSentAt>30000){
+        lastStatsSentAt=Date.now();
+        flushListeningStats({countPlay});
+      }
+    }
+    function statsRows(rows, columns, emptyText){
+      if(!rows.length)return `<div class="statsEmpty">${esc(emptyText)}</div>`;
+      return `<table class="statsTable"><thead><tr>${columns.map(c=>`<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map(c=>`<td>${c.render(row)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    }
+    function statsMinutes(row){return (Number(row?.seconds)||0)/60;}
+    function statsIntensity(minutes, maxMinutes){
+      if(minutes<=0)return .08;
+      return Math.min(.92, .18 + (minutes/Math.max(maxMinutes,1))*.74);
+    }
+    function statsHeatStyle(minutes, maxMinutes){
+      return `background:rgba(63,111,216,${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
+    }
+    function statsChartSection(title, body){
+      return `<section class="statsSection statsChart"><h3>${esc(title)}</h3>${body}</section>`;
+    }
+    function statsTimeChart(rows, unit="day"){
+      if(!rows.length)return statsChartSection("Listening Minutes", `<div class="statsEmpty">No listening time recorded yet.</div>`);
+      if(unit==="hour")return statsHourHeatmap(rows);
+      if(statsPeriod==="week")return statsWeekBars(rows);
+      if(statsPeriod==="month")return statsMonthCalendar(rows);
+      if(statsPeriod==="year")return statsYearHeatmap(rows);
+      return "";
+    }
+    function statsHourHeatmap(rows){
+      const maxMinutes=Math.max(...rows.map(statsMinutes),1);
+      const cells=rows.map(row=>{
+        const hour=String(row.hour??"").padStart(2,"0");
+        const minutes=statsMinutes(row);
+        return `<div class="statsHeatCell" title="${esc(`${hour}:00 - ${Math.round(minutes)} minutes`)}"><div class="statsHeatBlock" style="${statsHeatStyle(minutes,maxMinutes)}">${minutes>0?`${Math.round(minutes)}m`:""}</div><div class="statsHeatLabel">${esc(hour)}</div></div>`;
+      }).join("");
+      return statsChartSection("Hourly Listening", `<div class="statsHourHeat">${cells}</div>`);
+    }
+    function statsWeekBars(rows){
+      const labels=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const ordered=[...rows].sort((a,b)=>String(a.day||"").localeCompare(String(b.day||"")));
+      const maxMinutes=Math.max(...ordered.map(statsMinutes),1);
+      const bars=ordered.map(row=>{
+        const minutes=statsMinutes(row);
+        const height=minutes>0?Math.max(8,Math.round((minutes/maxMinutes)*100)):0;
+        const date=row.day?new Date(`${row.day}T00:00:00`):null;
+        const label=date?labels[date.getDay()]:String(row.day||"").slice(5);
+        return `<div class="statsWeekBar" title="${esc(`${row.day} - ${Math.round(minutes)} minutes`)}"><div class="statsBarValue">${esc(Math.round(minutes))}m</div><div class="statsBarTrack"><div class="statsBarFill" style="height:${height}%"></div></div><div class="statsBarLabel">${esc(label)}</div></div>`;
+      }).join("");
+      return statsChartSection("Weekly Listening", `<div class="statsWeekBars">${bars}</div>`);
+    }
+    function statsMonthCalendar(rows){
+      const labels=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const maxMinutes=Math.max(...rows.map(statsMinutes),1);
+      const cells=[];
+      const firstDate=rows[0]?.day?new Date(`${rows[0].day}T00:00:00`):null;
+      for(let index=0; index<(firstDate?firstDate.getDay():0); index++)cells.push(`<div class="statsCalendarCell blankCalendarCell"></div>`);
+      for(const row of rows){
+        const minutes=statsMinutes(row);
+        const dayNumber=String(row.day||"").slice(8).replace(/^0/,"");
+        cells.push(`<div class="statsCalendarCell" title="${esc(`${row.day} - ${Math.round(minutes)} minutes`)}" style="${statsHeatStyle(minutes,maxMinutes)}"><span>${esc(dayNumber)}</span>${minutes>0?`<strong>${esc(Math.round(minutes))}m</strong>`:""}</div>`);
+      }
+      while(cells.length%7!==0)cells.push(`<div class="statsCalendarCell blankCalendarCell"></div>`);
+      return statsChartSection("Monthly Listening", `<div class="statsCalendarWeekdays">${labels.map(label=>`<span>${label}</span>`).join("")}</div><div class="statsCalendarGrid">${cells.join("")}</div>`);
+    }
+    function statsYearHeatmap(rows){
+      const monthNames=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      const months=monthNames.map((label,index)=>({label,seconds:0,month:index}));
+      for(const row of rows){
+        const monthIndex=Number(String(row.day||"").slice(5,7))-1;
+        if(months[monthIndex])months[monthIndex].seconds+=Number(row.seconds)||0;
+      }
+      const maxMinutes=Math.max(...months.map(statsMinutes),1);
+      const cells=months.map(item=>{
+        const minutes=statsMinutes(item);
+        return `<div class="statsYearCell" title="${esc(`${item.label} - ${Math.round(minutes)} minutes`)}" style="${statsHeatStyle(minutes,maxMinutes)}"><span>${esc(item.label)}</span>${minutes>0?`<strong>${esc(Math.round(minutes))}m</strong>`:""}</div>`;
+      }).join("");
+      return statsChartSection("Yearly Listening", `<div class="statsYearHeat">${cells}</div>`);
+    }
+    function statsHero(rangeOptions){
+      const dayClass = statsPeriod === "day" ? " visible" : "";
+      const stepClass = statsSteppablePeriod() ? " visible" : "";
+      const nextDisabled = statsAtCurrentRange() ? " disabled" : "";
+      return `<div class="statsHero"><div><h2>Listening Stats</h2></div><div class="statsControls"><select id="statsRange" class="statsRange">${rangeOptions}</select><div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(statsDay)}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day">&#9654;</button></div></div></div>`;
+    }
+    function statsRangeOptions(){
+      return STATS_RANGES.map(([value,label])=>`<option value="${value}" ${statsPeriod===value?"selected":""}>${label}</option>`).join("");
+    }
+    function statsCard(number, label){
+      return `<div class="statsCard"><div class="statsNumber">${esc(number)}</div><div class="statsLabel">${esc(label)}</div></div>`;
+    }
+    function statsSummaryCards(summary){
+      return `<div class="statsGrid">${[
+        statsCard(fmtDuration(summary.seconds||0), "listened this range"),
+        statsCard(summary.plays||0, "plays this range"),
+        statsCard(fmtDuration(summary.lifetime_seconds||0), "all-time listening"),
+        statsCard(summary.lifetime_plays||0, "all-time plays"),
+      ].join("")}</div>`;
+    }
+    function statsTableSection(title, rows, columns, emptyText){
+      return `<section class="statsSection"><h3>${esc(title)}</h3>${statsRows(rows, columns, emptyText)}</section>`;
+    }
+    function statsTables({daily, songs, albums, recent}){
+      return `<div class="statsSections">${
+        statsTableSection("Listening Time", daily, [
+          {label:"Day", render:r=>esc(r.day)},
+          {label:"Time", render:r=>esc(fmtDuration(r.seconds))},
+          {label:"Plays", render:r=>esc(r.plays||0)},
+          {label:"Top", render:r=>`<div class="statsTitle">${esc(r.top_song||"")}</div><div class="statsSub">${esc(r.top_album||"")}</div>`},
+        ], "No listening time recorded yet.")
+      }${
+        statsTableSection("Top Songs", songs, [
+          {label:"Song", render:r=>`<div class="statsTitle">${esc(r.title)}</div><div class="statsSub">${esc(r.artist)} - ${esc(r.album)}</div>`},
+          {label:"Plays", render:r=>esc(r.plays||0)},
+          {label:"Time", render:r=>esc(fmtDuration(r.seconds))},
+        ], "No top songs yet.")
+      }${
+        statsTableSection("Top Albums", albums, [
+          {label:"Album", render:r=>`<div class="statsTitle">${esc(r.album)}</div>`},
+          {label:"Plays", render:r=>esc(r.plays||0)},
+          {label:"Time", render:r=>esc(fmtDuration(r.seconds))},
+        ], "No top albums yet.")
+      }${
+        statsTableSection("Recently Played", recent, [
+          {label:"Song", render:r=>`<div class="statsTitle">${esc(r.title)}</div><div class="statsSub">${esc(r.artist)} - ${esc(r.album)}</div>`},
+          {label:"Plays", render:r=>esc(r.play_count||0)},
+          {label:"Last", render:r=>esc(r.last_played||"")},
+        ], "Nothing played yet.")
+      }</div>`;
+    }
+    function renderListeningStats(){
+      const data=listeningStats;
+      if(!data){listeningStatsPanelEl.innerHTML=`<div class="statsEmpty">Loading listening stats...</div>`; return;}
+      const summary=data.summary||{};
+      const daily=data.daily||[], chartDaily=data.chart_daily||[...daily].reverse(), songs=data.top_songs||[], albums=data.top_albums||[], recent=data.recent||[];
+      const chartUnit=data.chart_unit||"day";
+      const chartHtml = statsPeriod === "all" ? "" : statsTimeChart(chartDaily, chartUnit);
+      listeningStatsPanelEl.innerHTML=`${statsHero(statsRangeOptions())}${statsSummaryCards(summary)}${statsTables({daily,songs,albums,recent})}${chartHtml}`;
+      bindStatsControls();
+    }
+    function bindStatsControls(){
+      on(byId("statsRange"),"change",e=>{statsPeriod=saveLocalSetting("statsPeriod",e.target.value); if(statsSteppablePeriod()&&!statsRangeAnchors[statsPeriod])setStatsRangeAnchor(statsPeriod,localDateString()); loadListeningStats();});
+      on(byId("statsPrevRange"),"click",()=>shiftStatsRange(-1));
+      on(byId("statsNextRange"),"click",()=>shiftStatsRange(1));
+      on(byId("statsPrevDay"),"click",()=>{statsDay=saveLocalSetting("statsDay",shiftDate(statsDay,-1)); loadListeningStats();});
+      on(byId("statsNextDay"),"click",()=>{statsDay=saveLocalSetting("statsDay",shiftDate(statsDay,1)); loadListeningStats();});
+      on(byId("statsDay"),"change",e=>{statsDay=saveLocalSetting("statsDay",e.target.value||localDateString()); if(statsPeriod==="day")loadListeningStats();});
+    }
+    function listeningStatsUrl(){
+      const params = new URLSearchParams({period:statsPeriod});
+      if(statsPeriod==="day"){
+        params.set("start", statsDay || localDateString());
+        params.set("end", statsDay || localDateString());
+      }else if(statsSteppablePeriod()){
+        const {start,end}=statsRangeDates();
+        params.set("start", start);
+          params.set("end", end);
+        }
+      params.set("_", String(Date.now()));
+      return `/api/listening-stats?${params}`;
+    }
+    async function loadListeningStats(){
+      try{
+        listeningStats = await fetchJson(listeningStatsUrl());
+        if(mediaType==="statsPage")renderListeningStats();
+      }catch(err){
+        console.warn("[stats] load failed", err);
+        listeningStats = null;
+        if(mediaType==="statsPage"){
+          listeningStatsPanelEl.innerHTML=`<div class="statsEmpty">Could not load listening stats. Restart the server so the new stats API is available, then refresh this page.</div>`;
+        }
+      }
+    }
     // App mode and data loading.
     async function loadConfig(){try{appConfig=await fetchJson("/api/config");}catch{appConfig={editable:true,editRequiresPassword:false};} if(appConfig.editRequiresPassword&&editToken){try{const status=await fetchJson("/api/edit-status",{headers:editHeaders()}); if(!status.unlocked){editToken=""; localStorage.removeItem("editToken");}}catch{editToken=""; localStorage.removeItem("editToken");}} document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
-    function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else renderAll();}
+    function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")renderListeningStats(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
       const trackData = await fetchJson("/api/tracks");
@@ -806,6 +1140,7 @@
       tracksLoaded = true;
       if(refresh && videosLoaded) await loadVideos();
       if(refresh && interviewsLoaded) await loadInterviews();
+      if(refresh && listeningStats) await loadListeningStats();
       renderCurrentMedia();
       restoreMusicState();
 
@@ -830,6 +1165,7 @@
       if(type==="video"&&!videosLoaded) await loadVideos();
       if(type==="interviews"&&!interviewsLoaded) await loadInterviews();
       if((type==="music"||type==="health")&&!tracksLoaded) await loadTracks();
+      if(type==="statsPage"&&!listeningStats) await loadListeningStats();
     }
     function setGroupMode(mode){groupMode=mode; resetMusicSelection(); renderAll();}
     async function unlockEditMode(){if(!appConfig.editable)return false; if(!appConfig.editRequiresPassword||editToken)return true; const password=prompt("Edit metadata password"); if(!password)return false; try{const result=await fetchJson("/api/edit-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})}); if(!result.ok){alert(result.error||"Wrong edit password."); return false;} editToken=result.token||""; if(editToken)localStorage.setItem("editToken",editToken); return true;}catch(err){alert(err.message||"Could not unlock Edit Mode."); return false;}}
@@ -873,14 +1209,17 @@
       musicTabEl.classList.toggle("inactive", type !== "music");
       videoTabEl.classList.toggle("inactive", type !== "video");
       interviewsTabEl.classList.toggle("inactive", type !== "interviews");
+      statsTabEl.classList.toggle("inactive", type !== "statsPage");
       healthTabEl.classList.toggle("inactive", type !== "health");
 
       searchEl.placeholder =
         type === "video" ? "Search video title or folder" :
         type === "interviews" ? "Search interviews" :
+        type === "statsPage" ? "Stats are summary-only" :
         type === "health" ? "Search is for music, video, interviews" :
         "Search title, album, artist";
 
+      if(type === "statsPage")loadListeningStats();
       if(type === "video"){
         setOpen(queueDrawerEl, false);
       } else {
@@ -890,13 +1229,13 @@
       ensureMediaLoaded(type).catch(err=>console.error("[library] load failed", err));
     }
     // Event binding lives at the end so startup is easy to follow.
-    function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
+    function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",()=>setOpen(navEl,false)); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",()=>setOpen(interviewListEl,false));}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass);}
+    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
     function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
-    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("playShownVideo"),"click",()=>playVideoList(videoFiltered())); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
-    function bindQueueControls(){on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("clearQueue"),"click",()=>{queue=[]; queueIndex=-1; player.pause(); playingId=null; saveMusicState({force:true}); updateNow(); renderQueue();}); on(byId("shuffleQueue"),"click",()=>{const current=queue[queueIndex]; queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();});}
+    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("playShownVideo"),"click",()=>playVideoList(videoFiltered())); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
+    function bindQueueControls(){on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("clearQueue"),"click",()=>{queue=[]; queueIndex=-1; player.pause(); playingId=null; saveMusicState({force:true}); updateNow(); renderQueue();}); on(byId("shuffleQueue"),"click",()=>{const current=queue[queueIndex]; queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();});}
     /** @brief Wire mini-player, audio element events, and Now Playing sync. */
     function bindAudioPlayer(){
       on(byId("prevBtn"),"click",()=>playQueueIndex(queueIndex-1));
@@ -912,11 +1251,12 @@
       on(byId("closeNowPlaying"),"click",()=>setOpen(nowPlayingDrawerEl,false));
       on(player,"canplay",()=>console.debug("[audio] browser canplay", {src:player.currentSrc,currentTime:player.currentTime}));
       on(player,"playing",()=>console.debug("[audio] browser playing", {src:player.currentSrc,currentTime:player.currentTime}));
-      on(player,"play",()=>{switchingAudioTrack=false; setupMediaSessionActions(); startVisualizer(); saveMusicState({force:true}); updateNow();});
-      on(player,"pause",()=>{setupMediaSessionActions(); saveMusicState({force:true}); if(switchingAudioTrack)return; stopVisualizer(); updateNow();});
+      on(player,"play",()=>{switchingAudioTrack=false; setupMediaSessionActions(); if(!statsSession||statsSession.trackId!==playingId)resetStatsSession(playingId); startVisualizer(); saveMusicState({force:true}); updateNow();});
+      on(player,"pause",()=>{setupMediaSessionActions(); saveMusicState({force:true}); flushListeningStats({force:true}); if(switchingAudioTrack)return; stopVisualizer(); updateNow();});
       on(player,"ended",()=>{
         setupMediaSessionActions();
         stopVisualizer();
+        flushListeningStats({force:true});
         if(repeatMode==="one"){player.currentTime=0; playCurrentAudio({retry:true}); return;}
         if(queueIndex+1<queue.length) playQueueIndex(queueIndex+1);
         else if(repeatMode==="all"&&queue.length) playQueueIndex(0);
@@ -937,6 +1277,7 @@
         if(npCurrent)npCurrent.textContent=currentTimeEl.textContent;
         if(npDuration)npDuration.textContent=nowPlayingRemainingText();
         if(npSeek)npSeek.value=seekBar.value;
+        updateListeningStatsProgress();
         saveMusicState();
       });
       on(seekBar,"input",()=>{seeking=true;});

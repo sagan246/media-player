@@ -31,6 +31,7 @@ DEFAULT_MEDIA_DIR = REPO_DIR / "media"
 DEFAULT_CONFIG = SCRIPT_DIR / "taeyeon_media_player_config.json"
 AUDIO_DEBUG_LOG = SCRIPT_DIR / "taeyeon_media_player_audio_debug.log"
 VISITOR_LOG = SCRIPT_DIR / "taeyeon_media_player_visitors.jsonl"
+STATS_DB = SCRIPT_DIR / "taeyeon_media_player_stats.sqlite3"
 ART_THUMB_CACHE_DIR = SCRIPT_DIR / "taeyeon_media_player_cache" / "art_thumbs"
 ART_THUMB_DISPLAY_SIZE = 512
 ART_THUMB_ICON_SIZE = 96
@@ -40,6 +41,7 @@ if VENDOR_DIR.exists():
 
 
 from media_library import Library  # noqa: E402
+from listening_stats import ListeningStats  # noqa: E402
 from metadata_tag_tools import EDITABLE_FIELDS, decode_image_payload, save_artwork_for_paths, save_metadata  # noqa: E402
 try:  # noqa: E402
     from PIL import Image
@@ -86,6 +88,7 @@ class Handler(BaseHTTPRequestHandler):
     """! @brief HTTP handler for the local player UI, streaming, and JSON APIs."""
 
     library: Library
+    listening_stats: ListeningStats
     editable = True
     web_share = False
     edit_password = ""
@@ -242,6 +245,14 @@ class Handler(BaseHTTPRequestHandler):
             interviews = [self.public_interview(interview) for interview in self.library.interviews]
         self.send_json({"interviews": interviews, "total": len(interviews)})
 
+    def handle_listening_stats_api(self, query_text: str) -> None:
+        """! @brief Return summary-only listening stats for the Stats tab."""
+        query = parse_qs(query_text)
+        period = query.get("period", ["week"])[0]
+        start = query.get("start", [None])[0]
+        end = query.get("end", [None])[0]
+        self.send_json(self.listening_stats.summary(period, start, end))
+
     def public_track(self, track: object) -> dict[str, object]:
         """! @brief Return a track record safe for the active serving mode."""
         data = asdict(track)
@@ -313,6 +324,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/interviews":
             self.handle_interviews_api()
             return
+        if parsed.path == "/api/listening-stats":
+            self.handle_listening_stats_api(parsed.query)
+            return
         if parsed.path == "/api/refresh":
             self.library.refresh()
             self.send_ok()
@@ -360,6 +374,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/edit-logout":
             self.handle_edit_logout()
             return
+        if parsed.path == "/api/listening-stats":
+            self.handle_listening_stats_record()
+            return
         if not self.require_edit_access():
             return
         if parsed.path == "/api/bulk/metadata":
@@ -403,6 +420,18 @@ class Handler(BaseHTTPRequestHandler):
             with self.edit_auth_lock:
                 self.edit_tokens.discard(token)
         self.send_ok()
+
+    def handle_listening_stats_record(self) -> None:
+        """! @brief Record compact playback stats without requiring Edit Mode."""
+        try:
+            payload = self.read_json_body()
+            if not isinstance(payload, dict):
+                self.send_error_json("Invalid stats payload.")
+                return
+            result = self.listening_stats.record(payload)
+            self.send_json(result)
+        except Exception as exc:  # noqa: BLE001 - stats should fail visibly in dev logs.
+            self.send_error_json(str(exc), status=500)
 
     def handle_track_metadata(self, path_text: str) -> None:
         """! @brief Update metadata tags for one track, then refresh the library."""
@@ -741,6 +770,7 @@ def main() -> int:
     Handler.edit_tokens = set()
     Handler.visitor_keys = set()
     Handler.library = Library(media_dir)
+    Handler.listening_stats = ListeningStats(STATS_DB)
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Taeyeon Media Player running at http://{args.host}:{args.port}/")
