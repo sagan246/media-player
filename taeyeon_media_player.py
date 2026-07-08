@@ -326,6 +326,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/audio/"):
             self.handle_audio(parsed.path)
             return
+        if parsed.path.startswith("/lyrics/"):
+            self.handle_lyrics(parsed.path)
+            return
         if parsed.path.startswith("/video/"):
             self.handle_video(parsed.path)
             return
@@ -576,6 +579,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         self.stream_file(path, label=f"audio track {track_id}", debug=True)
+
+    def handle_lyrics(self, path_text: str) -> None:
+        """! @brief Return local lyrics text for one track when a sidecar exists."""
+        track_id = self.parse_last_int(path_text)
+        if track_id is None:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        with self.library.lock:
+            lyrics = self.library.lyrics.get(track_id, "")
+        if not lyrics:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_json({"lyrics": lyrics})
 
     def handle_video(self, path_text: str) -> None:
         """! @brief Stream video by ID using the shared range-aware pipeline."""

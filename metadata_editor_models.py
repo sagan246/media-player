@@ -23,6 +23,8 @@ class Track:
     audio_url: str
     size_mb: float
     folder: str
+    has_lyrics: bool
+    lyrics_url: str
     missing_fields: list[str]
     review_flags: list[str]
 

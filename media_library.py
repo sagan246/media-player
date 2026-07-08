@@ -34,6 +34,7 @@ class LibrarySnapshot:
     video_thumbnails: dict[int, Path]
     video_folder_covers: dict[str, Path]
     interviews: list[Interview]
+    lyrics: dict[int, str]
 
 
 class Library:
@@ -47,6 +48,7 @@ class Library:
         self.music_dir = media_dir / "Music" if (media_dir / "Music").is_dir() else media_dir
         self.video_dir = media_dir / "Video"
         self.interviews_dir = media_dir / "Interviews"
+        self.lyrics_dir = media_dir / "Lyrics"
         self.tracks: list[Track] = []
         self.paths: list[Path] = []
         self.artwork: dict[int, Artwork] = {}
@@ -55,13 +57,14 @@ class Library:
         self.video_thumbnails: dict[int, Path] = {}
         self.video_folder_covers: dict[str, Path] = {}
         self.interviews: list[Interview] = []
+        self.lyrics: dict[int, str] = {}
         self.lock = threading.Lock()
         self.refresh()
 
     def refresh(self) -> None:
         # Build fresh snapshots outside the lock, then swap them in quickly so
         # browser requests do not wait on a full media scan.
-        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.interviews_dir)
+        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.interviews_dir, self.lyrics_dir)
 
         with self.lock:
             self.tracks = snapshot.tracks
@@ -72,6 +75,7 @@ class Library:
             self.video_thumbnails = snapshot.video_thumbnails
             self.video_folder_covers = snapshot.video_folder_covers
             self.interviews = snapshot.interviews
+            self.lyrics = snapshot.lyrics
 
     def path_for_id(self, track_id: int) -> Path | None:
         with self.lock:
@@ -107,12 +111,13 @@ class Library:
             return self.video_folder_covers.get(folder)
 
 
-def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Path) -> LibrarySnapshot:
+def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Path, lyrics_dir: Path | None = None) -> LibrarySnapshot:
     """Scan each media source independently, then return one swappable snapshot."""
     # Music uses a metadata/artwork cache because tag reads are the expensive
     # part. Video and interview scans are lightweight path/text scans.
     cache = load_scan_cache()
-    tracks, paths, artwork, next_cache = scan_music(music_dir, cache)
+    lyrics_index = scan_lyrics(lyrics_dir or music_dir.parent / "Lyrics")
+    tracks, paths, artwork, lyrics, next_cache = scan_music(music_dir, cache, lyrics_index)
     videos, video_paths, video_thumbnails, video_folder_covers = scan_videos(video_dir)
     interviews = scan_interviews(interviews_dir)
     save_scan_cache(next_cache)
@@ -125,6 +130,7 @@ def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Pat
         video_thumbnails=video_thumbnails,
         video_folder_covers=video_folder_covers,
         interviews=interviews,
+        lyrics=lyrics,
     )
 
 
@@ -153,13 +159,15 @@ def save_scan_cache(files: dict[str, dict[str, object]]) -> None:
 def scan_music(
     music_dir: Path,
     cache: dict[str, dict[str, object]],
-) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[str, dict[str, object]]]:
+    lyrics_index: dict[str, str],
+) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[int, str], dict[str, dict[str, object]]]:
     """! @brief Scan audio files and reuse cached metadata when possible."""
     # Metadata/artwork reads are the slow part. The scan cache lets playback and
     # refreshes stay quick unless a file's size or modified time actually changed.
     tracks: list[Track] = []
     paths: list[Path] = []
     artwork: dict[int, Artwork] = {}
+    lyrics: dict[int, str] = {}
     next_cache: dict[str, dict[str, object]] = {}
     audio_paths = audio_files(music_dir)
 
@@ -195,8 +203,11 @@ def scan_music(
             folder = "(root)"
         missing_fields = track_missing_fields(title, artist, album, date, tracknumber, genre, art is not None)
         review_flags = track_review_flags(title, artist, album, albumartist)
+        lyric_text = lyrics_index.get(normalize_lyrics_key(title), "")
         if art:
             artwork[track_id] = art
+        if lyric_text:
+            lyrics[track_id] = lyric_text
         paths.append(path)
         tracks.append(
             Track(
@@ -216,11 +227,13 @@ def scan_music(
                 audio_url=f"/audio/{track_id}",
                 size_mb=round(stat.st_size / 1024 / 1024, 2),
                 folder=folder,
+                has_lyrics=bool(lyric_text),
+                lyrics_url=f"/lyrics/{track_id}" if lyric_text else "",
                 missing_fields=missing_fields,
                 review_flags=review_flags,
             )
         )
-    return tracks, paths, artwork, next_cache
+    return tracks, paths, artwork, lyrics, next_cache
 
 
 def audio_files(music_dir: Path) -> list[Path]:
@@ -231,6 +244,37 @@ def audio_files(music_dir: Path) -> list[Path]:
         and path.suffix.lower() in AUDIO_EXTENSIONS
         and ".bak" not in path.name.lower()
     )
+
+
+def scan_lyrics(lyrics_dir: Path) -> dict[str, str]:
+    """! @brief Read local lyric text files and index them by cleaned song title."""
+    # Lyrics are intentionally outside the audio metadata cache. They are small
+    # text files, and keeping them separate lets the user edit lyrics without
+    # touching the music files.
+    if not lyrics_dir.is_dir():
+        return {}
+    lyrics: dict[str, str] = {}
+    for path in sorted(lyrics_dir.rglob("*.txt")):
+        if not path.is_file():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8-sig").strip()
+        except UnicodeDecodeError:
+            content = path.read_text(encoding="cp949", errors="replace").strip()
+        if not content:
+            continue
+        key = normalize_lyrics_key(path.stem)
+        if key and key not in lyrics:
+            lyrics[key] = content
+    return lyrics
+
+
+def normalize_lyrics_key(value: str) -> str:
+    """! @brief Normalize song titles enough to match local lyrics filenames."""
+    text = value.lower().replace("’", "'").replace("`", "'")
+    text = re.sub(r"\([^)]*\)", " ", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def cached_audio_entry(entry: dict[str, object] | None, stat) -> dict[str, object] | None:
