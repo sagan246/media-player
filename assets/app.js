@@ -141,6 +141,7 @@
     const albumViewModeEl = byId("albumViewMode");
     const navEl = document.querySelector("nav");
     const groupsEl = byId("groups");
+    const browseSummaryEl = byId("browseSummary");
     const selectedCountEl = byId("selectedCount");
     const selectShownEl = byId("selectShown");
     const bulkSaveEl = byId("bulkSave");
@@ -181,6 +182,7 @@
     const videoSortEl = byId("videoSort");
     const interviewListEl = byId("interviewList");
     const interviewItemsEl = byId("interviewItems");
+    const interviewBrowseSummaryEl = byId("interviewBrowseSummary");
     const interviewReaderEl = byId("interviewReader");
     const healthPanelEl = byId("healthPanel");
     const listeningStatsPanelEl = byId("listeningStatsPanel");
@@ -535,7 +537,11 @@
     function browseItemHtml(name, count, active){
       return `<button class="groupItem ${active?"active":""}" data-group="${esc(name)}" title="${esc(name)}"><span class="groupName">${esc(groupLabel(name))}</span><span class="groupCount">${count}</span></button>`;
     }
-    function renderBrowseItems(items, isActive, onChoose){
+    function browseSummaryText(count, singular){
+      return `${count} ${singular}${count===1?"":"s"}`;
+    }
+    function renderBrowseItems(items, isActive, onChoose, summaryText=""){
+      if(browseSummaryEl) browseSummaryEl.textContent = summaryText;
       groupsEl.innerHTML = items.map(([name,count]) => browseItemHtml(name, count, isActive(name))).join("");
       groupsEl.querySelectorAll(".groupItem").forEach(btn=>btn.addEventListener("click",()=>{
         onChoose(btn.dataset.group);
@@ -699,7 +705,7 @@
           ? musicCategoryCompare(a,b)
           : (a[0] === "All" ? -1 : b[0] === "All" ? 1 : b[1] - a[1] || a[0].localeCompare(b[0]))
       );
-      renderBrowseItems(groups, name=>name===selectedGroup, openMusicGroup);
+      renderBrowseItems(groups, name=>name===selectedGroup, openMusicGroup, browseSummaryText(tracks.length, "track"));
     }
     function renderStats(){renderMusicTopControls();}
     function renderSortHeaders(){const showSort=appMode!=="listen"||selectedAlbum!=="All"||tableSortActive; document.querySelectorAll("th.sortable").forEach(th=>{const active=showSort&&th.dataset.sort===sortKey; th.classList.toggle("sorted",active); th.classList.toggle("asc",active&&sortDir==="asc"); th.classList.toggle("desc",active&&sortDir==="desc");});}
@@ -835,7 +841,7 @@
       }
       if(!counts.has(selectedVideoGroup) && !isVideoFolder(selectedVideoGroup)) selectedVideoGroup = "All";
       const groups = [...counts.entries()].sort((a,b)=>videoNameCompare(a[0],b[0]));
-      renderBrowseItems(groups, name=>!selectedVideoAsFolder&&name===selectedVideoGroup, openVideoGroup);
+      renderBrowseItems(groups, name=>!selectedVideoAsFolder&&name===selectedVideoGroup, openVideoGroup, browseSummaryText(videos.length, "video"));
     }
     function renderVideoStats(){renderVideoTopControls(videoViewTitleEl.textContent || "Videos");}
     // Health is only for real cleanup issues, not personal preference warnings.
@@ -915,7 +921,31 @@
     function saveSelectedInterview(i){selectedInterviewId=i?.id ?? null; selectedInterviewKey=interviewKey(i); if(selectedInterviewKey)localStorage.setItem("selectedInterviewKey", selectedInterviewKey);}
     function filteredInterviews(){return [...interviews].filter(i=>containsSearch([i.source,i.year,i.filename,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"}));}
     function shuffleInterview(){const ordered=filteredInterviews(); if(!ordered.length)return; const currentIndex=ordered.findIndex(i=>i.id===selectedInterviewId); let nextIndex=Math.floor(Math.random()*ordered.length); if(ordered.length>1&&nextIndex===currentIndex)nextIndex=(nextIndex+1)%ordered.length; saveSelectedInterview(ordered[nextIndex]); setOpen(interviewListEl,false); renderInterviews(); interviewReaderEl.scrollTo({top:0,behavior:"smooth"});}
-    function renderInterviews(){renderInterviewStats(); const ordered=filteredInterviews(); if(ordered.length){const selectedStillVisible=ordered.find(i=>i.id===selectedInterviewId); const remembered=selectedInterviewKey?ordered.find(i=>interviewKey(i)===selectedInterviewKey):null; if(!selectedStillVisible)saveSelectedInterview(remembered||ordered[0]);} interviewItemsEl.innerHTML=ordered.length?ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join(""):`<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`; interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{const picked=interviews.find(i=>i.id===Number(btn.dataset.id)); saveSelectedInterview(picked); setOpen(interviewListEl,false); renderInterviews();})); const current=interviews.find(i=>i.id===selectedInterviewId&&ordered.some(match=>match.id===i.id))||ordered[0]; if(!current){interviewReaderEl.innerHTML=`<h2>${esc(appConfig.textTabLabel||"Interviews")}</h2><div class="interviewReaderMeta">No matching text files found.</div>`; return;} interviewReaderEl.innerHTML=`<h2>${esc(current.source)}</h2><div class="interviewReaderMeta">${esc(current.year||"Unknown year")}</div><div class="interviewText">${esc(current.content)}</div>`;}
+    function renderInterviews(){
+      renderInterviewStats();
+      const ordered=filteredInterviews();
+      if(interviewBrowseSummaryEl) interviewBrowseSummaryEl.textContent = browseSummaryText(ordered.length, "file");
+      if(ordered.length){
+        const selectedStillVisible=ordered.find(i=>i.id===selectedInterviewId);
+        const remembered=selectedInterviewKey?ordered.find(i=>interviewKey(i)===selectedInterviewKey):null;
+        if(!selectedStillVisible)saveSelectedInterview(remembered||ordered[0]);
+      }
+      interviewItemsEl.innerHTML=ordered.length
+        ? ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join("")
+        : `<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`;
+      interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{
+        const picked=interviews.find(i=>i.id===Number(btn.dataset.id));
+        saveSelectedInterview(picked);
+        setOpen(interviewListEl,false);
+        renderInterviews();
+      }));
+      const current=interviews.find(i=>i.id===selectedInterviewId&&ordered.some(match=>match.id===i.id))||ordered[0];
+      if(!current){
+        interviewReaderEl.innerHTML=`<h2>${esc(appConfig.textTabLabel||"Interviews")}</h2><div class="interviewReaderMeta">No matching text files found.</div>`;
+        return;
+      }
+      interviewReaderEl.innerHTML=`<h2>${esc(current.source)}</h2><div class="interviewReaderMeta">${esc(current.year||"Unknown year")}</div><div class="interviewText">${esc(current.content)}</div>`;
+    }
     function videoThumb(v){if(v.has_thumbnail)return `<img src="${v.thumbnail_url}" alt="" loading="lazy" decoding="async">`; return v.browser_friendly?"Preview":esc(String(v.format||"video").toUpperCase());}
     function isVideoFolder(group){return group!=="All"&&(selectedVideoAsFolder||!isVideoCategory(group))&&videos.some(v=>v.folder===group);}
     function bindVideoFolderDetail(list){const play=byId("videoFolderPlay"), shuffleBtn=byId("videoFolderShuffle"), add=byId("videoFolderAdd"), back=byId("videoBackToAlbums"); if(play)on(play,"click",()=>playVideoList(list)); if(shuffleBtn)on(shuffleBtn,"click",()=>playVideoList(list,true)); if(add)on(add,"click",()=>addToVideoQueue(list)); if(back)on(back,"click",closeVideoFolder);}

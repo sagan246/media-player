@@ -33,7 +33,10 @@
   <main>
     <nav>
       <div class="navHead">
-        <button id="toggleBrowsePanel" class="browseHeadButton" type="button">Browse</button>
+        <div class="browseTitleWrap">
+          <button id="toggleBrowsePanel" class="browseHeadButton" type="button">Browse</button>
+          <span id="browseSummary" class="browseSummary"></span>
+        </div>
         <button id="closeBrowse" class="secondary closeBrowse iconControl" type="button" title="Close browse" aria-label="Close browse">&#10005;</button>
       </div>
       <div class="groupList" id="groups"></div>
@@ -109,7 +112,10 @@
       <section class="interviewsPanel interviewsOnly">
         <div class="interviewList" id="interviewList">
           <div class="interviewBrowseHead">
-            <button id="toggleInterviewBrowsePanel" class="browseHeadButton" type="button">Browse</button>
+            <div class="browseTitleWrap">
+              <button id="toggleInterviewBrowsePanel" class="browseHeadButton" type="button">Browse</button>
+              <span id="interviewBrowseSummary" class="browseSummary"></span>
+            </div>
             <button id="closeInterviewBrowse" class="secondary closeBrowse iconControl" type="button" title="Close browse" aria-label="Close browse">&#10005;</button>
           </div>
           <div class="interviewItems" id="interviewItems"></div>
