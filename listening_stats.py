@@ -323,6 +323,14 @@ class ListeningStats:
             lifetime = db.execute(
                 "SELECT COALESCE(SUM(total_seconds),0) seconds FROM track_stats"
             ).fetchone()
+            all_time = db.execute(
+                """
+                SELECT
+                    COALESCE(SUM(play_count),0) play_count,
+                    MIN(day) first_day
+                FROM daily_track_stats
+                """
+            ).fetchone()
             hourly_rows = []
             if start and end and start == end:
                 hourly_rows = db.execute(
@@ -339,7 +347,13 @@ class ListeningStats:
 
             song = songs.setdefault(
                 row["track_key"],
-                {"title": row["title"], "artist": row["artist"], "album": row["album"], "seconds": 0.0},
+                {
+                    "track_key": row["track_key"],
+                    "title": row["title"],
+                    "artist": row["artist"],
+                    "album": row["album"],
+                    "seconds": 0.0,
+                },
             )
             song["seconds"] += float(row["seconds"] or 0)
 
@@ -348,6 +362,8 @@ class ListeningStats:
             "summary": {
                 "seconds": sum(item["seconds"] for item in daily.values()),
                 "lifetime_seconds": float(lifetime["seconds"] or 0),
+                "total_play_count": int(all_time["play_count"] or 0),
+                "first_day": all_time["first_day"] or "",
             },
             "chart_unit": "hour" if start and end and start == end else "day",
             "chart_daily": self.chart_hours(hourly_rows) if start and end and start == end else self.chart_days(period, daily, start, end),

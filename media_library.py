@@ -22,6 +22,16 @@ VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m
 VIDEO_THUMBNAIL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 
 
+@dataclass(frozen=True)
+class LibraryConfig:
+    """! @brief Folder names used inside the selected media root."""
+
+    music_dir: str = "Music"
+    video_dir: str = "Video"
+    text_dir: str = "Interviews"
+    lyrics_dir: str = "Lyrics"
+
+
 @dataclass
 class LibrarySnapshot:
     """! @brief Complete scan result swapped into Library atomically."""
@@ -43,12 +53,14 @@ class Library:
     The HTTP server reads from this object while scans happen under a lock.
     """
 
-    def __init__(self, media_dir: Path) -> None:
+    def __init__(self, media_dir: Path, config: LibraryConfig | None = None) -> None:
+        config = config or LibraryConfig()
         self.media_dir = media_dir
-        self.music_dir = media_dir / "Music" if (media_dir / "Music").is_dir() else media_dir
-        self.video_dir = media_dir / "Video"
-        self.interviews_dir = media_dir / "Interviews"
-        self.lyrics_dir = media_dir / "Lyrics"
+        configured_music_dir = media_dir / config.music_dir
+        self.music_dir = configured_music_dir if configured_music_dir.is_dir() else media_dir
+        self.video_dir = media_dir / config.video_dir
+        self.text_dir = media_dir / config.text_dir
+        self.lyrics_dir = media_dir / config.lyrics_dir
         self.tracks: list[Track] = []
         self.paths: list[Path] = []
         self.artwork: dict[int, Artwork] = {}
@@ -64,7 +76,7 @@ class Library:
     def refresh(self) -> None:
         # Build fresh snapshots outside the lock, then swap them in quickly so
         # browser requests do not wait on a full media scan.
-        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.interviews_dir, self.lyrics_dir)
+        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.text_dir, self.lyrics_dir)
 
         with self.lock:
             self.tracks = snapshot.tracks

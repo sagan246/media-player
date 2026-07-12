@@ -101,6 +101,7 @@ class LauncherApp:
         self.root.title("Taeyeon Media Player Launcher")
         self.root.geometry("760x540")
         self.process: subprocess.Popen[str] | None = None
+        self.local_edit_process: subprocess.Popen[str] | None = None
         self.cloudflare_process: subprocess.Popen[str] | None = None
         self.mode_name = StringVar(value="Local edit")
         self.status = StringVar(value="Stopped")
@@ -185,6 +186,19 @@ class LauncherApp:
             *mode.flags,
         ]
 
+    def local_edit_command(self) -> list[str]:
+        """Build the companion local edit server command for web-share mode."""
+        return [
+            self.python_exe(),
+            str(APP_SCRIPT),
+            "--media-dir",
+            str(DEFAULT_MEDIA_DIR),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8766",
+        ]
+
     def start(self) -> None:
         """Start the selected server mode if nothing is already running."""
         if self.process and self.process.poll() is None:
@@ -206,6 +220,7 @@ class LauncherApp:
         self.url.set(self.display_url(mode))
         threading.Thread(target=self.read_output, args=(self.process, "server"), daemon=True).start()
         if mode.cloudflare:
+            self.start_local_edit_server()
             self.start_cloudflare(mode)
 
     def stop(self) -> None:
@@ -221,6 +236,15 @@ class LauncherApp:
             stopped_any = True
         self.cloudflare_process = None
         self.public_url = ""
+        if self.local_edit_process and self.local_edit_process.poll() is None:
+            self.write_log("Stopping local edit server...\n")
+            self.local_edit_process.terminate()
+            try:
+                self.local_edit_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.local_edit_process.kill()
+            stopped_any = True
+        self.local_edit_process = None
         if not self.process or self.process.poll() is not None:
             self.status.set("Stopped")
             if not stopped_any:
@@ -257,6 +281,24 @@ class LauncherApp:
         except Exception as exc:
             self.write_log(f"Refresh failed: {exc}\n")
 
+    def start_local_edit_server(self) -> None:
+        """Start editable localhost mode beside a read-only Cloudflare share."""
+        if self.local_edit_process and self.local_edit_process.poll() is None:
+            return
+        command = self.local_edit_command()
+        self.write_log("Starting local edit server on http://127.0.0.1:8766/...\n")
+        self.write_log(" ".join(command) + "\n")
+        self.local_edit_process = subprocess.Popen(
+            command,
+            cwd=str(APP_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        threading.Thread(target=self.read_output, args=(self.local_edit_process, "edit"), daemon=True).start()
+
     def start_cloudflare(self, mode: LaunchMode) -> None:
         """Start cloudflared and watch its output for the public URL."""
         if not CLOUDFLARED.exists():
@@ -292,7 +334,7 @@ class LauncherApp:
         if not match:
             return
         self.public_url = match.group(0)
-        self.url.set(f"Public: {self.public_url}\nLocal: http://127.0.0.1:8767/")
+        self.url.set(f"Public: {self.public_url}\nRead-only local: http://127.0.0.1:8767/\nEdit local: http://127.0.0.1:8766/")
         self.write_log(f"Cloudflare public link ready: {self.public_url}\n")
 
     def write_log(self, text: str) -> None:
@@ -308,7 +350,7 @@ class LauncherApp:
     def display_url(self, mode: LaunchMode) -> str:
         """Return the best URL to show for a mode."""
         if mode.url_kind == "cloudflare":
-            return f"Public: waiting for Cloudflare...\nLocal: http://127.0.0.1:{mode.port}/"
+            return f"Public: waiting for Cloudflare...\nRead-only local: http://127.0.0.1:{mode.port}/\nEdit local: http://127.0.0.1:8766/"
         if mode.url_kind == "lan":
             return f"PC: http://127.0.0.1:{mode.port}/\nPhone: http://{local_lan_ip()}:{mode.port}/"
         return self.primary_display_url(mode)

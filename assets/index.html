@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
   <title>Taeyeon Media Library</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=stats-clean2">
+  <link rel="stylesheet" href="/assets/styles.css?v=adaptive-default1">
 </head>
 <body class="listen music">
   <header>
@@ -16,7 +17,8 @@
           <button id="videoTab" class="mediaTab inactive iconOnly" title="Videos" aria-label="Videos"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4z"/><path d="M4 8l3-5h13l-3 5"/><path d="M9 3L6 8"/><path d="M14 3l-3 5"/></svg></button>
           <button id="interviewsTab" class="mediaTab inactive iconOnly" title="Interviews" aria-label="Interviews"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M10 12h6"/><path d="M10 16h6"/></svg></button>
           <button id="statsTab" class="mediaTab inactive iconOnly" title="Stats" aria-label="Stats"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-5"/><path d="M12 16V8"/><path d="M16 16v-9"/></svg></button>
-          <button id="healthTab" class="mediaTab inactive"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span>Health</span></button>
+          <button id="customizeTab" class="mediaTab inactive iconOnly" title="Customize" aria-label="Customize"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></button>
+          <button id="healthTab" class="mediaTab inactive iconOnly" title="Health" aria-label="Health"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></button>
           <button id="refresh" class="secondary iconOnly" title="Refresh library" aria-label="Refresh library"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
           <button id="listenMode" class="ghost active iconOnly" title="Listen Mode" aria-label="Listen Mode"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><path d="M5 13h3v6H5z"/><path d="M16 13h3v6h-3z"/></svg></button>
           <button id="editMode" class="ghost iconOnly" title="Edit Mode" aria-label="Edit Mode"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
@@ -32,7 +34,7 @@
     <nav>
       <div class="navHead">
         <button id="toggleBrowsePanel" class="browseHeadButton" type="button">Browse</button>
-        <button id="closeBrowse" class="secondary closeBrowse" type="button">Close</button>
+        <button id="closeBrowse" class="secondary closeBrowse iconControl" type="button" title="Close browse" aria-label="Close browse">&#10005;</button>
       </div>
       <div class="groupList" id="groups"></div>
       <div class="bulkPanel">
@@ -76,7 +78,6 @@
             <option value="oldest">Oldest</option>
             <option value="sections">Sections</option>
           </select>
-          <button id="playShownVideo" class="secondary iconControl" type="button" title="Play shown videos" aria-label="Play shown videos">&#9654;</button>
           <button id="shuffleShownVideo" class="secondary iconControl" type="button" title="Shuffle shown videos" aria-label="Shuffle shown videos">&#8644;</button>
           <span class="spacer"></span>
         </div>
@@ -87,6 +88,7 @@
           <div class="videoQueueControls">
             <button id="prevVideo" class="secondary iconControl" title="Previous video" aria-label="Previous video">&#9664;&#9664;</button>
             <button id="nextVideo" class="secondary iconControl" title="Next video" aria-label="Next video">&#9654;&#9654;</button>
+            <button id="stopVideo" class="secondary iconControl" title="Stop video" aria-label="Stop video">&#9632;</button>
             <button id="videoRepeatBtn" class="secondary iconControl repeatButton" title="Video repeat off" aria-label="Video repeat off">&#8635;</button>
           </div>
         </div>
@@ -94,22 +96,28 @@
       </section>
       <section class="healthPanel healthOnly" id="healthPanel"></section>
       <section class="statsPanel statsOnly" id="listeningStatsPanel"></section>
+      <section class="customizePanel customizeOnly" id="customizePanel">
+        <div class="customizeCard">
+          <div class="themeGrid" id="themeGrid"></div>
+        </div>
+      </section>
       <section class="controls interviewsOnly">
-        <span class="viewTitle">Interviews</span>
+        <span class="viewTitle" data-text-label>Interviews</span>
         <button id="browseInterviews" class="secondary browseToggle iconOnly" type="button" title="Browse" aria-label="Browse"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 3h10v9H3z"/><path d="M3 7v12"/></svg></button>
+        <button id="shuffleInterviews" class="secondary iconControl" type="button" title="Random interview" aria-label="Random interview">&#8644;</button>
       </section>
       <section class="interviewsPanel interviewsOnly">
         <div class="interviewList" id="interviewList">
           <div class="interviewBrowseHead">
             <button id="toggleInterviewBrowsePanel" class="browseHeadButton" type="button">Browse</button>
-            <button id="closeInterviewBrowse" class="secondary closeBrowse" type="button">Close</button>
+            <button id="closeInterviewBrowse" class="secondary closeBrowse iconControl" type="button" title="Close browse" aria-label="Close browse">&#10005;</button>
           </div>
           <div class="interviewItems" id="interviewItems"></div>
         </div>
         <article class="interviewReader" id="interviewReader">
-          <h2>Interviews</h2>
+          <h2 data-text-label>Interviews</h2>
           <div class="interviewReaderMeta">Choose an interview to read.</div>
-          <div class="interviewText">Text files are loaded locally from media\\(2021-2014) Interviews (txt).</div>
+          <div class="interviewText" data-text-empty>Text files are loaded locally from media\\Interviews.</div>
         </article>
       </section>
     </div>
@@ -139,12 +147,13 @@
     <div class="queueHead">
       <div class="queueHeadTop">
         <button id="toggleQueueTitle" class="queueTitleButton" type="button">Music Queue</button>
+        <div id="queueSummary" class="queueSummary">0 tracks</div>
         <button id="closeQueue" class="secondary iconControl" title="Close" aria-label="Close">&#10005;</button>
       </div>
-      <div id="queueSummary" class="queueSummary">0 tracks</div>
       <div class="queueActions">
-        <button id="shuffleQueue" class="secondary" title="Shuffle queue">&#8644; Shuffle</button>
-        <button id="clearQueue" class="secondary">Clear Queue</button>
+        <button id="repeatQueue" class="secondary iconControl repeatButton" title="Repeat off" aria-label="Repeat off">&#8635;</button>
+        <button id="shuffleQueue" class="secondary iconControl" title="Shuffle queue" aria-label="Shuffle queue">&#8644;</button>
+        <button id="clearQueue" class="secondary iconControl" title="Clear queue" aria-label="Clear queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
       </div>
     </div>
     <div id="queueList" class="queueList"></div>
@@ -160,15 +169,17 @@
     <div class="queueHead">
       <div class="queueHeadTop">
         <button id="toggleVideoQueueTitle" class="queueTitleButton" type="button">Video Queue</button>
+        <div id="videoQueueSummary" class="queueSummary">0 videos</div>
         <button id="closeVideoQueue" class="secondary iconControl" title="Close" aria-label="Close">&#10005;</button>
       </div>
       <div class="queueActions">
-        <button id="shuffleVideoQueue" class="secondary">Shuffle Queue</button>
-        <button id="clearVideoQueue" class="secondary">Clear Queue</button>
+        <button id="repeatVideoQueue" class="secondary iconControl repeatButton" title="Video repeat off" aria-label="Video repeat off">&#8635;</button>
+        <button id="shuffleVideoQueue" class="secondary iconControl" title="Shuffle video queue" aria-label="Shuffle video queue">&#8644;</button>
+        <button id="clearVideoQueue" class="secondary iconControl" title="Clear video queue" aria-label="Clear video queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
       </div>
     </div>
     <div id="videoQueueList" class="queueList"></div>
   </section>
-  <script src="/assets/app.js?v=stats-clean2"></script>
+  <script src="/assets/app.js?v=adaptive-default1"></script>
 </body>
 </html>

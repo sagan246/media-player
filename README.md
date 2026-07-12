@@ -26,8 +26,7 @@ Media files are **not included** in this repository.
 
 ## Expected Media Layout
 
-Point the app at a media folder. The current library is designed around this
-shape:
+Point the app at a media folder. By default, the library expects this shape:
 
 ```text
 media/
@@ -50,8 +49,27 @@ media/
     Album Name.jpg
 ```
 
-The app is forgiving about the exact music subfolders, but the top-level
-`Music`, `Video`, `Interviews`, and `Lyrics` folders are the intended layout.
+The app is forgiving about the exact music subfolders. If `Music` does not
+exist, the selected media folder itself is scanned for audio.
+
+You can override the default folder names and labels with
+`taeyeon_media_player_config.json`:
+
+```json
+{
+  "app_name": "Taeyeon Media Player",
+  "music_dir": "Music",
+  "video_dir": "Video",
+  "text_dir": "Interviews",
+  "text_tab_label": "Interviews",
+  "lyrics_dir": "Lyrics",
+  "preferred_categories": ["Taeyeon Official", "Taeyeon OST"],
+  "preferred_video_categories": ["Taeyeon Concert"]
+}
+```
+
+Missing optional folders such as `Video`, `Interviews`, or `Lyrics` simply show
+empty pages. Missing preferred categories are ignored.
 
 ## Artwork And Covers
 

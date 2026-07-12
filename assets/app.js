@@ -10,6 +10,7 @@
     let playingId = null;
     let selectedVideoId = null;
     let selectedInterviewId = null;
+    let selectedInterviewKey = localStorage.getItem("selectedInterviewKey") || "";
 
     let mediaType = "music";
     let appMode = "listen";
@@ -31,13 +32,28 @@
     const statsRangeAnchors = {week:localStorage.getItem("statsRangeEnd:week")||legacyStatsRangeEnd,month:localStorage.getItem("statsRangeEnd:month")||legacyStatsRangeEnd,year:localStorage.getItem("statsRangeEnd:year")||legacyStatsRangeEnd};
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
-    let appConfig = {editable:true, editRequiresPassword:false};
+    let activeTheme = localStorage.getItem("accentTheme") || "blue";
+    if((!localStorage.getItem("accentTheme") || activeTheme === "blue") && localStorage.getItem("themeDefault") !== "albumAdaptive"){
+      activeTheme = "albumAdaptive";
+      localStorage.setItem("accentTheme", activeTheme);
+      localStorage.setItem("themeDefault", "albumAdaptive");
+    }
+    let adaptiveThemeSource = "";
+    let appConfig = {
+      editable:true,
+      editRequiresPassword:false,
+      appName:"Taeyeon Media Player",
+      textTabLabel:"Interviews",
+      textDir:"Interviews",
+      preferredCategories:["Taeyeon Official","Taeyeon OST","Taeyeon Concerts","Taeyeon Live, Covers & Radio","Taeyeon Features & Collaborations","Girls' Generation","Girls' Generation-TTS","GOT the beat"],
+      preferredVideoCategories:["Taeyeon Concert"],
+    };
     let editToken = localStorage.getItem("editToken") || "";
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
     if(!STATS_RANGES.some(([value])=>value===statsPeriod)) statsPeriod = "week";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
     if(!["off","all","one"].includes(videoRepeatMode)) videoRepeatMode = "off";
-    let browseCollapsed = localStorage.getItem("browseCollapsed") === "true";
+    let browseCollapsed = true;
     let queue = [], queueIndex = -1, seeking = false, switchingAudioTrack = false;
     const knownDurations = new Map();
     let videoQueue = [], videoQueueIndex = -1;
@@ -46,10 +62,55 @@
     let restoredMusicState = false, lastQueueSaveAt = 0;
     let restoredVideoState = false, restoringVideoStateNow = false, lastVideoSaveAt = 0;
     let listeningStats = null, statsSession = null, lastStatsSentAt = 0;
+    let statsTopSongTrackIds = [];
     const STATS_MIN_SECONDS_TO_RECORD = 5;
-    let audioContext = null, analyserNode = null, audioSourceNode = null, visualizerData = null, visualizerFrame = null, visualizerMode = localStorage.getItem("visualizerMode") || "rain";
+    let savedVisualizerMode = localStorage.getItem("visualizerMode");
+    if((!savedVisualizerMode || savedVisualizerMode === "rain") && localStorage.getItem("visualizerDefault") !== "bars"){
+      savedVisualizerMode = "bars";
+      localStorage.setItem("visualizerMode", "bars");
+      localStorage.setItem("visualizerDefault", "bars");
+    }
+    let audioContext = null, analyserNode = null, audioSourceNode = null, visualizerData = null, visualizerFrame = null, visualizerMode = savedVisualizerMode || "bars";
     const selectedIds = new Set();
-    const MEDIA_TYPES = ["music", "video", "health", "interviews", "statsPage"];
+    const adaptiveThemeCache = new Map();
+    const MEDIA_TYPES = ["music", "video", "health", "interviews", "statsPage", "customize"];
+    const DEFAULT_THEME_ID = "albumAdaptive";
+    const DARK_ADAPTIVE_THEME_ID = "albumAdaptive";
+    const LIGHT_ADAPTIVE_THEME_ID = "albumAdaptiveLight";
+    const DEFAULT_ADAPTIVE_COLOR = {r:63, g:111, b:216};
+    const ADAPTIVE_THEME_IDS = new Set([DARK_ADAPTIVE_THEME_ID, LIGHT_ADAPTIVE_THEME_ID]);
+    const ADAPTIVE_STYLE_VARS = [
+      "--accent-rgb",
+      "--accent-strong-rgb",
+      "--accent-glow-rgb",
+      "--accent-sheen-rgb",
+      "--accent",
+      "--accent-strong",
+      "--accent-deep",
+      "--accent-link",
+      "--ok",
+      "--track-number-color",
+    ];
+    const THEME_CHOICES = [
+      {id:DARK_ADAPTIVE_THEME_ID, label:"Album Adaptive", note:"Dark theme", className:"theme-adaptive", swatchA:"#020617", swatchB:"#8db7ff", swatchRgb:"141,183,255"},
+      {id:LIGHT_ADAPTIVE_THEME_ID, label:"Album Adaptive Light", note:"Light theme", className:"theme-light-adaptive", swatchA:"#f8fafc", swatchB:"#8db7ff", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
+      {id:"blue", label:"Blue", note:"Dark theme", className:"", swatchA:"#3f6fd8", swatchB:"#6f99f2", swatchRgb:"63,111,216"},
+      {id:"purple", label:"Purple", note:"Dark theme", className:"theme-purple", swatchA:"#7c3aed", swatchB:"#a855f7", swatchRgb:"124,58,237"},
+      {id:"pink", label:"Pink", note:"Dark theme", className:"theme-pink", swatchA:"#db2777", swatchB:"#f472b6", swatchRgb:"219,39,119"},
+      {id:"green", label:"Green", note:"Dark theme", className:"theme-green", swatchA:"#059669", swatchB:"#34d399", swatchRgb:"5,150,105"},
+      {id:"gold", label:"Gold", note:"Dark theme", className:"theme-gold", swatchA:"#d97706", swatchB:"#fbbf24", swatchRgb:"217,119,6"},
+      {id:"cyan", label:"Cyan", note:"Dark theme", className:"theme-cyan", swatchA:"#0891b2", swatchB:"#22d3ee", swatchRgb:"8,145,178"},
+      {id:"red", label:"Red", note:"Dark theme", className:"theme-red", swatchA:"#dc2626", swatchB:"#f87171", swatchRgb:"220,38,38"},
+      {id:"silver", label:"Silver", note:"Dark theme", className:"theme-silver", swatchA:"#64748b", swatchB:"#e2e8f0", swatchRgb:"148,163,184"},
+      {id:"lavenderNight", label:"Lavender Night", note:"Dark theme", className:"theme-lavender-night", swatchA:"#111026", swatchB:"#c4b5fd", swatchRgb:"139,92,246"},
+      {id:"light", label:"Light", note:"Light theme", className:"theme-light", swatchA:"#f8fafc", swatchB:"#3b82f6", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
+      {id:"lightPink", label:"Light Pink", note:"Light theme", className:"theme-light-pink", swatchA:"#fff1f2", swatchB:"#f472b6", swatchRgb:"219,39,119", browserColor:"#fdf2f8"},
+      {id:"lightGreen", label:"Light Green", note:"Light theme", className:"theme-light-green", swatchA:"#ecfdf5", swatchB:"#34d399", swatchRgb:"5,150,105", browserColor:"#f0fdf4"},
+      {id:"lightPurple", label:"Light Purple", note:"Light theme", className:"theme-light-purple", swatchA:"#f5f3ff", swatchB:"#a855f7", swatchRgb:"124,58,237", browserColor:"#f5f3ff"},
+      {id:"iceBlueLight", label:"Ice Blue Light", note:"Light theme", className:"theme-light-ice", swatchA:"#eef7ff", swatchB:"#38bdf8", swatchRgb:"2,132,199", browserColor:"#f0f9ff"},
+      {id:"warmPaper", label:"Warm Paper", note:"Light theme", className:"theme-light-paper", swatchA:"#fff7ed", swatchB:"#f59e0b", swatchRgb:"217,119,6", browserColor:"#fff7ed"},
+    ];
+    if(!THEME_CHOICES.some(theme=>theme.id===activeTheme)) activeTheme = DEFAULT_THEME_ID;
     const MOBILE_BREAKPOINT = 860;
     const VIDEO_EMPTY_TITLE = "Select a video";
     const VIDEO_EMPTY_META = "Videos play locally from media\\Video.";
@@ -105,6 +166,7 @@
     const videoTabEl = byId("videoTab");
     const interviewsTabEl = byId("interviewsTab");
     const statsTabEl = byId("statsTab");
+    const customizeTabEl = byId("customizeTab");
     const healthTabEl = byId("healthTab");
     const videoGridEl = byId("videoGrid");
     const videoPlayerEl = byId("videoPlayer");
@@ -115,12 +177,14 @@
     const videoRepeatBtn = byId("videoRepeatBtn");
     const videoQueueDrawerEl = byId("videoQueueDrawer");
     const videoQueueListEl = byId("videoQueueList");
+    const videoQueueSummaryEl = byId("videoQueueSummary");
     const videoSortEl = byId("videoSort");
     const interviewListEl = byId("interviewList");
     const interviewItemsEl = byId("interviewItems");
     const interviewReaderEl = byId("interviewReader");
     const healthPanelEl = byId("healthPanel");
     const listeningStatsPanelEl = byId("listeningStatsPanel");
+    const themeGridEl = byId("themeGrid");
     // Text helpers and library grouping rules.
     function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
     function localDateString(dateValue=new Date()){
@@ -178,13 +242,66 @@
     function statsAtCurrentRange(){
       return statsSteppablePeriod() && statsViewedRangeStart() >= statsCurrentRangeStart();
     }
+    function statsAtToday(){
+      return (statsDay || localDateString()) >= localDateString();
+    }
+    function isFutureStatsDay(day){
+      return Boolean(day) && day > localDateString();
+    }
+    function clampStatsDay(day){
+      const today=localDateString();
+      return day && day < today ? day : today;
+    }
+    function statsPrimaryMetricLabel(){
+      if(statsPeriod==="all")return "all time";
+      if(statsPeriod==="day")return statsDay === localDateString() ? "today" : "selected day";
+      if(statsPeriod==="week")return statsAtCurrentRange() ? "this week" : "selected week";
+      if(statsPeriod==="month")return statsAtCurrentRange() ? "this month" : "selected month";
+      if(statsPeriod==="year")return statsAtCurrentRange() ? "this year" : "selected year";
+      return "this range";
+    }
     function statsRangeAnchor(period=statsPeriod){
-      return statsRangeAnchors[period] || localDateString();
+      const raw = statsRangeAnchors[period] || localDateString();
+      // Saved ranges can outlive the calendar date they were written on.
+      // Clamp those on load, while live future clicks below simply no-op.
+      const clamped = clampStatsRangeAnchor(period, raw);
+      if(clamped !== raw){
+        statsRangeAnchors[period] = clamped;
+        localStorage.setItem(`statsRangeEnd:${period}`, clamped);
+      }
+      return clamped;
+    }
+    function latestStatsAnchor(period){
+      const today = localDateString();
+      if(period==="week")return weekStart(today);
+      if(period==="month")return monthStart(today);
+      if(period==="year")return yearStart(today);
+      return today;
+    }
+    function statsRangeCandidateStart(period, value){
+      if(period==="week")return weekStart(value);
+      if(period==="month")return monthStart(value);
+      if(period==="year")return yearStart(value);
+      return value;
+    }
+    function isFutureStatsRangeAnchor(period, value){
+      return statsRangeCandidateStart(period, value) > latestStatsAnchor(period);
+    }
+    function clampStatsRangeAnchor(period, value){
+      const latest = latestStatsAnchor(period);
+      const candidateStart = statsRangeCandidateStart(period, value);
+      return candidateStart > latest ? latest : value;
     }
     function setStatsRangeAnchor(period, value){
-      statsRangeAnchors[period] = value;
-      localStorage.setItem(`statsRangeEnd:${period}`, value);
-      return value;
+      const clamped = clampStatsRangeAnchor(period, value || localDateString());
+      statsRangeAnchors[period] = clamped;
+      localStorage.setItem(`statsRangeEnd:${period}`, clamped);
+      return clamped;
+    }
+    function trySetStatsRangeAnchor(period, value){
+      if(isFutureStatsRangeAnchor(period, value))return false;
+      setStatsRangeAnchor(period, value);
+      return true;
     }
     function statsRangeDates(){
       const anchor = statsRangeAnchor();
@@ -205,8 +322,11 @@
       if(statsPeriod==="year")return start.slice(0,4);
       return start.slice(0,4)===end.slice(0,4) ? `${start.slice(5)} to ${end.slice(5)}` : `${start} to ${end}`;
     }
+    function statsMonthTitle(){
+      const date = dateFromText(statsRangeDates().start);
+      return date.toLocaleDateString(undefined, {month:"long", year:"numeric"});
+    }
     function shiftStatsRange(direction){
-      const today = localDateString();
       let anchor = statsPeriod==="week"
         ? shiftDate(statsRangeAnchor(), direction * 7)
         : statsPeriod==="month"
@@ -214,8 +334,7 @@
         : statsPeriod==="year"
         ? shiftYearAnchor(statsRangeAnchor(), direction)
         : shiftDate(statsRangeAnchor(), direction);
-      const candidateStart = statsPeriod==="week" ? weekStart(anchor) : statsPeriod==="month" ? monthStart(anchor) : statsPeriod==="year" ? yearStart(anchor) : anchor;
-      if(candidateStart > statsCurrentRangeStart())anchor = today;
+      if(isFutureStatsRangeAnchor(statsPeriod, anchor))return;
       setStatsRangeAnchor(statsPeriod, anchor);
       loadListeningStats();
     }
@@ -236,8 +355,21 @@
     function containsSearch(values){const q=searchQuery(); if(!q)return true; return values.some(value=>String(value||"").toLowerCase().includes(q));}
     function shortPathLabel(value){const text=String(value||"").replaceAll("\\\\","/"); if(!text||text==="All"||text==="(root)")return text||"(root)"; const parts=text.split("/").filter(Boolean); return parts.length?parts[parts.length-1]:text;}
     function groupLabel(name){return String(name||"").includes("/")?shortPathLabel(name):String(name||"");}
-    // Keep Taeyeon-focused folders above group/side-project folders in Browse.
-    function musicCategoryRank(name){const label=String(name||"").toLowerCase(); if(label==="all")return -100; if(label.includes("taeyeon official"))return 0; if(label.includes("taeyeon ost"))return 1; if(label.includes("taeyeon live")||label.includes("covers")||label.includes("radio"))return 2; if(label.includes("taeyeon concert"))return 3; if(label.includes("taeyeon features")||label.includes("collaboration"))return 4; if(label.includes("girls' generation-tts")||label.includes("girlsgeneration-tts"))return 20; if(label.includes("girls' generation")||label.includes("girls generation"))return 21; if(label.includes("got the beat"))return 22; if(label.includes("needs better copy"))return 90; return 50;}
+    function normalizeCategoryName(value){return String(value||"").toLowerCase().replace(/[^a-z0-9]+/g,"");}
+    function preferredCategoryRank(name, preferredCategories=appConfig.preferredCategories){
+      const label=normalizeCategoryName(name);
+      if(label==="all")return -100;
+      const configured=Array.isArray(preferredCategories)?preferredCategories:[];
+      const index=configured.findIndex(item=>{
+        const preferred=normalizeCategoryName(item);
+        return preferred && (label===preferred || label.includes(preferred) || preferred.includes(label));
+      });
+      if(index>=0)return index;
+      if(label.includes("needsbettercopy"))return 90;
+      if(label.includes("misc"))return 80;
+      return 50;
+    }
+    function musicCategoryRank(name){return preferredCategoryRank(name);}
     function musicCategoryCompare(a,b){const ar=musicCategoryRank(Array.isArray(a)?a[0]:a), br=musicCategoryRank(Array.isArray(b)?b[0]:b); if(ar!==br)return ar-br; const an=Array.isArray(a)?a[0]:a, bn=Array.isArray(b)?b[0]:b; return String(an).localeCompare(String(bn),undefined,{numeric:true,sensitivity:"base"});}
     function countLabel(count, singular, plural=`${singular}s`){return `${count} ${count===1?singular:plural}`;}
     function videoMetaSummary(v){const year=videoYear(v), format=String(v.format||"video").toUpperCase(); return `${year?`${year} - `:""}${format} - ${esc(v.size_mb)} MB`;}
@@ -253,7 +385,7 @@
     }
     function cycleMusicRepeat(){repeatMode=nextRepeatMode(repeatMode); localStorage.setItem("repeatMode",repeatMode); saveMusicState({force:true}); updateRepeatButtons();}
     function cycleVideoRepeat(){videoRepeatMode=nextRepeatMode(videoRepeatMode); localStorage.setItem("videoRepeatMode",videoRepeatMode); saveVideoState({force:true}); updateRepeatButtons();}
-    function updateRepeatButtons(){updateRepeatButton(repeatBtn, repeatMode); updateRepeatButton(byId("npRepeat"), repeatMode); updateRepeatButton(videoRepeatBtn, videoRepeatMode, "Video repeat");}
+    function updateRepeatButtons(){updateRepeatButton(repeatBtn, repeatMode); updateRepeatButton(byId("repeatQueue"), repeatMode); updateRepeatButton(videoRepeatBtn, videoRepeatMode, "Video repeat"); updateRepeatButton(byId("repeatVideoQueue"), videoRepeatMode, "Video repeat");}
     function isTypingTarget(target){return !!target?.closest?.("input, textarea, select, [contenteditable='true']");}
     function saveMusicState({force=false}={}){
       if(!force&&Date.now()-lastQueueSaveAt<3000)return;
@@ -430,8 +562,69 @@
     function statPillHtml(value, label){
       return `<span class="stat"><strong>${esc(value)}</strong> ${esc(label)}</span>`;
     }
-    function renderStatsPills(items){
-      statsEl.innerHTML = items.map(([value,label])=>statPillHtml(value,label)).join("");
+    function topIconButton(action, label, icon, extraClass=""){
+      return `<button class="secondary iconControl ${extraClass}" data-top-action="${esc(action)}" type="button" title="${esc(label)}" aria-label="${esc(label)}">${icon}</button>`;
+    }
+    function topQueueButton(action, label, count){
+      return `<button class="secondary queueCountButton" data-top-action="${esc(action)}" type="button" title="${esc(label)}" aria-label="${esc(label)}">${buttonIcon("queue")}<span>${esc(count)}</span></button>`;
+    }
+    function topControlBar(title, metricsHtml, controlsHtml){
+      statsEl.innerHTML = `<div class="topTabControls">${title?`<strong>${esc(title)}</strong>`:""}${metricsHtml?`<div class="topTabMetrics">${metricsHtml}</div>`:""}<div class="topTabActions">${controlsHtml}</div></div>`;
+      bindTopControls();
+    }
+    function albumViewOptions(){
+      return [["newest","Newest"],["oldest","Oldest"],["sections","Sections"],["years","Year"]].map(([value,label])=>`<option value="${value}" ${albumViewMode===value?"selected":""}>${label}</option>`).join("");
+    }
+    function renderMusicTopControls(){
+      const controls = [
+        topIconButton("musicBrowse","Browse",buttonIcon("browse"),"browseToggle"),
+        topQueueButton("musicQueue","Queue",queue.length),
+        `<select class="topSelect" data-top-action="albumView" title="Album view" aria-label="Album view">${albumViewOptions()}</select>`,
+        topIconButton("musicPlay","Play shown songs","&#9654;"),
+        topIconButton("musicShuffle","Shuffle shown songs","&#8644;"),
+      ].join("");
+      topControlBar("Music", "", controls);
+    }
+    function renderVideoTopControls(title){
+      const controls = [
+        topQueueButton("videoQueue","Video queue",videoQueue.length),
+        topIconButton("videoShuffle","Shuffle shown videos","&#8644;"),
+      ].join("");
+      topControlBar(title, "", controls);
+    }
+    function renderInterviewsTopControls(){
+      topControlBar("Interviews", "", [
+        topIconButton("interviewBrowse","Browse",buttonIcon("browse"),"browseToggle"),
+        topIconButton("interviewShuffle","Random interview","&#8644;"),
+      ].join(""));
+    }
+    function renderHealthTopControls(){
+      topControlBar("Library Health", "", topIconButton("healthRefresh","Refresh","&#8635;"));
+    }
+    async function refreshHealth(){
+      await loadTracks(true, selectedId);
+      if(!videosLoaded) await loadVideos();
+      if(mediaType==="health") renderHealth();
+    }
+    function bindTopControls(){
+      statsEl.querySelectorAll("[data-top-action]").forEach(control=>{
+        const action = control.dataset.topAction;
+        if(control.tagName === "SELECT"){
+          on(control,"change",()=>{if(action==="albumView")setAlbumViewMode(control.value);});
+          return;
+        }
+        on(control,"click",()=>{
+          if(action==="musicBrowse")toggleBrowse();
+          else if(action==="musicQueue"){toggleOpen(queueDrawerEl); renderQueue();}
+          else if(action==="musicPlay")playList(currentPlaybackList());
+          else if(action==="musicShuffle")playList(currentPlaybackList(),true);
+          else if(action==="videoQueue"){toggleOpen(videoQueueDrawerEl); renderVideoQueue();}
+          else if(action==="videoShuffle")playVideoList(videoFiltered(),true);
+          else if(action==="interviewBrowse")toggleBrowse();
+          else if(action==="interviewShuffle")shuffleInterview();
+          else if(action==="healthRefresh")refreshHealth();
+        });
+      });
     }
     /**
      * @brief Return inline SVG for small toolbar/action icons.
@@ -486,7 +679,7 @@
     function openMusicGroup(group){selectedGroup=group; selectedAlbum="All"; renderAll();}
     function openMusicAlbum(album){selectedAlbum=album; renderAll();}
     function closeMusicAlbum(){selectedAlbum="All"; renderAll();}
-    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); tableSortActive=false; selectedAlbum="All"; if(albumViewMode==="sections"||albumViewMode==="years")searchEl.value=""; renderAll();}
+    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); tableSortActive=false; selectedAlbum="All"; if(albumViewMode==="sections"||albumViewMode==="years"){selectedGroup="All"; searchEl.value="";} renderAll();}
     function openVideoGroup(group){selectedVideoGroup=group; selectedVideoAsFolder=false; renderVideoAll();}
     function openVideoFolder(folder){selectedVideoGroup=folder; selectedVideoAsFolder=true; renderVideoAll();}
     function closeVideoFolder(){selectedVideoGroup="All"; selectedVideoAsFolder=false; renderVideoAll();}
@@ -508,7 +701,7 @@
       );
       renderBrowseItems(groups, name=>name===selectedGroup, openMusicGroup);
     }
-    function renderStats(list){const total=tracks.length; if(appMode==="listen"){const albums=new Set(list.map(albumOf)).size; renderStatsPills([[total,"tracks"],[albums,"albums shown"],[list.length,"songs shown"]]); return;} const withArt=tracks.filter(t=>t.has_artwork).length, missing=list.filter(t=>t.missing_fields.length).length, review=list.filter(t=>t.review_flags.length).length; renderStatsPills([[total,"tracks"],[withArt,"with artwork"],[total-withArt,"missing artwork"],[missing,"shown missing data"],[review,"shown review"],[list.length,"shown"]]);}
+    function renderStats(){renderMusicTopControls();}
     function renderSortHeaders(){const showSort=appMode!=="listen"||selectedAlbum!=="All"||tableSortActive; document.querySelectorAll("th.sortable").forEach(th=>{const active=showSort&&th.dataset.sort===sortKey; th.classList.toggle("sorted",active); th.classList.toggle("asc",active&&sortDir==="asc"); th.classList.toggle("desc",active&&sortDir==="desc");});}
     function renderSelection(){selectedCountEl.textContent=`${selectedIds.size} selected`; const shown=filtered().map(t=>t.id); selectShownEl.checked=shown.length>0&&shown.every(id=>selectedIds.has(id)); const selectedArt=byId("saveSelectedArt"); if(selectedArt){selectedArt.disabled=selectedIds.size===0; selectedArt.textContent=selectedIds.size?`Replace ${selectedIds.size} Selected`:"Replace Selected Art";}}
     function badges(t){const bits=[]; if(t.missing_fields.length) bits.push(`<span class="pill missing">Missing: ${esc(t.missing_fields.join(", "))}</span>`); if(t.review_flags.length) bits.push(`<span class="pill missing">Review</span>`); return bits.join(" ");}
@@ -540,7 +733,49 @@
     function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
     function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), queueBtn=byId("albumQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(queueBtn)on(queueBtn,"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); if(edit)on(edit,"click",()=>enterEditMode());}
     function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); const homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumDetailActions();}
-    function renderRows(){const list=filtered(); const rowDates=list.map(t=>String(t.date||"").trim()); const albumSingleDate=selectedAlbum!=="All"&&rowDates.length>0&&rowDates.every(Boolean)&&new Set(rowDates).size===1; document.body.classList.toggle("albumSingleDate",albumSingleDate); viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup; renderStats(list); renderSortHeaders(); let lastAlbum=null; rowsEl.innerHTML=list.map(t=>{const album=albumOf(t); const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:""; lastAlbum=album; const trackNo=String(t.tracknumber||"").split("/")[0]; return `${divider}<tr data-id="${t.id}" class="${t.id===selectedId?"selected":""} ${t.id===playingId?"playingNow":""}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${t.id}" ${selectedIds.has(t.id)?"checked":""}></td><td>${t.has_artwork?`<img class="coverThumb" src="${smallArtUrl(t)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(t.title)}<br><span class="rowBadges"><span class="pill ${t.has_artwork?"":"missing"}">${t.has_artwork?"Art":"No art"}</span> ${badges(t)}</span></td><td class="artistCell">${esc(t.artist)}</td><td class="albumCell">${esc(t.album)}</td><td>${esc(t.date)}</td><td class="pathCell">${esc(t.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${t.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${t.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;}).join(""); rowsEl.querySelectorAll("tr[data-id]").forEach(r=>r.addEventListener("click",e=>{if(e.target.closest(".rowActions")||e.target.classList.contains("rowCheck"))return; const id=Number(r.dataset.id); if(appMode==="listen") playSingleTrack(id); else selectTrack(id);})); rowsEl.querySelectorAll(".playSong").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); playSingleTrack(Number(btn.dataset.id));})); rowsEl.querySelectorAll(".addSongQueue").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const t=tracks.find(x=>x.id===Number(btn.dataset.id)); if(t)addToMusicQueue([t]);})); rowsEl.querySelectorAll(".rowCheck").forEach(c=>c.addEventListener("change",()=>{const id=Number(c.dataset.id); c.checked?selectedIds.add(id):selectedIds.delete(id); renderSelection();})); renderSelection();}
+    function trackRowHtml(track, divider=""){
+      const trackNo=String(track.tracknumber||"").split("/")[0];
+      const art=track.has_artwork?`<img class="coverThumb" src="${smallArtUrl(track)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`;
+      const selectedClass=track.id===selectedId?"selected":"";
+      const playingClass=track.id===playingId?"playingNow":"";
+      return `${divider}<tr data-id="${track.id}" class="${selectedClass} ${playingClass}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${track.id}" ${selectedIds.has(track.id)?"checked":""}></td><td>${art}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(track.title)}<br><span class="rowBadges"><span class="pill ${track.has_artwork?"":"missing"}">${track.has_artwork?"Art":"No art"}</span> ${badges(track)}</span></td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="pathCell">${esc(track.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
+    }
+    function trackRowsHtml(list){
+      let lastAlbum=null;
+      return list.map(track=>{
+        const album=albumOf(track);
+        const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:"";
+        lastAlbum=album;
+        return trackRowHtml(track,divider);
+      }).join("");
+    }
+    function bindTrackRows(){
+      rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.addEventListener("click",event=>{
+        if(event.target.closest(".rowActions")||event.target.classList.contains("rowCheck"))return;
+        const id=Number(row.dataset.id);
+        if(appMode==="listen") playSingleTrack(id); else selectTrack(id);
+      }));
+      rowsEl.querySelectorAll(".playSong").forEach(btn=>btn.addEventListener("click",event=>{event.stopPropagation(); playSingleTrack(Number(btn.dataset.id));}));
+      rowsEl.querySelectorAll(".addSongQueue").forEach(btn=>btn.addEventListener("click",event=>{
+        event.stopPropagation();
+        const track=tracks.find(item=>item.id===Number(btn.dataset.id));
+        if(track)addToMusicQueue([track]);
+      }));
+      rowsEl.querySelectorAll(".rowCheck").forEach(check=>check.addEventListener("change",()=>{
+        const id=Number(check.dataset.id);
+        check.checked?selectedIds.add(id):selectedIds.delete(id);
+        renderSelection();
+      }));
+    }
+    function renderRows(){
+      const list=filtered();
+      viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup;
+      renderStats();
+      renderSortHeaders();
+      rowsEl.innerHTML=trackRowsHtml(list);
+      bindTrackRows();
+      renderSelection();
+    }
     function updatePlayingHighlights(){const t=tracks.find(x=>x.id===playingId); rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.classList.toggle("playingNow",Number(row.dataset.id)===playingId)); albumGridEl.querySelectorAll(".albumCard").forEach(card=>card.classList.toggle("playingNow",!!t&&card.dataset.album===albumOf(t)));}
     function renderAll(){renderGroups(); renderAlbums(); renderRows();}
     // Video browsing treats folders like albums. Cover images come from cover.jpg/png/webp.
@@ -550,15 +785,17 @@
     function videoCompare(a,b){const ay=videoYear(a), by=videoYear(b); if(ay!==by)return videoSort==="oldest"?ay-by:by-ay; return videoFileCompare(a,b);}
     function videoFiltered(){return videos.filter(v=>{const matchesGroup=selectedVideoGroup==="All" || (selectedVideoAsFolder?v.folder===selectedVideoGroup:(v.category===selectedVideoGroup || v.folder===selectedVideoGroup)); if(!matchesGroup)return false; return containsSearch([v.title,v.folder,v.category,v.path,v.format]);}).sort(videoFileCompare);}
     function isVideoCategory(group){return !selectedVideoAsFolder&&group!=="All"&&videos.some(v=>v.category===group);}
-    function videoCategoryRank(name){const label=String(name||"").toLowerCase(); if(label==="all")return -100; if(label.includes("taeyeon concert"))return 0; if(label.includes("taeyeon"))return 1; if(label.includes("girls")||label.includes("snsd"))return 20; if(label.includes("misc"))return 80; return 50;}
+    function videoCategoryRank(name){return preferredCategoryRank(name, appConfig.preferredVideoCategories);}
     function videoNameCompare(a,b){const ar=videoCategoryRank(a), br=videoCategoryRank(b); if(ar!==br)return ar-br; return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"});}
     function videoFolderSort(a,b){const ar=videoCategoryRank(a[0]), br=videoCategoryRank(b[0]); if(ar!==br)return ar-br; const ay=Math.max(...a[1].map(videoYear).filter(Boolean),0), by=Math.max(...b[1].map(videoYear).filter(Boolean),0); if(ay!==by)return videoSort==="oldest"?ay-by:by-ay; return a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"});}
     function videoFolderGroups(category){const groups=new Map(); const source=category==="All"?videos:videos.filter(v=>v.category===category); for(const v of source){const name=v.folder||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].filter(([name])=>name!=="(root)").sort(videoFolderSort);}
     function videoFolderActionsHtml(folder){return cardActionsHtml([{action:"play",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Play folder",icon:"&#9654;",primary:true},{action:"add",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Add folder to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Shuffle folder",icon:"&#8644;"}]);}
     function videoActionsHtml(id){return cardActionsHtml([{action:"play",actionAttr:"video-action",valueName:"id",value:id,label:"Play video",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-action",valueName:"id",value:id,label:"Add video to queue",icon:"+",add:true}]);}
     function videoGroupActionsHtml(group){return cardActionsHtml([{action:"play",actionAttr:"video-group-action",valueName:"group",value:group,label:"Play section",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-group-action",valueName:"group",value:group,label:"Add section to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"video-group-action",valueName:"group",value:group,label:"Shuffle section",icon:"&#8644;"}]);}
-    function setVideoGridMode(mode){videoGridEl.classList.toggle("videoFileMode",mode==="files"); videoGridEl.classList.toggle("videoCollectionMode",mode==="collections"); if(mode!=="files")videoGridEl.classList.remove("videoFolderOpen");}
+    function setVideoGridMode(mode){videoGridEl.classList.toggle("videoFileMode",mode==="files"); videoGridEl.classList.toggle("videoCollectionMode",mode==="collections"); if(mode!=="files"){videoGridEl.classList.remove("videoFolderOpen"); document.body.classList.remove("videoAlbumSelected");}}
     function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb">${cover?`<img src="${cover.folder_cover_url}" alt="" loading="lazy" decoding="async">`:""}</div>`;}
+    function videoFolderFormats(list){return [...new Set(list.map(v=>String(v.format||"").toUpperCase()).filter(Boolean))].sort();}
+    function videoFolderSizeMb(list){return list.reduce((sum,v)=>sum+(Number(v.size_mb)||0),0).toFixed(1);}
     function savedVideoResumeTime(){
       const current=Number(videoPlayerEl.currentTime);
       if(Number.isFinite(current)&&current>1)return current;
@@ -566,6 +803,7 @@
     }
     function videoResumeCardHtml(){
       if(!videoQueue.length||videoQueueIndex<0)return "";
+      if(selectedVideoId!==null && videoPlayerEl.currentSrc)return "";
       const v=videos.find(x=>x.id===selectedVideoId)||videos.find(x=>x.id===videoQueue[videoQueueIndex]);
       if(!v)return "";
       const resumeAt=savedVideoResumeTime();
@@ -575,13 +813,14 @@
       return `<div class="resumeCard videoResumeCard" data-action="video-resume" tabindex="0">${art}<div class="resumeCopy"><span class="resumeEyebrow">Continue watching</span><strong>${esc(v.title)}</strong><span>${esc(groupLabel(v.folder||v.category||"Video"))}${time}</span><span>${queueText} in queue</span></div><button class="playButton iconControl" data-action="video-resume-play" type="button" title="Resume video" aria-label="Resume video">&#9654;</button></div>`;
     }
     function videoCollectionCardHtml(name,list,kind="folder"){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const actions=kind==="section"?videoGroupActionsHtml(name):videoFolderActionsHtml(name); return `<div class="videoCard videoFolderCard" data-${kind}="${esc(name)}" title="${esc(name)}" role="button" tabindex="0">${actions}${videoFolderCoverHtml(list)}<div class="videoName">${esc(groupLabel(name))}</div><div class="videoMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""}</div></div>`;}
-    function videoFolderDetailHtml(name,list){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const size=list.reduce((sum,v)=>sum+(Number(v.size_mb)||0),0).toFixed(1); const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]); return `<section class="videoAlbumDetail noCover"><button id="videoBackToAlbums" class="secondary iconControl albumClose" title="Close video album" aria-label="Close video album">&#10005;</button><div class="videoAlbumInfo"><h2>${esc(groupLabel(name))}</h2><div class="videoAlbumMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""} - ${esc(size)} MB</div>${actions}</div></section>`;}
+    function videoFolderDetailHtml(name,list){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const formats=videoFolderFormats(list); const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]); return `<section class="albumDetail videoAlbumDetail visible"><div class="videoAlbumCoverWrap">${videoFolderCoverHtml(list,"albumDetailCover")}</div><div class="albumDetailInfo videoAlbumInfo"><h2>${esc(groupLabel(name))}</h2><div class="albumDetailMeta videoAlbumMeta">${years.length?esc(years.slice(0,3).join(", ")):""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"video")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(videoFolderSizeMb(list))} MB</span></div>${actions}</div></section>`;}
+    function videoAlbumRowsHtml(list){return `<div class="videoAlbumTrackList">${list.map((v,index)=>`<div class="videoAlbumVideoRow ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" role="button" tabindex="0"><div class="videoAlbumTrackNo">${index+1}</div><div class="videoAlbumTrackText"><div class="videoAlbumTrackTitle">${esc(v.title)}</div><div class="videoAlbumTrackMeta">${esc(videoMetaSummary(v))}${v.browser_friendly?"":" - may need conversion"}</div></div></div>`).join("")}</div>`;}
     function videoSectionGroups(){const groups=new Map(); for(const v of videos){const name=v.category||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].sort(videoFolderSort);}
     function bindVideoFolderCards(){videoGridEl.querySelectorAll("button[data-folder-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const folder=btn.dataset.folder, action=btn.dataset.folderAction; const list=videos.filter(v=>v.folder===folder).sort(videoFileCompare); if(action==="add"){addToVideoQueue(list); return;} playVideoList(list, action==="shuffle");})); videoGridEl.querySelectorAll(".videoFolderCard[data-folder]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; openVideoFolder(card.dataset.folder);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openVideoFolder(card.dataset.folder);});});}
     function bindVideoResumeCard(){const card=videoGridEl.querySelector(".videoResumeCard"); if(!card)return; const resume=()=>{const id=selectedVideoId||videoQueue[videoQueueIndex]; if(id!==undefined)selectVideo(id,{autoplay:true,resumeAt:savedVideoResumeTime()});}; card.addEventListener("click",e=>{if(e.target.closest("button"))return; resume();}); card.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault(); resume();}}); const btn=card.querySelector("button[data-action='video-resume-play']"); if(btn)btn.addEventListener("click",e=>{e.stopPropagation(); btn.blur(); resume();});}
     function bindVideoGroupActions(){videoGridEl.querySelectorAll("button[data-video-group-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const group=btn.dataset.group, action=btn.dataset.videoGroupAction; const list=videos.filter(v=>v.category===group).sort(videoFileCompare); if(action==="add"){addToVideoQueue(list); return;} playVideoList(list, action==="shuffle");})); videoGridEl.querySelectorAll(".videoFolderCard[data-section]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; openVideoGroup(card.dataset.section);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openVideoGroup(card.dataset.section);});});}
     function renderVideoSections(){if(selectedVideoGroup!=="All"||searchQuery()||videoSort!=="sections")return false; setVideoGridMode("collections"); const sections=videoSectionGroups(); const list=videoFiltered(); videoViewTitleEl.textContent="Video Sections"; renderVideoStats(list); videoGridEl.innerHTML=videoResumeCardHtml()+sections.map(([sectionName,items])=>{const folders=videoFolderGroups(sectionName); const cards=folders.length?folders.map(([folder,folderList])=>videoCollectionCardHtml(folder,folderList,"folder")).join(""):videoCollectionCardHtml(sectionName,items,"section"); return sectionGroupHtml(sectionName, `${items.length} video${items.length===1?"":"s"}`, cards, "videoHomeSection", "videoSectionGrid");}).join(""); bindVideoResumeCard(); bindVideoFolderCards(); bindVideoGroupActions(); return true;}
-    function renderVideoFolderCards(category){if(searchQuery())return false; const folders=videoFolderGroups(category); if(!folders.length)return false; setVideoGridMode("collections"); const allList=videoFiltered(); videoViewTitleEl.textContent=category==="All"?"Video Albums":groupLabel(category); renderVideoStats(allList); videoGridEl.innerHTML=videoResumeCardHtml()+folders.map(([folder,list])=>videoCollectionCardHtml(folder,list,"folder")).join(""); bindVideoResumeCard(); bindVideoFolderCards(); return true;}
+    function renderVideoFolderCards(category){if(searchQuery())return false; const folders=videoFolderGroups(category); if(!folders.length)return false; setVideoGridMode("collections"); const allList=videoFiltered(); videoViewTitleEl.textContent=category==="All"?"Videos":groupLabel(category); renderVideoStats(allList); videoGridEl.innerHTML=videoResumeCardHtml()+folders.map(([folder,list])=>videoCollectionCardHtml(folder,list,"folder")).join(""); bindVideoResumeCard(); bindVideoFolderCards(); return true;}
     function renderVideoGroups(){
       const counts = new Map();
       counts.set("All", videos.length);
@@ -593,22 +832,89 @@
       const groups = [...counts.entries()].sort((a,b)=>videoNameCompare(a[0],b[0]));
       renderBrowseItems(groups, name=>!selectedVideoAsFolder&&name===selectedVideoGroup, openVideoGroup);
     }
-    function renderVideoStats(list){const playable=videos.filter(v=>v.browser_friendly).length; const shownPlayable=list.filter(v=>v.browser_friendly).length; renderStatsPills([[videos.length,"videos"],[playable,"browser-friendly"],[videos.length-playable,"may need conversion"],[list.length,"shown"],[shownPlayable,"shown playable"]]);}
+    function renderVideoStats(){renderVideoTopControls(videoViewTitleEl.textContent || "Videos");}
     // Health is only for real cleanup issues, not personal preference warnings.
-    function renderHealthStats(summary){renderStatsPills([[summary.tracks,"tracks"],[summary.albums,"albums"],[summary.missingArt,"tracks missing art"],[summary.missingDate,"missing dates"],[summary.review,"review flags"],[summary.albumsMissingArt,"albums missing some art"]]);}
-    function renderInterviewStats(){renderStatsPills([[interviews.length,"interviews"],[new Set(interviews.map(i=>i.year).filter(Boolean)).size,"years"]]);}
+    function renderHealthStats(){renderHealthTopControls();}
+    function renderInterviewStats(){renderInterviewsTopControls();}
     function groupByAlbum(){const albums=new Map(); for(const t of tracks){const key=`${albumOf(t)}||${t.albumartist||t.artist||""}`; if(!albums.has(key))albums.set(key,{name:albumOf(t), artist:t.albumartist||t.artist||"", tracks:[]}); albums.get(key).tracks.push(t);} return [...albums.values()].sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:"base"}));}
     function healthItem(title,sub,action,label="Review"){return `<div class="healthItem"><div><div class="healthItemTitle">${esc(title)}</div><div class="healthItemSub">${esc(sub)}</div></div><button class="secondary" data-health-action="${esc(action)}">${esc(label)}</button></div>`;}
-    function healthTrackList(list,empty){return list.length?list.slice(0,10).map(t=>healthItem(t.title,`${t.artist||"Unknown artist"} - ${t.album||"No album"}`,`track:${t.id}`)).join(""):`<div class="healthItem"><div><div class="healthItemTitle">${esc(empty)}</div><div class="healthItemSub">Nice and tidy here.</div></div></div>`;}
-    function renderHealth(){const albums=groupByAlbum(); const missingArt=tracks.filter(t=>!t.has_artwork); const missingDate=tracks.filter(t=>!t.date); const needsReview=tracks.filter(t=>(t.review_flags||[]).length); const nonEnglish=tracks.filter(t=>(t.review_flags||[]).includes("non-English title")); const albumsMissingArt=albums.map(a=>{const missing=a.tracks.filter(t=>!t.has_artwork); return {...a, missingArt:missing.length};}).filter(a=>a.missingArt>0); const summary={tracks:tracks.length, albums:albums.length, missingArt:missingArt.length, missingDate:missingDate.length, review:needsReview.length, albumsMissingArt:albumsMissingArt.length}; renderHealthStats(summary); healthPanelEl.innerHTML=`<div class="healthHero"><div><h2>Library Health</h2><p>Cleanup overview for actual library problems. Review buttons open Edit Mode on the right album or track.</p></div><button id="healthRefresh" class="secondary">Refresh</button></div><div class="healthGrid"><div class="healthCard"><div class="healthNumber">${summary.missingArt}</div><div class="healthLabel">tracks missing artwork</div></div><div class="healthCard"><div class="healthNumber">${summary.missingDate}</div><div class="healthLabel">tracks missing dates</div></div><div class="healthCard"><div class="healthNumber">${summary.review}</div><div class="healthLabel">tracks needing review</div></div><div class="healthCard"><div class="healthNumber">${summary.albumsMissingArt}</div><div class="healthLabel">albums missing some artwork</div></div><div class="healthCard"><div class="healthNumber">${nonEnglish.length}</div><div class="healthLabel">non-English title flags</div></div></div><div class="healthSections"><section class="healthSection"><h3>Missing Artwork</h3><div class="healthList">${healthTrackList(missingArt,"No missing artwork found")}</div></section><section class="healthSection"><h3>Albums Missing Some Artwork</h3><div class="healthList">${albumsMissingArt.slice(0,12).map(a=>healthItem(a.name,`${a.missingArt} of ${a.tracks.length} tracks missing embedded artwork`, `album:${a.name}`,"Review")).join("")||`<div class="healthItem"><div><div class="healthItemTitle">No albums with missing artwork found</div><div class="healthItemSub">Every track appears to have embedded artwork.</div></div></div>`}</div></section><section class="healthSection"><h3>Missing Dates</h3><div class="healthList">${healthTrackList(missingDate,"No missing dates found")}</div></section><section class="healthSection"><h3>Needs Review</h3><div class="healthList">${healthTrackList(needsReview,"No review flags found")}</div></section><section class="healthSection"><h3>Non-English Title Flags</h3><div class="healthList">${healthTrackList(nonEnglish,"No non-English title flags found")}</div></section></div>`; on(byId("healthRefresh"),"click",()=>loadTracks(true,selectedId)); healthPanelEl.querySelectorAll("button[data-health-action]").forEach(btn=>on(btn,"click",()=>openHealthAction(btn.dataset.healthAction)));}
+    function healthTrackList(list){return list.slice(0,10).map(t=>healthItem(t.title,`${t.artist||"Unknown artist"} - ${t.album||"No album"}`,`track:${t.id}`)).join("");}
+    function healthCardHtml(count,label){return count>0?`<div class="healthCard"><div class="healthNumber">${count}</div><div class="healthLabel">${esc(label)}</div></div>`:"";}
+    function healthSectionHtml(title,body){return body?`<section class="healthSection"><h3>${esc(title)}</h3><div class="healthList">${body}</div></section>`:"";}
+    function healthVideoList(list){return list.slice(0,12).map(v=>healthItem(v.title,`${groupLabel(v.folder||v.category||"Videos")} - ${videoMetaSummary(v)}`,`video:${v.id}`,"View")).join("");}
+    function collectHealthIssues(){
+      const albums=groupByAlbum();
+      const missingArt=tracks.filter(t=>!t.has_artwork);
+      const missingDate=tracks.filter(t=>!t.date);
+      const needsReview=tracks.filter(t=>(t.review_flags||[]).length);
+      const nonEnglish=tracks.filter(t=>(t.review_flags||[]).includes("non-English title"));
+      const videosNeedingConversion=videos.filter(v=>!v.browser_friendly);
+      const albumsMissingArt=albums
+        .map(a=>({...a, missingArt:a.tracks.filter(t=>!t.has_artwork).length}))
+        .filter(a=>a.missingArt>0);
+      return {missingArt, missingDate, needsReview, nonEnglish, videosNeedingConversion, albumsMissingArt};
+    }
+    function healthCardsHtml(issues){
+      return [
+        healthCardHtml(issues.missingArt.length,"tracks missing artwork"),
+        healthCardHtml(issues.missingDate.length,"tracks missing dates"),
+        healthCardHtml(issues.needsReview.length,"tracks needing review"),
+        healthCardHtml(issues.albumsMissingArt.length,"albums missing some artwork"),
+        healthCardHtml(issues.nonEnglish.length,"non-English title flags"),
+        healthCardHtml(issues.videosNeedingConversion.length,"videos may not play on web")
+      ].join("");
+    }
+    function healthSectionsHtml(issues){
+      return [
+        healthSectionHtml("Missing Artwork",healthTrackList(issues.missingArt)),
+        healthSectionHtml("Albums Missing Some Artwork",issues.albumsMissingArt.slice(0,12).map(a=>healthItem(a.name,`${a.missingArt} of ${a.tracks.length} tracks missing embedded artwork`, `album:${a.name}`,"Review")).join("")),
+        healthSectionHtml("Missing Dates",healthTrackList(issues.missingDate)),
+        healthSectionHtml("Needs Review",healthTrackList(issues.needsReview)),
+        healthSectionHtml("Non-English Title Flags",healthTrackList(issues.nonEnglish)),
+        healthSectionHtml("Videos That May Not Play on Web",healthVideoList(issues.videosNeedingConversion))
+      ].join("");
+    }
+    function renderHealth(){
+      const issues=collectHealthIssues();
+      const cards=healthCardsHtml(issues);
+      const sections=healthSectionsHtml(issues);
+      renderHealthStats();
+      healthPanelEl.innerHTML=`<div class="healthHero"><div><h2>Library Health</h2><p>Cleanup overview for actual library problems. Review buttons open Edit Mode on the right album or track.</p></div><button id="healthRefresh" class="secondary">Refresh</button></div>${cards?`<div class="healthGrid">${cards}</div>`:`<div class="healthEmpty">No health issues found.</div>`}${sections?`<div class="healthSections">${sections}</div>`:""}`;
+      on(byId("healthRefresh"),"click",refreshHealth);
+      healthPanelEl.querySelectorAll("button[data-health-action]").forEach(btn=>on(btn,"click",()=>openHealthAction(btn.dataset.healthAction)));
+    }
     async function openMusicReview(albumName, trackId=null){if(!(await unlockEditMode()))return; selectedGroup="All"; selectedAlbum=albumName||"All"; searchEl.value=""; musicFilterEl.value="all"; setAppMode("edit"); setMediaType("music"); if(trackId!==null){selectTrack(trackId); const row=rowsEl.querySelector(`tr[data-id="${trackId}"]`); if(row)row.scrollIntoView({block:"center",behavior:"smooth"});}else{albumGridEl.scrollIntoView({block:"start",behavior:"smooth"});}}
-    function openHealthAction(action){if(action.startsWith("track:")){const id=Number(action.slice(6)); const t=tracks.find(x=>x.id===id); if(t)openMusicReview(albumOf(t),id); return;} if(action.startsWith("album:")){openMusicReview(action.slice(6)); return;}}
+    function openHealthAction(action){
+      if(action.startsWith("track:")){
+        const id=Number(action.slice(6));
+        const track=tracks.find(t=>t.id===id);
+        if(track)openMusicReview(albumOf(track),id);
+        return;
+      }
+      if(action.startsWith("album:")){
+        openMusicReview(action.slice(6));
+        return;
+      }
+      if(action.startsWith("video:")){
+        const id=Number(action.slice(6));
+        const video=videos.find(v=>v.id===id);
+        if(!video)return;
+        selectedVideoGroup=video.folder||video.category||"All";
+        selectedVideoAsFolder=Boolean(video.folder);
+        setMediaType("video");
+        selectVideo(id,{autoplay:false});
+      }
+    }
     // Interviews are plain text files, grouped by their cleaned source/title.
-    function renderInterviews(){renderInterviewStats(); const ordered=[...interviews].filter(i=>containsSearch([i.source,i.year,i.filename,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"})); if((selectedInterviewId===null||!ordered.some(i=>i.id===selectedInterviewId))&&ordered.length)selectedInterviewId=ordered[0].id; interviewItemsEl.innerHTML=ordered.length?ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join(""):`<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`; interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{selectedInterviewId=Number(btn.dataset.id); setOpen(interviewListEl,false); renderInterviews();})); const current=interviews.find(i=>i.id===selectedInterviewId&&ordered.some(match=>match.id===i.id))||ordered[0]; if(!current){interviewReaderEl.innerHTML=`<h2>Interviews</h2><div class="interviewReaderMeta">No matching text files found.</div>`; return;} interviewReaderEl.innerHTML=`<h2>${esc(current.source)}</h2><div class="interviewReaderMeta">${esc(current.year||"Unknown year")}</div><div class="interviewText">${esc(current.content)}</div>`;}
+    function interviewKey(i){return i ? (i.path || i.filename || `${i.source}|${i.year}|${i.title}`) : "";}
+    function saveSelectedInterview(i){selectedInterviewId=i?.id ?? null; selectedInterviewKey=interviewKey(i); if(selectedInterviewKey)localStorage.setItem("selectedInterviewKey", selectedInterviewKey);}
+    function filteredInterviews(){return [...interviews].filter(i=>containsSearch([i.source,i.year,i.filename,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"}));}
+    function shuffleInterview(){const ordered=filteredInterviews(); if(!ordered.length)return; const currentIndex=ordered.findIndex(i=>i.id===selectedInterviewId); let nextIndex=Math.floor(Math.random()*ordered.length); if(ordered.length>1&&nextIndex===currentIndex)nextIndex=(nextIndex+1)%ordered.length; saveSelectedInterview(ordered[nextIndex]); setOpen(interviewListEl,false); renderInterviews(); interviewReaderEl.scrollTo({top:0,behavior:"smooth"});}
+    function renderInterviews(){renderInterviewStats(); const ordered=filteredInterviews(); if(ordered.length){const selectedStillVisible=ordered.find(i=>i.id===selectedInterviewId); const remembered=selectedInterviewKey?ordered.find(i=>interviewKey(i)===selectedInterviewKey):null; if(!selectedStillVisible)saveSelectedInterview(remembered||ordered[0]);} interviewItemsEl.innerHTML=ordered.length?ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join(""):`<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`; interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{const picked=interviews.find(i=>i.id===Number(btn.dataset.id)); saveSelectedInterview(picked); setOpen(interviewListEl,false); renderInterviews();})); const current=interviews.find(i=>i.id===selectedInterviewId&&ordered.some(match=>match.id===i.id))||ordered[0]; if(!current){interviewReaderEl.innerHTML=`<h2>${esc(appConfig.textTabLabel||"Interviews")}</h2><div class="interviewReaderMeta">No matching text files found.</div>`; return;} interviewReaderEl.innerHTML=`<h2>${esc(current.source)}</h2><div class="interviewReaderMeta">${esc(current.year||"Unknown year")}</div><div class="interviewText">${esc(current.content)}</div>`;}
     function videoThumb(v){if(v.has_thumbnail)return `<img src="${v.thumbnail_url}" alt="" loading="lazy" decoding="async">`; return v.browser_friendly?"Preview":esc(String(v.format||"video").toUpperCase());}
     function isVideoFolder(group){return group!=="All"&&(selectedVideoAsFolder||!isVideoCategory(group))&&videos.some(v=>v.folder===group);}
     function bindVideoFolderDetail(list){const play=byId("videoFolderPlay"), shuffleBtn=byId("videoFolderShuffle"), add=byId("videoFolderAdd"), back=byId("videoBackToAlbums"); if(play)on(play,"click",()=>playVideoList(list)); if(shuffleBtn)on(shuffleBtn,"click",()=>playVideoList(list,true)); if(add)on(add,"click",()=>addToVideoQueue(list)); if(back)on(back,"click",closeVideoFolder);}
-    function renderVideos(){if(renderVideoSections())return; if((selectedVideoGroup==="All"||isVideoCategory(selectedVideoGroup))&&renderVideoFolderCards(selectedVideoGroup))return; setVideoGridMode("files"); const list=videoFiltered(); const folderOpen=isVideoFolder(selectedVideoGroup); videoGridEl.classList.toggle("videoFolderOpen",folderOpen); videoViewTitleEl.textContent=selectedVideoGroup==="All"?"All Videos":groupLabel(selectedVideoGroup); renderVideoStats(list); const detail=folderOpen?videoFolderDetailHtml(selectedVideoGroup,list):""; videoGridEl.innerHTML=(folderOpen?"":videoResumeCardHtml())+detail+(list.length?list.map(v=>`<div class="videoCard ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" title="${esc(v.path)}" role="button" tabindex="0">${videoActionsHtml(v.id)}<div class="videoName">${esc(v.title)}</div><div class="videoMeta">${videoMetaSummary(v)}</div>${v.browser_friendly?"":`<div class="videoWarn">Browser may not play this format</div>`}</div>`).join(""):`<div class="videoCard"><div class="videoName">Nothing matched</div><div class="videoMeta">Try a different folder.</div></div>`); bindVideoResumeCard(); if(folderOpen)bindVideoFolderDetail(list); videoGridEl.querySelectorAll("button[data-video-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const id=Number(btn.dataset.id), action=btn.dataset.videoAction; if(action==="add"){const v=videos.find(x=>x.id===id); if(v)addToVideoQueue([v]); return;} playVideoList(list,false,id);})); videoGridEl.querySelectorAll(".videoCard[data-id]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; playVideoList(list,false,Number(card.dataset.id));}); card.addEventListener("keydown",e=>{if(e.key==="Enter")playVideoList(list,false,Number(card.dataset.id));});});}
+    function renderVideos(){if(renderVideoSections())return; if((selectedVideoGroup==="All"||isVideoCategory(selectedVideoGroup))&&renderVideoFolderCards(selectedVideoGroup))return; setVideoGridMode("files"); const list=videoFiltered(); const folderOpen=isVideoFolder(selectedVideoGroup); document.body.classList.toggle("videoAlbumSelected",folderOpen); videoGridEl.classList.toggle("videoFolderOpen",folderOpen); videoViewTitleEl.textContent=selectedVideoGroup==="All"?"All Videos":groupLabel(selectedVideoGroup); renderVideoStats(list); const detail=folderOpen?videoFolderDetailHtml(selectedVideoGroup,list):""; const closeButton=folderOpen?`<button id="videoBackToAlbums" class="secondary iconControl videoAlbumClose overlayClose" title="Close video album" aria-label="Close video album">&#10005;</button>`:""; const filesHtml=folderOpen?videoAlbumRowsHtml(list):(list.length?list.map(v=>`<div class="videoCard ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" title="${esc(v.path)}" role="button" tabindex="0">${videoActionsHtml(v.id)}<div class="videoName">${esc(v.title)}</div><div class="videoMeta">${videoMetaSummary(v)}</div>${v.browser_friendly?"":`<div class="videoWarn">Browser may not play this format</div>`}</div>`).join(""):`<div class="videoCard"><div class="videoName">Nothing matched</div><div class="videoMeta">Try a different folder.</div></div>`); videoGridEl.innerHTML=(folderOpen?"":videoResumeCardHtml())+closeButton+detail+filesHtml; bindVideoResumeCard(); if(folderOpen)bindVideoFolderDetail(list); videoGridEl.querySelectorAll("button[data-video-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const id=Number(btn.dataset.id), action=btn.dataset.videoAction; if(action==="add"){const v=videos.find(x=>x.id===id); if(v)addToVideoQueue([v]); return;} playVideoList(list,false,id);})); videoGridEl.querySelectorAll(".videoCard[data-id], .videoAlbumVideoRow[data-id]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions")||e.target.closest(".rowActions"))return; playVideoList(list,false,Number(card.dataset.id));}); card.addEventListener("keydown",e=>{if(e.key==="Enter")playVideoList(list,false,Number(card.dataset.id));});});}
     function renderVideoAll(){renderVideoGroups(); renderVideos();}
     function playVideoList(list, randomize=false, startId=null){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; videoQueue=playable.map(v=>v.id); videoQueueIndex=startId===null?0:Math.max(0,videoQueue.indexOf(startId)); saveVideoState({force:true}); playVideoQueueIndex(videoQueueIndex);}
     function addToVideoQueue(list){const ids=list.map(v=>v.id).filter(id=>!videoQueue.includes(id)); if(!ids.length)return; const wasEmpty=videoQueue.length===0; videoQueue.push(...ids); showQueueToast(ids.length===1?"Added video to queue":`Added ${ids.length} videos to queue`); pulseQueueButton(videoQueueToggleEl); if(wasEmpty){videoQueueIndex=0; saveVideoState({force:true}); playVideoQueueIndex(0);} else {saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}}
@@ -616,7 +922,8 @@
     function selectVideo(id,{autoplay=true,resumeAt=null,persist=true}={}){const v=videos.find(x=>x.id===id); if(!v)return; player.pause(); selectedVideoId=id; const seekAfterLoad=()=>{const seconds=Number(resumeAt)||0; if(seconds>0&&Number.isFinite(videoPlayerEl.duration))videoPlayerEl.currentTime=Math.min(seconds,Math.max(0,videoPlayerEl.duration-.25));}; videoPlayerEl.addEventListener("loadedmetadata",seekAfterLoad,{once:true}); videoPlayerEl.src=v.video_url; videoPlayerEl.load(); if(autoplay){const p=videoPlayerEl.play(); if(p&&typeof p.catch==="function")p.catch(()=>{});}else videoPlayerEl.pause(); videoTitleEl.textContent=v.title; videoMetaEl.textContent=`${videoMetaSummary(v)}${v.browser_friendly?"":" - may need conversion for browser playback"}`; if(persist)saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos();}
     function removeVideoQueueIndex(index){if(index<0||index>=videoQueue.length)return; videoQueue.splice(index,1); if(index<videoQueueIndex)videoQueueIndex--; else if(index===videoQueueIndex){if(videoQueue.length){videoQueueIndex=Math.min(index,videoQueue.length-1); saveVideoState({force:true}); playVideoQueueIndex(videoQueueIndex);}else{videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); renderVideos();}} saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}
     function moveVideoQueueItem(fromIndex,toIndex){if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=videoQueue.length||toIndex>=videoQueue.length)return; const current=videoQueue[videoQueueIndex]; const [item]=videoQueue.splice(fromIndex,1); videoQueue.splice(toIndex,0,item); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}
-    function updateVideoQueueLabel(){videoQueueToggleEl.innerHTML=`${buttonIcon("queue")}<span>${videoQueue.length}</span>`;}
+    function videoQueueSummaryText(){return `${videoQueue.length} video${videoQueue.length===1?"":"s"}`;}
+    function updateVideoQueueLabel(){videoQueueToggleEl.innerHTML=`${buttonIcon("queue")}<span>${videoQueue.length}</span>`; if(videoQueueSummaryEl)videoQueueSummaryEl.textContent=videoQueueSummaryText(); updateTopQueueCounts();}
     function videoQueueArtHtml(v){
       return v.has_folder_cover
         ? `<img src="${v.folder_cover_url}" alt="" loading="lazy" decoding="async">`
@@ -634,7 +941,8 @@
         ? videoQueue.map((id,index)=>{
             const v = videos.find(x=>x.id===id);
             if(!v) return "";
-            return queueItemHtml({
+            const label = index===videoQueueIndex ? `<div class="queueSectionLabel">Now Playing</div>` : index===videoQueueIndex+1 ? `<div class="queueSectionLabel">Up Next</div>` : "";
+            return label + queueItemHtml({
               index,
               active:index===videoQueueIndex,
               draggable:true,
@@ -663,20 +971,23 @@
     function fillRounded(ctx,x,y,width,height,radius){if(ctx.roundRect){ctx.beginPath(); ctx.roundRect(x,y,width,height,radius); ctx.fill();}else{ctx.fillRect(x,y,width,height);}}
     function prepVisualizer(canvas){const ctx=canvas.getContext("2d"); if(!ctx||!analyserNode||!visualizerData)return null; const rect=canvas.getBoundingClientRect(); const dpr=window.devicePixelRatio||1; const width=Math.max(1,Math.round(rect.width*dpr)), height=Math.max(1,Math.round(rect.height*dpr)); if(canvas.width!==width||canvas.height!==height){canvas.width=width; canvas.height=height;} analyserNode.getByteFrequencyData(visualizerData); ctx.clearRect(0,0,width,height); return {ctx,dpr,width,height};}
     function visualizerValue(start,end){let sum=0; for(let j=start;j<end;j++)sum+=visualizerData[j]; return sum/(end-start)/255;}
-    function drawBars(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const gap=Math.max(2*dpr, width/(count*5)); const barWidth=(width-gap*(count-1))/count; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const barHeight=Math.max(3*dpr, value*height*.92); const x=i*(barWidth+gap); const y=height-barHeight; const gradient=ctx.createLinearGradient(0,y,0,height); gradient.addColorStop(0,"#8db7ff"); gradient.addColorStop(1,"#3f6fd8"); ctx.fillStyle=gradient; fillRounded(ctx,x,y,barWidth,barHeight,Math.min(barWidth/2,4*dpr));}}
-    function drawWave(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const mid=height*.55; ctx.lineWidth=3*dpr; ctx.lineCap="round"; const gradient=ctx.createLinearGradient(0,0,width,0); gradient.addColorStop(0,"#3f6fd8"); gradient.addColorStop(.5,"#9cc4ff"); gradient.addColorStop(1,"#3f6fd8"); ctx.strokeStyle=gradient; ctx.beginPath(); for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i/(count-1))*width; const y=mid-Math.sin(i*.55+performance.now()/260)*value*height*.32-value*height*.22; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke();}
-    function drawDots(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cols=count, rows=4, gap=width/(cols+1); for(let i=0;i<cols;i++){const start=Math.floor((i/cols)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/cols)*visualizerData.length*.72)); const value=visualizerValue(start,end); const lit=Math.max(1,Math.round(value*rows)); for(let row=0;row<rows;row++){const alpha=row<lit?.35+value*.65:.08; ctx.fillStyle=`rgba(141,183,255,${alpha})`; ctx.beginPath(); ctx.arc((i+1)*gap,height-(row+1)*(height/(rows+1)),Math.max(2.5*dpr,4*dpr*value),0,Math.PI*2); ctx.fill();}}}
-    function drawMirror(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const mid=height*.5, gap=Math.max(2*dpr,width/(count*5)), barWidth=(width-gap*(count-1))/count; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const barHeight=Math.max(2*dpr,value*height*.45); const x=i*(barWidth+gap); const gradient=ctx.createLinearGradient(0,mid-barHeight,0,mid+barHeight); gradient.addColorStop(0,"rgba(156,196,255,.95)"); gradient.addColorStop(.5,"rgba(63,111,216,.45)"); gradient.addColorStop(1,"rgba(156,196,255,.95)"); ctx.fillStyle=gradient; fillRounded(ctx,x,mid-barHeight,barWidth,barHeight*2,Math.min(barWidth/2,4*dpr));}}
-    function drawRing(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cx=width/2, cy=height/2, base=Math.min(width,height)*.18; let total=0; for(let i=0;i<visualizerData.length*.72;i++)total+=visualizerData[i]; const avg=total/(visualizerData.length*.72)/255; ctx.lineCap="round"; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const angle=(i/count)*Math.PI*2+performance.now()/2400; const inner=base+avg*height*.12; const outer=inner+value*height*.26; ctx.strokeStyle=`rgba(141,183,255,${.22+value*.72})`; ctx.lineWidth=Math.max(2*dpr,3*dpr*value); ctx.beginPath(); ctx.moveTo(cx+Math.cos(angle)*inner,cy+Math.sin(angle)*inner); ctx.lineTo(cx+Math.cos(angle)*outer,cy+Math.sin(angle)*outer); ctx.stroke();} ctx.strokeStyle="rgba(63,111,216,.28)"; ctx.lineWidth=1*dpr; ctx.beginPath(); ctx.arc(cx,cy,base+avg*height*.12,0,Math.PI*2); ctx.stroke();}
-    function drawMountain(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,width,height}=state; const ground=height*.9; const gradient=ctx.createLinearGradient(0,height*.12,0,ground); gradient.addColorStop(0,"rgba(156,196,255,.55)"); gradient.addColorStop(.55,"rgba(63,111,216,.26)"); gradient.addColorStop(1,"rgba(63,111,216,.02)"); ctx.fillStyle=gradient; ctx.beginPath(); ctx.moveTo(0,ground); for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i/(count-1))*width; const y=ground-value*height*.78-Math.sin(i*.5+performance.now()/500)*height*.035; ctx.lineTo(x,y);} ctx.lineTo(width,ground); ctx.closePath(); ctx.fill();}
-    function drawOrbit(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cx=width/2, cy=height/2; let bass=0; for(let i=0;i<10&&i<visualizerData.length;i++)bass+=visualizerData[i]; bass=bass/Math.min(10,visualizerData.length)/255; const base=Math.min(width,height)*(.18+bass*.18), time=performance.now()/900; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const angle=(i/count)*Math.PI*2+time*(i%2?1:-.7); const radius=base+value*height*.23; ctx.fillStyle=`rgba(141,183,255,${.18+value*.65})`; ctx.beginPath(); ctx.arc(cx+Math.cos(angle)*radius,cy+Math.sin(angle)*radius,Math.max(2*dpr,5*dpr*value),0,Math.PI*2); ctx.fill();}}
-    function drawRain(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const time=performance.now()/38; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i+.5)*(width/count); const drops=Math.max(1,Math.round(value*4)); for(let d=0;d<drops;d++){const y=(time*(.45+value)+i*17+d*29)%height; ctx.fillStyle=`rgba(141,183,255,${.12+value*.55})`; fillRounded(ctx,x-1.5*dpr,y,3*dpr,Math.max(5*dpr,18*dpr*value),2*dpr);}}}
+    function themeColor(name, fallback){return themeCssValue(name, fallback);}
+    function themeRgba(name, fallback, alpha){return `rgba(${themeCssValue(name, fallback)},${alpha})`;}
+    function usingLightTheme(){return [...document.body.classList].some(name=>name.includes("theme-light"));}
+    function drawBars(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const gap=Math.max(2*dpr, width/(count*5)); const barWidth=(width-gap*(count-1))/count; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const barHeight=Math.max(3*dpr, value*height*.92); const x=i*(barWidth+gap); const y=height-barHeight; const gradient=ctx.createLinearGradient(0,y,0,height); gradient.addColorStop(0,themeColor("--accent-link","#8db7ff")); gradient.addColorStop(1,themeColor("--accent","#3f6fd8")); ctx.fillStyle=gradient; fillRounded(ctx,x,y,barWidth,barHeight,Math.min(barWidth/2,4*dpr));}}
+    function drawWave(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const mid=height*.55; ctx.lineWidth=3*dpr; ctx.lineCap="round"; const gradient=ctx.createLinearGradient(0,0,width,0); gradient.addColorStop(0,themeColor("--accent","#3f6fd8")); gradient.addColorStop(.5,themeColor("--accent-link","#9cc4ff")); gradient.addColorStop(1,themeColor("--accent","#3f6fd8")); ctx.strokeStyle=gradient; ctx.beginPath(); for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i/(count-1))*width; const y=mid-Math.sin(i*.55+performance.now()/260)*value*height*.32-value*height*.22; if(i===0)ctx.moveTo(x,y); else ctx.lineTo(x,y);} ctx.stroke();}
+    function drawDots(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cols=count, rows=4, gap=width/(cols+1); for(let i=0;i<cols;i++){const start=Math.floor((i/cols)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/cols)*visualizerData.length*.72)); const value=visualizerValue(start,end); const lit=Math.max(1,Math.round(value*rows)); for(let row=0;row<rows;row++){const alpha=row<lit?.35+value*.65:.08; ctx.fillStyle=themeRgba("--accent-sheen-rgb","141,183,255",alpha); ctx.beginPath(); ctx.arc((i+1)*gap,height-(row+1)*(height/(rows+1)),Math.max(2.5*dpr,4*dpr*value),0,Math.PI*2); ctx.fill();}}}
+    function drawMirror(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const mid=height*.5, gap=Math.max(2*dpr,width/(count*5)), barWidth=(width-gap*(count-1))/count; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const barHeight=Math.max(2*dpr,value*height*.45); const x=i*(barWidth+gap); const gradient=ctx.createLinearGradient(0,mid-barHeight,0,mid+barHeight); gradient.addColorStop(0,themeRgba("--accent-sheen-rgb","156,196,255",.95)); gradient.addColorStop(.5,themeRgba("--accent-rgb","63,111,216",.45)); gradient.addColorStop(1,themeRgba("--accent-sheen-rgb","156,196,255",.95)); ctx.fillStyle=gradient; fillRounded(ctx,x,mid-barHeight,barWidth,barHeight*2,Math.min(barWidth/2,4*dpr));}}
+    function drawRing(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cx=width/2, cy=height/2, base=Math.min(width,height)*.18; let total=0; for(let i=0;i<visualizerData.length*.72;i++)total+=visualizerData[i]; const avg=total/(visualizerData.length*.72)/255; ctx.lineCap="round"; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const angle=(i/count)*Math.PI*2+performance.now()/2400; const inner=base+avg*height*.12; const outer=inner+value*height*.26; ctx.strokeStyle=themeRgba("--accent-sheen-rgb","141,183,255",.22+value*.72); ctx.lineWidth=Math.max(2*dpr,3*dpr*value); ctx.beginPath(); ctx.moveTo(cx+Math.cos(angle)*inner,cy+Math.sin(angle)*inner); ctx.lineTo(cx+Math.cos(angle)*outer,cy+Math.sin(angle)*outer); ctx.stroke();} ctx.strokeStyle=themeRgba("--accent-rgb","63,111,216",.28); ctx.lineWidth=1*dpr; ctx.beginPath(); ctx.arc(cx,cy,base+avg*height*.12,0,Math.PI*2); ctx.stroke();}
+    function drawMountain(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,width,height}=state; const ground=height*.9; const gradient=ctx.createLinearGradient(0,height*.12,0,ground); gradient.addColorStop(0,themeRgba("--accent-sheen-rgb","156,196,255",.55)); gradient.addColorStop(.55,themeRgba("--accent-rgb","63,111,216",.26)); gradient.addColorStop(1,themeRgba("--accent-rgb","63,111,216",.02)); ctx.fillStyle=gradient; ctx.beginPath(); ctx.moveTo(0,ground); for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i/(count-1))*width; const y=ground-value*height*.78-Math.sin(i*.5+performance.now()/500)*height*.035; ctx.lineTo(x,y);} ctx.lineTo(width,ground); ctx.closePath(); ctx.fill();}
+    function drawOrbit(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const cx=width/2, cy=height/2; let bass=0; for(let i=0;i<10&&i<visualizerData.length;i++)bass+=visualizerData[i]; bass=bass/Math.min(10,visualizerData.length)/255; const base=Math.min(width,height)*(.18+bass*.18), time=performance.now()/900; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const angle=(i/count)*Math.PI*2+time*(i%2?1:-.7); const radius=base+value*height*.23; ctx.fillStyle=themeRgba("--accent-sheen-rgb","141,183,255",.18+value*.65); ctx.beginPath(); ctx.arc(cx+Math.cos(angle)*radius,cy+Math.sin(angle)*radius,Math.max(2*dpr,5*dpr*value),0,Math.PI*2); ctx.fill();}}
+    function drawRain(canvas, count){const state=prepVisualizer(canvas); if(!state)return; const {ctx,dpr,width,height}=state; const light=usingLightTheme(); const time=performance.now()/38; for(let i=0;i<count;i++){const start=Math.floor((i/count)*visualizerData.length*.72); const end=Math.max(start+1,Math.floor(((i+1)/count)*visualizerData.length*.72)); const value=visualizerValue(start,end); const x=(i+.5)*(width/count); const drops=Math.max(1,Math.round(value*4)); for(let d=0;d<drops;d++){const y=(time*(.45+value)+i*17+d*29)%height; ctx.fillStyle=light?themeRgba("--accent-rgb","63,111,216",.28+value*.62):themeRgba("--accent-sheen-rgb","141,183,255",.12+value*.55); fillRounded(ctx,x-(light?1.75:1.5)*dpr,y,(light?3.5:3)*dpr,Math.max(6*dpr,18*dpr*value),2*dpr);}}}
     /** @brief Draw the active Now Playing visualizer frame. */
     function drawVisualizers(){visualizerFrame=null; if(player.paused||player.ended){stopVisualizer(); return;} const big=byId("nowPlayingVisualizer"); if(big){if(visualizerMode==="wave")drawWave(big,44); else if(visualizerMode==="dots")drawDots(big,32); else if(visualizerMode==="mirror")drawMirror(big,32); else if(visualizerMode==="ring")drawRing(big,48); else if(visualizerMode==="mountain")drawMountain(big,48); else if(visualizerMode==="orbit")drawOrbit(big,28); else if(visualizerMode==="rain")drawRain(big,40); else drawBars(big,32);} visualizerFrame=requestAnimationFrame(drawVisualizers);}
     // Edit mode writes directly to MP3/FLAC files, so keep these handlers boring.
     function field(name,label,t){return `<label>${label}<input name="${name}" value="${esc(t[name]||"")}"></label>`;}
     function artworkPanel(t){const supported=["mp3","flac"].includes(String(t.format||"").toLowerCase()); return `<div class="artworkPanel"><strong>Artwork</strong><input id="artworkFile" type="file" accept="image/jpeg,image/png,image/webp" ${supported?"":"disabled"}><img id="artworkPreview" class="artworkPreview" alt=""><div class="actions artworkActions"><button type="button" id="saveSongArt" ${supported?"":"disabled"}>Replace Song Art</button><button type="button" class="secondary" id="saveAlbumArt" ${supported?"":"disabled"}>Replace Album Art</button></div><div class="message" id="artworkMsg">${supported?"MP3/FLAC only. Changes write directly to the file. Album art uses the selected song's album tag.":"Artwork editing is only enabled for MP3 and FLAC."}</div></div>`;}
-    function selectTrack(id){selectedId=id; const t=tracks.find(x=>x.id===id); if(!t)return; detailEl.innerHTML=`${t.has_artwork?`<img class="bigCover" src="${t.artwork_url}" alt="">`:`<div class="bigCover emptyCover">No Artwork</div>`}<div class="detailTitle">${esc(t.title)}</div><div class="detailSub">${esc(t.artist||"Unknown artist")} - ${esc(t.album||"No album")} ${t.date?`(${esc(t.date)})`:""}</div>${artworkPanel(t)}<form id="editForm">${field("title","Title",t)}${field("artist","Artist",t)}${field("album","Album",t)}${field("albumartist","Album Artist",t)}${field("date","Date",t)}${field("tracknumber","Track Number",t)}${field("genre","Genre",t)}<label>Path<input value="${esc(t.path)}" disabled></label><div class="actions"><button type="submit">Save Metadata</button><button type="button" class="secondary" id="resetBtn">Reset</button></div><div class="message" id="msg"></div></form>`; const form=byId("editForm"); if(form){on(form,"submit", saveSelected); on(byId("resetBtn"),"click",()=>selectTrack(id));} const artInput=byId("artworkFile"), artPreview=byId("artworkPreview"); if(artInput){const songArt=byId("saveSongArt"), albumArt=byId("saveAlbumArt"), selectedArt=byId("saveSelectedArt"); on(artInput,"change",()=>{const file=artInput.files&&artInput.files[0]; if(!file)return; const url=URL.createObjectURL(file); artPreview.src=url; artPreview.style.display="block";}); if(songArt)on(songArt,"click",()=>saveArtwork("song")); if(albumArt)on(albumArt,"click",()=>saveArtwork("album")); if(selectedArt)on(selectedArt,"click",()=>saveArtwork("selected"));} renderRows();}
+    function selectTrack(id){selectedId=id; const t=tracks.find(x=>x.id===id); if(!t)return; if(playingId===null)applyAdaptiveTheme(); detailEl.innerHTML=`${t.has_artwork?`<img class="bigCover" src="${t.artwork_url}" alt="">`:`<div class="bigCover emptyCover">No Artwork</div>`}<div class="detailTitle">${esc(t.title)}</div><div class="detailSub">${esc(t.artist||"Unknown artist")} - ${esc(t.album||"No album")} ${t.date?`(${esc(t.date)})`:""}</div>${artworkPanel(t)}<form id="editForm">${field("title","Title",t)}${field("artist","Artist",t)}${field("album","Album",t)}${field("albumartist","Album Artist",t)}${field("date","Date",t)}${field("tracknumber","Track Number",t)}${field("genre","Genre",t)}<label>Path<input value="${esc(t.path)}" disabled></label><div class="actions"><button type="submit">Save Metadata</button><button type="button" class="secondary" id="resetBtn">Reset</button></div><div class="message" id="msg"></div></form>`; const form=byId("editForm"); if(form){on(form,"submit", saveSelected); on(byId("resetBtn"),"click",()=>selectTrack(id));} const artInput=byId("artworkFile"), artPreview=byId("artworkPreview"); if(artInput){const songArt=byId("saveSongArt"), albumArt=byId("saveAlbumArt"), selectedArt=byId("saveSelectedArt"); on(artInput,"change",()=>{const file=artInput.files&&artInput.files[0]; if(!file)return; const url=URL.createObjectURL(file); artPreview.src=url; artPreview.style.display="block";}); if(songArt)on(songArt,"click",()=>saveArtwork("song")); if(albumArt)on(albumArt,"click",()=>saveArtwork("album")); if(selectedArt)on(selectedArt,"click",()=>saveArtwork("selected"));} renderRows();}
     function readArtworkFile(){return new Promise((resolve,reject)=>{const input=byId("artworkFile"); const file=input&&input.files&&input.files[0]; if(!file){reject(new Error("Choose an artwork image first")); return;} if(!["image/jpeg","image/png","image/webp"].includes(file.type)){reject(new Error("Artwork must be JPG, PNG, or WEBP")); return;} const reader=new FileReader(); reader.onload=()=>resolve(reader.result); reader.onerror=()=>reject(new Error("Could not read artwork image")); reader.readAsDataURL(file);});}
     async function saveArtwork(scope){const msg=byId("artworkMsg"); try{if(scope==="selected"&&selectedIds.size===0){msg.className="message error"; msg.textContent="Select tracks first."; return;} msg.className="message"; msg.textContent=scope==="album"?"Saving album artwork...":scope==="selected"?"Saving selected artwork...":"Saving song artwork..."; const imageData=await readArtworkFile(); const result=await fetchJson(`/api/track/${selectedId}/artwork`,{method:"POST",headers:editHeaders({"Content-Type":"application/json"}),body:JSON.stringify({scope,image_data:imageData,ids:[...selectedIds]})}); if(!result.ok){msg.className="message error"; msg.textContent=result.error||"Artwork save failed"; return;} msg.className="message ok"; msg.textContent=`Saved artwork to ${result.changed} file${result.changed===1?"":"s"}.`; if(scope==="album"||scope==="selected")selectedIds.clear(); await loadTracks(true, selectedId);}catch(err){msg.className="message error"; msg.textContent=err.message||String(err);}}
     async function saveSelected(event){event.preventDefault(); const msg=byId("msg"), form=event.currentTarget, data=Object.fromEntries(new FormData(form).entries()); msg.className="message"; msg.textContent="Saving..."; const result=await fetchJson(`/api/track/${selectedId}/metadata`,{method:"POST",headers:editHeaders({"Content-Type":"application/json"}),body:JSON.stringify(data)}); if(!result.ok){msg.className="message error"; msg.textContent=result.error||"Save failed"; return;} msg.className="message ok"; msg.textContent=result.changed.length?`Saved: ${result.changed.join(", ")}.`:"No changes."; await loadTracks(false, selectedId);}
@@ -684,15 +995,15 @@
     // Music queue and playback. The queue is just an ordered list of track IDs.
     function shuffle(list){const copy=[...list]; for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [copy[i],copy[j]]=[copy[j],copy[i]];} return copy;}
     /** @brief Replace the music queue and start playback at the requested track. */
-    function playList(list, randomize=false, startId=null){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; queue=playable.map(t=>t.id); queueIndex=startId===null?0:Math.max(0,queue.indexOf(startId)); saveMusicState({force:true}); playQueueIndex(queueIndex);}
+    function playList(list, randomize=false, startId=null, options={}){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; queue=playable.map(t=>t.id); queueIndex=startId===null?0:Math.max(0,queue.indexOf(startId)); saveMusicState({force:true}); playQueueIndex(queueIndex, options);}
     // When a track is opened from an album page, Next should continue through
     // the album and then later albums in the current browse order.
     function albumPlaybackContext(startId){const current=tracks.find(t=>t.id===startId); if(!current||selectedAlbum==="All")return [current].filter(Boolean); const ordered=albumDisplayEntries(albumSource()); const albumIndex=ordered.findIndex(([name])=>name===selectedAlbum); if(albumIndex<0)return albumTrackList(albumList(selectedAlbum)); const list=[]; for(const [_name,tracksForAlbum] of ordered.slice(albumIndex)){list.push(...albumTrackList(tracksForAlbum));} return list.length?list:[current];}
-    function playSingleTrack(id){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id); return;} playList([t], false, id);}
+    function playSingleTrack(id, options={}){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id, options); return;} playList([t], false, id, options);}
     // If the queue was empty, adding songs starts playback immediately. If
     // something is already playing, additions are non-disruptive.
     function addToMusicQueue(list){const ids=list.map(t=>t.id).filter(id=>!queue.includes(id)); if(!ids.length)return; const wasEmpty=queue.length===0; queue.push(...ids); showQueueToast(ids.length===1?"Added to queue":`Added ${ids.length} to queue`); pulseQueueButton(topQueueLabelEl); if(wasEmpty){queueIndex=0; saveMusicState({force:true}); playQueueIndex(0);} else {saveMusicState({force:true}); updateNow(); renderQueue();}}
-    function playQueueIndex(index){
+    function playQueueIndex(index, options={}){
       if(index<0||index>=queue.length)return;
       flushListeningStats({force:true});
       queueIndex=index;
@@ -711,13 +1022,13 @@
         switchingAudioTrack=false;
         updateNow();
       });
-      selectTrack(t.id);
+      if(options.selectInMusic!==false)selectTrack(t.id);
       requestAnimationFrame(startVisualizer);
       renderQueue();
     }
     function removeQueueIndex(index){if(index<0||index>=queue.length)return; queue.splice(index,1); if(index<queueIndex)queueIndex--; else if(index===queueIndex){if(queue.length){queueIndex=Math.min(index,queue.length-1); saveMusicState({force:true}); playQueueIndex(queueIndex);}else{queueIndex=-1; player.pause(); player.removeAttribute("src"); playingId=null; saveMusicState({force:true}); updateNow(); renderRows();}} saveMusicState({force:true}); updateNow(); renderQueue();}
     function moveQueueItem(fromIndex,toIndex){if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=queue.length||toIndex>=queue.length)return; const current=queue[queueIndex]; const [item]=queue.splice(fromIndex,1); queue.splice(toIndex,0,item); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();}
-    function queueDurationText(){const known=queue.map(id=>knownDurations.get(id)).filter(v=>Number.isFinite(v)); if(!known.length)return "duration loading"; const total=known.reduce((sum,v)=>sum+v,0); return `${fmt(total)}${known.length<queue.length?" known":""}`;}
+    function queueDurationText(){const durations=queue.map(id=>knownDurations.get(id)); if(!queue.length||durations.some(v=>!Number.isFinite(v)))return ""; return fmt(durations.reduce((sum,v)=>sum+v,0));}
     // Dragging reorders the queue array, but keeps queueIndex attached to the
     // same currently playing track instead of the same numeric slot.
     function bindQueueDrag(listEl, moveItem){
@@ -743,7 +1054,8 @@
     }
     /** @brief Render the draggable music queue drawer. */
     function renderQueue(){
-      queueSummaryEl.textContent = `${queue.length} track${queue.length===1?"":"s"} - ${queueDurationText()}`;
+      const durationText = queueDurationText();
+      queueSummaryEl.textContent = `${queue.length} track${queue.length===1?"":"s"}${durationText?` - ${durationText}`:""}`;
       queueListEl.innerHTML = queue.length
         ? queue.map((id,index)=>{
             const t = tracks.find(x=>x.id===id);
@@ -768,6 +1080,7 @@
         const count=btn?.querySelector("span");
         if(count)count.textContent=String(queue.length);
       });
+      updateTopQueueCounts();
     }
     function savedVolume(){const value=Number(localStorage.getItem("playerVolume")); return Number.isFinite(value)?Math.min(1,Math.max(0,value)):Number(volumeBar.value);}
     function setPlayerVolume(value,{persist=true}={}){
@@ -811,7 +1124,7 @@
     /** @brief Previous/play/next controls and desktop volume for Now Playing. */
     function nowPlayingControlsHtml(){
       const playIcon = player.paused ? "&#9654;" : "&#10074;&#10074;";
-      return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${queue.length}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button><button id="npRepeat" class="secondary iconControl repeatButton" title="${esc(repeatLabel(repeatMode))}" aria-label="${esc(repeatLabel(repeatMode))}">${repeatIconHtml(repeatMode)}</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(player.volume)}"></label></div>`;
+      return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${queue.length}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(player.volume)}"></label></div>`;
     }
     function nowPlayingLyricsHtml(t){
       if(!t.has_lyrics)return "";
@@ -837,9 +1150,12 @@
         npPlay.title = player.paused ? "Play" : "Pause";
         npPlay.setAttribute("aria-label", npPlay.title);
       }
-      updateRepeatButton(byId("npRepeat"), repeatMode);
       const npQueueCount=byId("npQueue")?.querySelector("span");
       if(npQueueCount)npQueueCount.textContent=String(queue.length);
+    }
+    function updateTopQueueCounts(){
+      statsEl.querySelectorAll("[data-top-action='musicQueue'] span").forEach(el=>el.textContent=String(queue.length));
+      statsEl.querySelectorAll("[data-top-action='videoQueue'] span").forEach(el=>el.textContent=String(videoQueue.length));
     }
     // Full-screen Now Playing is rebuilt from current state so it stays in sync
     // with seek time, volume, visualizer mode, and file format.
@@ -894,7 +1210,6 @@
       on(byId("npPrev"),"click",()=>playQueueIndex(queueIndex-1));
       on(byId("npNext"),"click",()=>playQueueIndex(queueIndex+1));
       on(byId("npPlayPause"),"click",toggleAudioPlayback);
-      on(byId("npRepeat"),"click",cycleMusicRepeat);
       on(byId("npQueue"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();});
       on(npSeek,"input",()=>{seeking=true;});
       on(npSeek,"change",()=>{if(player.duration) player.currentTime=(Number(npSeek.value)/1000)*player.duration; seeking=false;});
@@ -917,12 +1232,18 @@
         return;
       }
       updateMediaSession(t);
+      applyAdaptiveTheme();
       nowInfoEl.innerHTML=`${t.has_artwork?`<img src="${smallArtUrl(t)}" alt="">`:`<div class="noArt">?</div>`}<div class="nowText"><div class="nowTitle">${esc(t.title)}</div><div class="nowSub">${esc(t.artist||"Unknown artist")}</div></div>`;
       renderNowPlaying(t);
       if(!player.paused&&!player.ended)requestAnimationFrame(startVisualizer);
     }
     function fmt(seconds){if(!Number.isFinite(seconds))return "0:00"; const m=Math.floor(seconds/60), s=Math.floor(seconds%60); return `${m}:${String(s).padStart(2,"0")}`;}
     function fmtDuration(seconds){if(!Number.isFinite(seconds)||seconds<=0)return "0m"; const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60); return h?`${h}h ${m}m`:`${Math.max(1,m)}m`;}
+    function statsTrackKey(t){
+      const norm = v => String(v || "").trim().toLowerCase();
+      const duration = Math.round(Number(knownDurations.get(t.id) || t.duration || 0) || 0);
+      return `${norm(t.artist)}|${norm(t.album)}|${norm(t.title)}|${duration}`;
+    }
     function statsTrackPayload(t){
       return {title:t.title||"Unknown title", artist:t.artist||"Unknown artist", album:t.album||"No album", format:t.format||"", duration:knownDurations.get(t.id)||player.duration||0};
     }
@@ -969,18 +1290,22 @@
     }
     function statsRows(rows, columns, emptyText){
       if(!rows.length)return `<div class="statsEmpty">${esc(emptyText)}</div>`;
-      return `<table class="statsTable"><thead><tr>${columns.map(c=>`<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>`<tr>${columns.map(c=>`<td>${c.render(row)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+      return `<table class="statsTable"><thead><tr>${columns.map(c=>`<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>{const playAttr=row.playable_id!==""&&row.playable_id!==undefined?` class="playableStatsRow" data-play-track="${esc(row.playable_id)}" tabindex="0" title="Play this song"`:""; return `<tr${playAttr}>${columns.map(c=>`<td>${c.render(row)}</td>`).join("")}</tr>`;}).join("")}</tbody></table>`;
     }
     function statsMinutes(row){return (Number(row?.seconds)||0)/60;}
     function statsIntensity(minutes, maxMinutes){
       if(minutes<=0)return .08;
       return Math.min(.92, .18 + (minutes/Math.max(maxMinutes,1))*.74);
     }
+    function themeCssValue(name, fallback){
+      const value = getComputedStyle(document.body).getPropertyValue(name).trim();
+      return value || fallback;
+    }
     function statsHeatStyle(minutes, maxMinutes){
-      return `background:rgba(63,111,216,${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
+      return `background:rgba(${themeCssValue("--accent-rgb","63,111,216")},${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
     }
     function statsChartSection(title, body){
-      return `<section class="statsSection statsChart"><h3>${esc(title)}</h3>${body}</section>`;
+      return `<section class="statsSection statsChart" aria-label="${esc(title)}">${body}</section>`;
     }
     function statsTimeChart(rows, unit="day"){
       if(!rows.length)return statsChartSection("Listening Minutes", `<div class="statsEmpty">No listening time recorded yet.</div>`);
@@ -990,12 +1315,27 @@
       if(statsPeriod==="year")return statsYearHeatmap(rows);
       return "";
     }
+    function statsHourLabel(hour, compact=false){
+      const value=Number(hour)||0;
+      const period=value<12?"AM":"PM";
+      const display=value%12||12;
+      return compact ? `${display}${period.toLowerCase()}` : `${display} ${period}`;
+    }
+    function statsMinutesLabel(minutes, compact=false){
+      const total=Math.round(Number(minutes)||0);
+      if(compact||total<60)return `${total}m`;
+      const hours=Math.floor(total/60), rest=total%60;
+      return rest ? `${hours}h ${rest}m` : `${hours}h`;
+    }
+    function statsResponsiveMinutes(minutes){
+      return `<span class="desktopDuration">${esc(statsMinutesLabel(minutes))}</span><span class="mobileDuration">${esc(statsMinutesLabel(minutes,true))}</span>`;
+    }
     function statsHourHeatmap(rows){
       const maxMinutes=Math.max(...rows.map(statsMinutes),1);
       const cells=rows.map(row=>{
         const hour=String(row.hour??"").padStart(2,"0");
         const minutes=statsMinutes(row);
-        return `<div class="statsHeatCell" title="${esc(`${hour}:00 - ${Math.round(minutes)} minutes`)}"><div class="statsHeatBlock" style="${statsHeatStyle(minutes,maxMinutes)}">${minutes>0?`${Math.round(minutes)}m`:""}</div><div class="statsHeatLabel">${esc(hour)}</div></div>`;
+        return `<div class="statsHeatCell" title="${esc(`${statsHourLabel(row.hour)} - ${statsMinutesLabel(minutes)}`)}"><div class="statsHeatBlock" style="${statsHeatStyle(minutes,maxMinutes)}">${minutes>0?esc(statsMinutesLabel(minutes,true)):""}</div><div class="statsHeatLabel"><span class="desktopHourLabel">${esc(statsHourLabel(row.hour))}</span><span class="mobileHourLabel">${esc(statsHourLabel(row.hour,true))}</span></div></div>`;
       }).join("");
       return statsChartSection("Hourly Listening", `<div class="statsHourHeat">${cells}</div>`);
     }
@@ -1008,7 +1348,8 @@
         const height=minutes>0?Math.max(8,Math.round((minutes/maxMinutes)*100)):0;
         const date=row.day?new Date(`${row.day}T00:00:00`):null;
         const label=date?labels[date.getDay()]:String(row.day||"").slice(5);
-        return `<div class="statsWeekBar" title="${esc(`${row.day} - ${Math.round(minutes)} minutes`)}"><div class="statsBarValue">${esc(Math.round(minutes))}m</div><div class="statsBarTrack"><div class="statsBarFill" style="height:${height}%"></div></div><div class="statsBarLabel">${esc(label)}</div></div>`;
+        const future=isFutureStatsDay(row.day);
+        return `<div class="statsWeekBar${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-day="${esc(row.day||"")}" role="button" tabindex="0"`} title="${esc(`${row.day} - ${statsMinutesLabel(minutes)}`)}"><div class="statsBarValue">${statsResponsiveMinutes(minutes)}</div><div class="statsBarTrack"><div class="statsBarFill" style="height:${height}%"></div></div><div class="statsBarLabel">${esc(label)}</div></div>`;
       }).join("");
       return statsChartSection("Weekly Listening", `<div class="statsWeekBars">${bars}</div>`);
     }
@@ -1021,10 +1362,11 @@
       for(const row of rows){
         const minutes=statsMinutes(row);
         const dayNumber=String(row.day||"").slice(8).replace(/^0/,"");
-        cells.push(`<div class="statsCalendarCell" title="${esc(`${row.day} - ${Math.round(minutes)} minutes`)}" style="${statsHeatStyle(minutes,maxMinutes)}"><span>${esc(dayNumber)}</span>${minutes>0?`<strong>${esc(Math.round(minutes))}m</strong>`:""}</div>`);
+        const future=isFutureStatsDay(row.day);
+        cells.push(`<div class="statsCalendarCell${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-day="${esc(row.day||"")}" role="button" tabindex="0"`} title="${esc(`${row.day} - ${statsMinutesLabel(minutes)}`)}" style="${future?"":statsHeatStyle(minutes,maxMinutes)}"><span>${esc(dayNumber)}</span>${minutes>0&&!future?`<strong>${esc(statsMinutesLabel(minutes,true))}</strong>`:""}</div>`);
       }
       while(cells.length%7!==0)cells.push(`<div class="statsCalendarCell blankCalendarCell"></div>`);
-      return statsChartSection("Monthly Listening", `<div class="statsCalendarWeekdays">${labels.map(label=>`<span>${label}</span>`).join("")}</div><div class="statsCalendarGrid">${cells.join("")}</div>`);
+      return statsChartSection("Monthly Listening", `<div class="statsCalendarTitle">${esc(statsMonthTitle())}</div><div class="statsCalendarWeekdays">${labels.map(label=>`<span>${label}</span>`).join("")}</div><div class="statsCalendarGrid">${cells.join("")}</div>`);
     }
     function statsYearHeatmap(rows){
       const monthNames=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -1034,32 +1376,67 @@
         if(months[monthIndex])months[monthIndex].seconds+=Number(row.seconds)||0;
       }
       const maxMinutes=Math.max(...months.map(statsMinutes),1);
+      const year=statsRangeDates().start.slice(0,4);
       const cells=months.map(item=>{
         const minutes=statsMinutes(item);
-        return `<div class="statsYearCell" title="${esc(`${item.label} - ${Math.round(minutes)} minutes`)}" style="${statsHeatStyle(minutes,maxMinutes)}"><span>${esc(item.label)}</span>${minutes>0?`<strong>${esc(Math.round(minutes))}m</strong>`:""}</div>`;
+        const monthStartDate=`${year}-${String(item.month+1).padStart(2,"0")}-01`;
+        const future=isFutureStatsRangeAnchor("month", monthStartDate);
+        return `<div class="statsYearCell${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-month="${esc(monthStartDate)}" role="button" tabindex="0"`} title="${esc(`${item.label} - ${statsMinutesLabel(minutes)}`)}" style="${future?"":statsHeatStyle(minutes,maxMinutes)}"><span>${esc(item.label)}</span>${minutes>0&&!future?`<strong>${esc(statsMinutesLabel(minutes,true))}</strong>`:""}</div>`;
       }).join("");
       return statsChartSection("Yearly Listening", `<div class="statsYearHeat">${cells}</div>`);
     }
-    function statsHero(rangeOptions){
+    function statsHero(rangeOptions, summary){
       const dayClass = statsPeriod === "day" ? " visible" : "";
       const stepClass = statsSteppablePeriod() ? " visible" : "";
       const nextDisabled = statsAtCurrentRange() ? " disabled" : "";
-      return `<div class="statsHero"><div><h2>Listening Stats</h2></div><div class="statsControls"><select id="statsRange" class="statsRange">${rangeOptions}</select><div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(statsDay)}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day">&#9654;</button></div></div></div>`;
+      const dayNextDisabled = statsAtToday() ? " disabled" : "";
+      return `<div class="statsHero"><div><h2>Music Stats</h2></div><div class="statsHeroMetrics">${statsMetric(fmtDuration(summary.seconds||0), statsPrimaryMetricLabel())}${statsMetric(fmtDuration(summary.lifetime_seconds||0), "all-time listening")}</div><div class="statsControls"><select id="statsRange" class="statsRange">${rangeOptions}</select><div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(clampStatsDay(statsDay))}" max="${esc(localDateString())}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day"${dayNextDisabled}>&#9654;</button></div></div></div>`;
     }
     function statsRangeOptions(){
       return STATS_RANGES.map(([value,label])=>`<option value="${value}" ${statsPeriod===value?"selected":""}>${label}</option>`).join("");
     }
-    function statsCard(number, label){
-      return `<div class="statsCard"><div class="statsNumber">${esc(number)}</div><div class="statsLabel">${esc(label)}</div></div>`;
+    function statsMetric(number, label){
+      return `<div class="statsMetric"><strong>${esc(number)}</strong><span>${esc(label)}</span></div>`;
     }
-    function statsSummaryCards(summary){
-      return `<div class="statsGrid">${[
-        statsCard(fmtDuration(summary.seconds||0), "listened this range"),
-        statsCard(fmtDuration(summary.lifetime_seconds||0), "all-time listening"),
-      ].join("")}</div>`;
+    function formatStatsMonth(day){
+      if(!day)return "Not yet";
+      const date = new Date(`${day}T00:00:00`);
+      return date.toLocaleDateString(undefined, {month:"short", year:"numeric"});
     }
-    function statsTableSection(title, rows, columns, emptyText){
-      return `<section class="statsSection"><h3>${esc(title)}</h3>${statsRows(rows, columns, emptyText)}</section>`;
+    function allTimeStatsCard(summary){
+      const plays = Number(summary.total_play_count)||0;
+      return `<section class="allTimeStatsCard">${statsMetric(formatStatsMonth(summary.first_day), "started listening")}${statsMetric(plays.toLocaleString(), "songs played")}</section>`;
+    }
+    function statsTopControls(summary){
+      return `<div class="statsTopControls"><strong>Music Stats</strong><div class="statsTopMetrics">${statPillHtml(fmtDuration(summary.seconds||0), statsPrimaryMetricLabel())}${statPillHtml(fmtDuration(summary.lifetime_seconds||0), "all time")}</div><select id="statsRange" class="statsRange">${statsRangeOptions()}</select>${statsRangeControlHtml()}</div>`;
+    }
+    function statsRangeControlHtml(){
+      const dayClass = statsPeriod === "day" ? " visible" : "";
+      const stepClass = statsSteppablePeriod() ? " visible" : "";
+      const nextDisabled = statsAtCurrentRange() ? " disabled" : "";
+      const dayNextDisabled = statsAtToday() ? " disabled" : "";
+      return `<div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(clampStatsDay(statsDay))}" max="${esc(localDateString())}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day"${dayNextDisabled}>&#9654;</button></div>`;
+    }
+    function statsTableSection(title, rows, columns, emptyText, actionHtml=""){
+      return `<section class="statsSection"><div class="statsSectionHead"><h3>${esc(title)}</h3>${actionHtml}</div>${statsRows(rows, columns, emptyText)}</section>`;
+    }
+    function statsSongTrack(row){
+      if(!row)return null;
+      const key = row.track_key || "";
+      if(key){
+        const byKey = tracks.find(t => statsTrackKey(t) === key);
+        if(byKey)return byKey;
+      }
+      const norm = v => String(v || "").trim().toLowerCase();
+      return tracks.find(t => norm(t.title) === norm(row.title) && norm(t.artist) === norm(row.artist) && norm(t.album) === norm(row.album))
+        || tracks.find(t => norm(t.title) === norm(row.title) && norm(t.artist) === norm(row.artist))
+        || null;
+    }
+    function statsSongRows(rows){
+      return rows.map(row => {
+        const track = statsSongTrack(row);
+        return {...row, playable_id: track ? track.id : ""};
+      });
     }
     function fmtStatsSongTime(seconds){
       if(!Number.isFinite(Number(seconds))||Number(seconds)<=0)return "0:00";
@@ -1069,13 +1446,50 @@
     }
     function statsTables(songs){
       const orderedSongs = [...songs].sort((a,b)=>(Number(b.seconds)||0)-(Number(a.seconds)||0));
-      const shownSongs = isMobileLayout() ? orderedSongs.slice(0,8) : orderedSongs;
+      const shownSongs = statsSongRows(isMobileLayout() ? orderedSongs.slice(0,8) : orderedSongs);
+      statsTopSongTrackIds = shownSongs.map(row => Number(row.playable_id)).filter(Number.isFinite);
+      const playTopSongs = statsTopSongTrackIds.length ? `<button id="playTopSongs" class="secondary iconControl statsSectionAction" type="button" title="Play top songs" aria-label="Play top songs">&#9654;</button>` : "";
       return `<div class="statsSections">${
         statsTableSection("Top Songs", shownSongs, [
           {label:"Song", render:r=>`<div class="statsTitle">${esc(r.title)}</div><div class="statsSub">${esc(r.artist)} - ${esc(r.album)}</div>`},
           {label:"Time", render:r=>esc(fmtStatsSongTime(r.seconds))},
-        ], "No top songs yet.")
+        ], "No top songs yet.", playTopSongs)
       }</div>`;
+    }
+    function playTopStatsSongs(){
+      const list = statsTopSongTrackIds.map(id => tracks.find(t => t.id === id)).filter(Boolean);
+      playList(list, false, null, {selectInMusic:false});
+    }
+    function bindStatsSongRows(){
+      const playTopSongs = byId("playTopSongs");
+      if(playTopSongs)on(playTopSongs, "click", playTopStatsSongs);
+      listeningStatsPanelEl.querySelectorAll("tr[data-play-track]").forEach(row => {
+        const id = Number(row.dataset.playTrack);
+        if(!Number.isFinite(id))return;
+        row.addEventListener("click", () => playSingleTrack(id, {selectInMusic:false}));
+        row.addEventListener("keydown", e => {if(e.key==="Enter"||e.key===" "){e.preventDefault(); playSingleTrack(id, {selectInMusic:false});}});
+      });
+    }
+    function drillIntoStatsCell(cell){
+      const month = cell.dataset.statsMonth;
+      const day = cell.dataset.statsDay;
+      if(month){
+        if(isFutureStatsRangeAnchor("month", month))return;
+        statsPeriod = saveLocalSetting("statsPeriod", "month");
+        trySetStatsRangeAnchor("month", month);
+        loadListeningStats();
+      } else if(day){
+        if(isFutureStatsDay(day))return;
+        statsPeriod = saveLocalSetting("statsPeriod", "day");
+        statsDay = saveLocalSetting("statsDay", day);
+        loadListeningStats();
+      }
+    }
+    function bindStatsChartDrilldowns(){
+      listeningStatsPanelEl.querySelectorAll(".statsDrillCell").forEach(cell => {
+        cell.addEventListener("click", () => drillIntoStatsCell(cell));
+        cell.addEventListener("keydown", e => {if(e.key==="Enter"||e.key===" "){e.preventDefault(); drillIntoStatsCell(cell);}});
+      });
     }
     function renderListeningStats(){
       const data=listeningStats;
@@ -1083,17 +1497,25 @@
       const summary=data.summary||{};
       const chartDaily=data.chart_daily||[], songs=data.top_songs||[];
       const chartUnit=data.chart_unit||"day";
-      const chartHtml = statsPeriod === "all" ? "" : statsTimeChart(chartDaily, chartUnit);
-      listeningStatsPanelEl.innerHTML=`${statsHero(statsRangeOptions())}${statsSummaryCards(summary)}${chartHtml}${statsTables(songs)}`;
+      const chartHtml = statsPeriod === "all" ? allTimeStatsCard(summary) : statsTimeChart(chartDaily, chartUnit);
+      if(isMobileLayout()){
+        statsEl.innerHTML="";
+        listeningStatsPanelEl.innerHTML=`${statsHero(statsRangeOptions(), summary)}${chartHtml}${statsTables(songs)}`;
+      } else {
+        statsEl.innerHTML=statsTopControls(summary);
+        listeningStatsPanelEl.innerHTML=`${chartHtml}${statsTables(songs)}`;
+      }
       bindStatsControls();
+      bindStatsSongRows();
+      bindStatsChartDrilldowns();
     }
     function bindStatsControls(){
       on(byId("statsRange"),"change",e=>{statsPeriod=saveLocalSetting("statsPeriod",e.target.value); if(statsSteppablePeriod()&&!statsRangeAnchors[statsPeriod])setStatsRangeAnchor(statsPeriod,localDateString()); loadListeningStats();});
       on(byId("statsPrevRange"),"click",()=>shiftStatsRange(-1));
       on(byId("statsNextRange"),"click",()=>shiftStatsRange(1));
       on(byId("statsPrevDay"),"click",()=>{statsDay=saveLocalSetting("statsDay",shiftDate(statsDay,-1)); loadListeningStats();});
-      on(byId("statsNextDay"),"click",()=>{statsDay=saveLocalSetting("statsDay",shiftDate(statsDay,1)); loadListeningStats();});
-      on(byId("statsDay"),"change",e=>{statsDay=saveLocalSetting("statsDay",e.target.value||localDateString()); if(statsPeriod==="day")loadListeningStats();});
+      on(byId("statsNextDay"),"click",()=>{const next=shiftDate(statsDay,1); if(isFutureStatsDay(next))return; statsDay=saveLocalSetting("statsDay",next); loadListeningStats();});
+      on(byId("statsDay"),"change",e=>{const next=e.target.value||localDateString(); if(isFutureStatsDay(next)){e.target.value=statsDay; return;} statsDay=saveLocalSetting("statsDay",next); if(statsPeriod==="day")loadListeningStats();});
     }
     function listeningStatsUrl(){
       const params = new URLSearchParams({period:statsPeriod});
@@ -1121,8 +1543,127 @@
       }
     }
     // App mode and data loading.
-    async function loadConfig(){try{appConfig=await fetchJson("/api/config");}catch{appConfig={editable:true,editRequiresPassword:false};} if(appConfig.editRequiresPassword&&editToken){try{const status=await fetchJson("/api/edit-status",{headers:editHeaders()}); if(!status.unlocked){editToken=""; localStorage.removeItem("editToken");}}catch{editToken=""; localStorage.removeItem("editToken");}} document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
-    function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")renderListeningStats(); else renderAll();}
+    function renderCustomize(){
+      if(!themeGridEl) return;
+      statsEl.innerHTML = `<div class="topTabControls"><strong>Customize</strong><div class="topTabMetrics"><span class="stat">Pick a color theme.</span></div></div>`;
+      themeGridEl.innerHTML = THEME_CHOICES.map(theme => {
+        const active = theme.id === activeTheme ? " active" : "";
+        return `<button class="themeChoice${active}" data-theme="${esc(theme.id)}" type="button" style="--swatch-a:${esc(theme.swatchA)};--swatch-b:${esc(theme.swatchB)};--swatch-rgb:${esc(theme.swatchRgb)}"><span class="themeSwatch"></span><span><strong>${esc(theme.label)}</strong><span>${esc(theme.note)}</span></span></button>`;
+      }).join("");
+      themeGridEl.querySelectorAll(".themeChoice").forEach(button => {
+        on(button, "click", () => setAccentTheme(button.dataset.theme));
+      });
+    }
+    function clearAdaptiveThemeVars(){
+      ADAPTIVE_STYLE_VARS.forEach(name=>document.body.style.removeProperty(name));
+      adaptiveThemeSource = "";
+    }
+    function clampColor(value){return Math.max(0,Math.min(255,Math.round(value)));}
+    function rgbToHex({r,g,b}){return `#${[r,g,b].map(v=>clampColor(v).toString(16).padStart(2,"0")).join("")}`;}
+    function mixRgb(color, target, amount){return {r:clampColor(color.r+(target.r-color.r)*amount),g:clampColor(color.g+(target.g-color.g)*amount),b:clampColor(color.b+(target.b-color.b)*amount)};}
+    function colorScore(r,g,b){
+      const max=Math.max(r,g,b), min=Math.min(r,g,b), sat=max-min, lum=(max+min)/2;
+      return sat * (lum>28&&lum<238 ? 1 : .25);
+    }
+    function isAdaptiveTheme(){return ADAPTIVE_THEME_IDS.has(activeTheme);}
+    function applyAdaptiveColor(color){
+      const lightAdaptive=activeTheme===LIGHT_ADAPTIVE_THEME_ID;
+      const strong=mixRgb(color,{r:255,g:255,b:255},.34);
+      const glow=mixRgb(color,{r:255,g:255,b:255},.22);
+      const sheen=mixRgb(color,{r:255,g:255,b:255},.58);
+      const deep=mixRgb(color,{r:0,g:0,b:0},.22);
+      document.body.style.setProperty("--accent-rgb",`${color.r},${color.g},${color.b}`);
+      document.body.style.setProperty("--accent-strong-rgb",`${strong.r},${strong.g},${strong.b}`);
+      document.body.style.setProperty("--accent-glow-rgb",`${glow.r},${glow.g},${glow.b}`);
+      document.body.style.setProperty("--accent-sheen-rgb",`${sheen.r},${sheen.g},${sheen.b}`);
+      document.body.style.setProperty("--accent",rgbToHex(color));
+      document.body.style.setProperty("--accent-strong",rgbToHex(strong));
+      document.body.style.setProperty("--accent-deep",rgbToHex(deep));
+      // Light adaptive needs darker sampled accents for text, while dark adaptive
+      // can use the brighter sheen color without losing contrast.
+      const readableAccent=lightAdaptive ? color : sheen;
+      document.body.style.setProperty("--accent-link",rgbToHex(lightAdaptive ? deep : sheen));
+      document.body.style.setProperty("--ok",rgbToHex(lightAdaptive ? color : strong));
+      document.body.style.setProperty("--track-number-color",rgbToHex(readableAccent));
+    }
+    function sampleAdaptiveColor(src){
+      return new Promise((resolve,reject)=>{
+        const img=new Image();
+        img.onload=()=>{
+          try{
+            const canvas=document.createElement("canvas"), size=36;
+            canvas.width=size; canvas.height=size;
+            const ctx=canvas.getContext("2d",{willReadFrequently:true});
+            ctx.drawImage(img,0,0,size,size);
+            const data=ctx.getImageData(0,0,size,size).data;
+            let total=0, rSum=0, gSum=0, bSum=0;
+            for(let i=0;i<data.length;i+=4){
+              const alpha=data[i+3]/255;
+              if(alpha<.45)continue;
+              const r=data[i], g=data[i+1], b=data[i+2], score=Math.max(1,colorScore(r,g,b))*alpha;
+              total+=score; rSum+=r*score; gSum+=g*score; bSum+=b*score;
+            }
+            if(!total)throw new Error("No sampleable pixels");
+            resolve({r:clampColor(rSum/total),g:clampColor(gSum/total),b:clampColor(bSum/total)});
+          }catch(err){reject(err);}
+        };
+        img.onerror=reject;
+        img.src=src;
+      });
+    }
+    async function applyAdaptiveTheme(){
+      if(!isAdaptiveTheme()){clearAdaptiveThemeVars(); return;}
+      const track=tracks.find(t=>t.id===playingId)||tracks.find(t=>t.id===selectedId);
+      const src=track ? fullArtUrl(track) : "";
+      if(!src){applyAdaptiveColor(DEFAULT_ADAPTIVE_COLOR); return;}
+      if(src===adaptiveThemeSource)return;
+      adaptiveThemeSource=src;
+      try{
+        const color=adaptiveThemeCache.get(src)||await sampleAdaptiveColor(src);
+        adaptiveThemeCache.set(src,color);
+        if(isAdaptiveTheme()&&adaptiveThemeSource===src)applyAdaptiveColor(color);
+      }catch(err){
+        console.warn("[theme] adaptive color failed", err);
+        applyAdaptiveColor(DEFAULT_ADAPTIVE_COLOR);
+      }
+    }
+    function setAccentTheme(themeId){
+      const theme = THEME_CHOICES.find(item => item.id === themeId) || THEME_CHOICES[0];
+      clearAdaptiveThemeVars();
+      THEME_CHOICES.forEach(item => {
+        if(item.className){
+          document.body.classList.remove(item.className);
+          document.documentElement.classList.remove(item.className);
+        }
+      });
+      if(theme.className){
+        document.body.classList.add(theme.className);
+        document.documentElement.classList.add(theme.className);
+      }
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if(themeMeta) themeMeta.setAttribute("content", theme.browserColor || "#000000");
+      activeTheme = theme.id;
+      localStorage.setItem("accentTheme", activeTheme);
+      applyAdaptiveTheme();
+      renderCustomize();
+      clearVisualizer("nowPlayingVisualizer");
+      if(!player.paused && !player.ended) requestAnimationFrame(startVisualizer);
+      if(mediaType === "statsPage") renderListeningStats();
+    }
+    function applyDisplayConfig(){
+      const appName=appConfig.appName||"Taeyeon Media Player";
+      const textLabel=appConfig.textTabLabel||"Interviews";
+      document.title=appName;
+      const titleEl=document.querySelector("header h1");
+      if(titleEl)titleEl.textContent=appName;
+      interviewsTabEl.title=textLabel;
+      interviewsTabEl.setAttribute("aria-label", textLabel);
+      document.querySelectorAll("[data-text-label]").forEach(el=>{el.textContent=textLabel;});
+      const emptyText=document.querySelector("[data-text-empty]");
+      if(emptyText)emptyText.textContent=`Text files are loaded locally from media\\${appConfig.textDir||"Interviews"}.`;
+    }
+    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true,editRequiresPassword:false};} applyDisplayConfig(); if(appConfig.editRequiresPassword&&editToken){try{const status=await fetchJson("/api/edit-status",{headers:editHeaders()}); if(!status.unlocked){editToken=""; localStorage.removeItem("editToken");}}catch{editToken=""; localStorage.removeItem("editToken");}} document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
+    function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")renderListeningStats(); else if(mediaType==="customize")renderCustomize(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
       const trackData = await fetchJson("/api/tracks");
@@ -1152,9 +1693,15 @@
       if(mediaType==="interviews")renderInterviews();
     }
     async function ensureMediaLoaded(type){
+      if(type==="health"){
+        if(!tracksLoaded) await loadTracks();
+        if(!videosLoaded) await loadVideos();
+        if(mediaType==="health") renderHealth();
+        return;
+      }
       if(type==="video"&&!videosLoaded) await loadVideos();
       if(type==="interviews"&&!interviewsLoaded) await loadInterviews();
-      if((type==="music"||type==="health")&&!tracksLoaded) await loadTracks();
+      if(type==="music"&&!tracksLoaded) await loadTracks();
       if(type==="statsPage"&&!listeningStats) await loadListeningStats();
     }
     function setGroupMode(mode){groupMode=mode; resetMusicSelection(); renderAll();}
@@ -1167,6 +1714,22 @@
     function enterListenMode(){setMediaType("music"); setAppMode("listen",{resetHome:true}); window.scrollTo({top:0,behavior:"smooth"});}
     function isMobileLayout(){return window.innerWidth<=MOBILE_BREAKPOINT;}
     function updateBrowseToggle(){document.body.classList.toggle("browseCollapsed",browseCollapsed&&!isMobileLayout()); document.querySelectorAll(".browseToggle").forEach(btn=>{btn.innerHTML=buttonIcon("browse"); btn.title=browseCollapsed&&!isMobileLayout()?"Show browse panel":"Browse"; btn.setAttribute("aria-label", btn.title);});}
+    function closeBrowsePanel(){
+      setOpen(navEl,false);
+      if(!isMobileLayout()){
+        browseCollapsed = true;
+        localStorage.setItem("browseCollapsed", "true");
+        updateBrowseToggle();
+      }
+    }
+    function closeInterviewBrowsePanel(){
+      setOpen(interviewListEl,false);
+      if(!isMobileLayout()){
+        browseCollapsed = true;
+        localStorage.setItem("browseCollapsed", "true");
+        updateBrowseToggle();
+      }
+    }
     function toggleBrowse(){
       if(isMobileLayout()){
         toggleOpen(mediaType === "interviews" ? interviewListEl : navEl);
@@ -1177,7 +1740,7 @@
       updateBrowseToggle();
     }
     function setDeviceClass(){document.body.classList.toggle("mobileUi", isMobileLayout()); updateBrowseToggle();}
-    function setTheme(){document.body.classList.add("dark");}
+    function setTheme(){document.body.classList.add("dark"); setAccentTheme(activeTheme);}
     function stopVideoPlayback(){
       if(!videoPlayerEl) return;
       saveVideoState({force:true});
@@ -1187,6 +1750,11 @@
       selectedVideoId = null;
       videoTitleEl.textContent = VIDEO_EMPTY_TITLE;
       videoMetaEl.textContent = VIDEO_EMPTY_META;
+    }
+    function pauseVideoForTabSwitch(){
+      if(!videoPlayerEl) return;
+      saveVideoState({force:true});
+      videoPlayerEl.pause();
     }
     function setMediaType(type){
       if(!appConfig.editable && type === "health") type = "music";
@@ -1200,11 +1768,13 @@
       videoTabEl.classList.toggle("inactive", type !== "video");
       interviewsTabEl.classList.toggle("inactive", type !== "interviews");
       statsTabEl.classList.toggle("inactive", type !== "statsPage");
+      customizeTabEl.classList.toggle("inactive", type !== "customize");
       healthTabEl.classList.toggle("inactive", type !== "health");
 
       searchEl.placeholder =
         type === "video" ? "Search video title or folder" :
         type === "interviews" ? "Search interviews" :
+        type === "customize" ? "Customize the player" :
         type === "statsPage" ? "Stats are summary-only" :
         type === "health" ? "Search is for music, video, interviews" :
         "Search title, album, artist";
@@ -1212,8 +1782,13 @@
       if(type === "statsPage")loadListeningStats();
       if(type === "video"){
         setOpen(queueDrawerEl, false);
+        if(!isMobileLayout()){
+          browseCollapsed = true;
+          localStorage.setItem("browseCollapsed", "true");
+          updateBrowseToggle();
+        }
       } else {
-        stopVideoPlayback();
+        pauseVideoForTabSwitch();
       }
       renderCurrentMedia();
       ensureMediaLoaded(type).catch(err=>console.error("[library] load failed", err));
@@ -1221,11 +1796,11 @@
     // Event binding lives at the end so startup is easy to follow.
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
-    function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",()=>setOpen(navEl,false)); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",()=>setOpen(interviewListEl,false));}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
+    function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
+    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
     function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
-    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("playShownVideo"),"click",()=>playVideoList(videoFiltered())); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
-    function bindQueueControls(){on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("clearQueue"),"click",()=>{queue=[]; queueIndex=-1; player.pause(); playingId=null; saveMusicState({force:true}); updateNow(); renderQueue();}); on(byId("shuffleQueue"),"click",()=>{const current=queue[queueIndex]; queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();});}
+    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("stopVideo"),"click",()=>{stopVideoPlayback(); saveVideoState({force:true}); renderVideos(); renderVideoQueue();}); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("repeatVideoQueue"),"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
+    function bindQueueControls(){on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("repeatQueue"),"click",cycleMusicRepeat); on(byId("clearQueue"),"click",()=>{queue=[]; queueIndex=-1; player.pause(); playingId=null; saveMusicState({force:true}); updateNow(); renderQueue();}); on(byId("shuffleQueue"),"click",()=>{const current=queue[queueIndex]; queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();});}
     /** @brief Wire mini-player, audio element events, and Now Playing sync. */
     function bindAudioPlayer(){
       on(byId("prevBtn"),"click",()=>playQueueIndex(queueIndex-1));

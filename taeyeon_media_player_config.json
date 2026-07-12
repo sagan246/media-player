@@ -2,7 +2,7 @@
   "app_name": "Taeyeon Media Player",
   "editable": true,
   "web_share": false,
-  "edit_password": "replace-this-with-your-password",
+  "edit_password": "",
   "music_dir": "Music",
   "video_dir": "Video",
   "text_dir": "Interviews",

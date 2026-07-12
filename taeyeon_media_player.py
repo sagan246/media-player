@@ -17,7 +17,7 @@ import secrets
 import sys
 import threading
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
@@ -40,13 +40,78 @@ if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
 
 
-from media_library import Library  # noqa: E402
+from media_library import Library, LibraryConfig  # noqa: E402
 from listening_stats import ListeningStats  # noqa: E402
 from metadata_tag_tools import EDITABLE_FIELDS, decode_image_payload, save_artwork_for_paths, save_metadata  # noqa: E402
 try:  # noqa: E402
     from PIL import Image
 except ImportError:  # noqa: E402
     Image = None
+
+
+@dataclass(frozen=True)
+class PlayerConfig:
+    """! @brief User-facing config with safe defaults for this library."""
+
+    app_name: str = "Taeyeon Media Player"
+    music_dir: str = "Music"
+    video_dir: str = "Video"
+    text_dir: str = "Interviews"
+    text_tab_label: str = "Interviews"
+    lyrics_dir: str = "Lyrics"
+    preferred_categories: list[str] = field(
+        default_factory=lambda: [
+            "Taeyeon Official",
+            "Taeyeon OST",
+            "Taeyeon Concerts",
+            "Taeyeon Live, Covers & Radio",
+            "Taeyeon Features & Collaborations",
+            "Girls' Generation",
+            "Girls' Generation-TTS",
+            "GOT the beat",
+        ]
+    )
+    preferred_video_categories: list[str] = field(default_factory=lambda: ["Taeyeon Concert"])
+
+    @classmethod
+    def from_mapping(cls, data: dict[str, object]) -> "PlayerConfig":
+        defaults = cls()
+
+        def text_value(key: str, fallback: str) -> str:
+            value = data.get(key, fallback)
+            return str(value).strip() or fallback
+
+        raw_categories = data.get("preferred_categories", defaults.preferred_categories)
+        preferred_categories = (
+            [str(item).strip() for item in raw_categories if str(item).strip()]
+            if isinstance(raw_categories, list)
+            else defaults.preferred_categories
+        )
+        raw_video_categories = data.get("preferred_video_categories", defaults.preferred_video_categories)
+        preferred_video_categories = (
+            [str(item).strip() for item in raw_video_categories if str(item).strip()]
+            if isinstance(raw_video_categories, list)
+            else defaults.preferred_video_categories
+        )
+
+        return cls(
+            app_name=text_value("app_name", defaults.app_name),
+            music_dir=text_value("music_dir", defaults.music_dir),
+            video_dir=text_value("video_dir", defaults.video_dir),
+            text_dir=text_value("text_dir", defaults.text_dir),
+            text_tab_label=text_value("text_tab_label", defaults.text_tab_label),
+            lyrics_dir=text_value("lyrics_dir", defaults.lyrics_dir),
+            preferred_categories=preferred_categories,
+            preferred_video_categories=preferred_video_categories,
+        )
+
+    def library_config(self) -> LibraryConfig:
+        return LibraryConfig(
+            music_dir=self.music_dir,
+            video_dir=self.video_dir,
+            text_dir=self.text_dir,
+            lyrics_dir=self.lyrics_dir,
+        )
 
 
 def content_type_for(path: Path) -> str:
@@ -89,6 +154,7 @@ class Handler(BaseHTTPRequestHandler):
 
     library: Library
     listening_stats: ListeningStats
+    player_config = PlayerConfig()
     editable = True
     web_share = False
     edit_password = ""
@@ -312,6 +378,11 @@ class Handler(BaseHTTPRequestHandler):
                     "editable": self.editable,
                     "editRequiresPassword": bool(self.edit_password),
                     "webShare": self.web_share,
+                    "appName": self.player_config.app_name,
+                    "textTabLabel": self.player_config.text_tab_label,
+                    "textDir": self.player_config.text_dir,
+                    "preferredCategories": self.player_config.preferred_categories,
+                    "preferredVideoCategories": self.player_config.preferred_video_categories,
                 }
             )
             return
@@ -763,17 +834,19 @@ def main() -> int:
     if not media_dir.is_dir():
         raise SystemExit(f"Media folder not found: {media_dir}")
     config = load_config(args.config)
+    player_config = PlayerConfig.from_mapping(config)
     web_share = bool(config.get("web_share", False)) or args.web_share
+    Handler.player_config = player_config
     Handler.web_share = web_share
     Handler.editable = bool(config.get("editable", True)) and not args.read_only and not web_share
     Handler.edit_password = args.edit_password or str(config.get("edit_password", "") or "")
     Handler.edit_tokens = set()
     Handler.visitor_keys = set()
-    Handler.library = Library(media_dir)
+    Handler.library = Library(media_dir, player_config.library_config())
     Handler.listening_stats = ListeningStats(STATS_DB)
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"Taeyeon Media Player running at http://{args.host}:{args.port}/")
+    print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")
     print(f"Mode: {'web-share read-only' if Handler.web_share else 'editable' if Handler.editable else 'read-only'}")
     if Handler.editable and Handler.edit_password:
         print("Edit Mode: password protected")

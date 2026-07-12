@@ -10,8 +10,8 @@ docs/doxygen/
 tools/doxygen-*
 tools/graphviz-*
 
-# Local config. Keep the example config tracked.
-taeyeon_media_player_config.json
+# Config. This repo's default config is safe to track because it has no password.
+!taeyeon_media_player_config.json
 !taeyeon_media_player_config.example.json
 
 # Large bundled/runtime dependencies
