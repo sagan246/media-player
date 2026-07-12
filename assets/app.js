@@ -42,14 +42,12 @@
     let adaptiveThemeSource = "";
     let appConfig = {
       editable:true,
-      editRequiresPassword:false,
       appName:"Local Media Player",
       textTabLabel:"Interviews",
       textDir:"Interviews",
       preferredCategories:["Albums","Soundtracks","Live","Covers","Features"],
       preferredVideoCategories:["Concerts"],
     };
-    let editToken = localStorage.getItem("editToken") || "";
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
     if(!STATS_RANGES.some(([value])=>value===statsPeriod)) statsPeriod = "week";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
@@ -344,7 +342,7 @@
       localStorage.setItem(key, value);
       return value;
     }
-    function editHeaders(extra={}){return editToken?{...extra,"X-Edit-Token":editToken}:extra;}
+    function editHeaders(extra={}){return extra;}
     function categoryOf(t){if(t.folder&&t.folder!=="(root)")return String(t.folder).split("/")[0]; return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
     function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
     function albumOf(t){return t.album || "(No album)";}
@@ -1756,7 +1754,7 @@
       const emptyText=document.querySelector("[data-text-empty]");
       if(emptyText)emptyText.textContent=`Text files are loaded locally from media\\${appConfig.textDir||"Interviews"}.`;
     }
-    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true,editRequiresPassword:false};} applyDisplayConfig(); if(appConfig.editRequiresPassword&&editToken){try{const status=await fetchJson("/api/edit-status",{headers:editHeaders()}); if(!status.unlocked){editToken=""; localStorage.removeItem("editToken");}}catch{editToken=""; localStorage.removeItem("editToken");}} document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
+    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true};} applyDisplayConfig(); document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
     function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")renderListeningStats(); else if(mediaType==="customize")renderCustomize(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
@@ -1799,12 +1797,12 @@
       if(type==="statsPage"&&!listeningStats) await loadListeningStats();
     }
     function setGroupMode(mode){groupMode=mode; resetMusicSelection(); renderAll();}
-    async function unlockEditMode(){if(!appConfig.editable)return false; if(!appConfig.editRequiresPassword||editToken)return true; const password=prompt("Edit metadata password"); if(!password)return false; try{const result=await fetchJson("/api/edit-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})}); if(!result.ok){alert(result.error||"Wrong edit password."); return false;} editToken=result.token||""; if(editToken)localStorage.setItem("editToken",editToken); return true;}catch(err){alert(err.message||"Could not unlock Edit Mode."); return false;}}
+    async function unlockEditMode(){return Boolean(appConfig.editable);}
     async function enterEditMode(){if(await unlockEditMode())setAppMode("edit");}
     function closeFloatingPanels(){[navEl,interviewListEl,queueDrawerEl,videoQueueDrawerEl,nowPlayingDrawerEl].forEach(el=>setOpen(el,false));}
     function resetMusicHomeState(){resetMusicSelection(); selectedIds.clear(); searchEl.value=""; musicFilterEl.value="all"; detailEl.innerHTML=`<div class="bigCover emptyCover">Select a song</div>`; closeFloatingPanels();}
     function setModeButtons(mode){setActive(byId("listenMode"),mode==="listen"); setActive(byId("editMode"),mode==="edit");}
-    function setAppMode(mode,{resetHome=false}={}){if(!appConfig.editable&&mode==="edit")mode="listen"; if(mode==="edit"&&appConfig.editRequiresPassword&&!editToken){mode="listen";} const leavingEdit=appMode==="edit"&&mode==="listen"; appMode=mode; if(mode==="listen"){musicFilterEl.value="all"; selectedIds.clear(); if(resetHome||leavingEdit)resetMusicHomeState();} setBodyMode("listen",mode==="listen"); setBodyMode("edit",mode==="edit"); setModeButtons(mode); if(mediaType==="music")renderAll();}
+    function setAppMode(mode,{resetHome=false}={}){if(!appConfig.editable&&mode==="edit")mode="listen"; const leavingEdit=appMode==="edit"&&mode==="listen"; appMode=mode; if(mode==="listen"){musicFilterEl.value="all"; selectedIds.clear(); if(resetHome||leavingEdit)resetMusicHomeState();} setBodyMode("listen",mode==="listen"); setBodyMode("edit",mode==="edit"); setModeButtons(mode); if(mediaType==="music")renderAll();}
     function enterListenMode(){setMediaType("music"); setAppMode("listen",{resetHome:true}); window.scrollTo({top:0,behavior:"smooth"});}
     function isMobileLayout(){return window.innerWidth<=MOBILE_BREAKPOINT;}
     function updateBrowseToggle(){document.body.classList.toggle("browseCollapsed",browseCollapsed&&!isMobileLayout()); document.querySelectorAll(".browseToggle").forEach(btn=>{btn.innerHTML=buttonIcon("browse"); btn.title=browseCollapsed&&!isMobileLayout()?"Show browse panel":"Browse"; btn.setAttribute("aria-label", btn.title);});}

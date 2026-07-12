@@ -9,11 +9,8 @@ from __future__ import annotations
 
 import argparse
 import gzip
-import hashlib
-import hmac
 import json
 import mimetypes
-import secrets
 import sys
 import threading
 import time
@@ -30,7 +27,6 @@ REPO_DIR = SCRIPT_DIR.parents[1]
 DEFAULT_MEDIA_DIR = REPO_DIR / "media"
 DEFAULT_CONFIG = SCRIPT_DIR / "media_player_config.json"
 AUDIO_DEBUG_LOG = SCRIPT_DIR / "media_player_audio_debug.log"
-VISITOR_LOG = SCRIPT_DIR / "media_player_visitors.jsonl"
 STATS_DB = SCRIPT_DIR / "media_player_stats.sqlite3"
 ART_THUMB_CACHE_DIR = SCRIPT_DIR / "media_player_cache" / "art_thumbs"
 ART_THUMB_DISPLAY_SIZE = 512
@@ -58,7 +54,6 @@ class PlayerConfig:
     video_dir: str = "Video"
     text_dir: str = "Interviews"
     text_tab_label: str = "Interviews"
-    lyrics_dir: str = "Lyrics"
     preferred_categories: list[str] = field(default_factory=lambda: ["Albums", "Soundtracks", "Live", "Covers", "Features"])
     preferred_video_categories: list[str] = field(default_factory=lambda: ["Concerts"])
 
@@ -89,7 +84,6 @@ class PlayerConfig:
             video_dir=text_value("video_dir", defaults.video_dir),
             text_dir=text_value("text_dir", defaults.text_dir),
             text_tab_label=text_value("text_tab_label", defaults.text_tab_label),
-            lyrics_dir=text_value("lyrics_dir", defaults.lyrics_dir),
             preferred_categories=preferred_categories,
             preferred_video_categories=preferred_video_categories,
         )
@@ -99,7 +93,6 @@ class PlayerConfig:
             music_dir=self.music_dir,
             video_dir=self.video_dir,
             text_dir=self.text_dir,
-            lyrics_dir=self.lyrics_dir,
         )
 
 
@@ -146,10 +139,6 @@ class Handler(BaseHTTPRequestHandler):
     player_config = PlayerConfig()
     editable = True
     web_share = False
-    edit_password = ""
-    edit_tokens: set[str] = set()
-    edit_auth_lock = threading.Lock()
-    visitor_keys: set[str] = set()
     log_lock = threading.Lock()
 
     def log_message(self, format: str, *args: object) -> None:
@@ -208,58 +197,13 @@ class Handler(BaseHTTPRequestHandler):
         except (IndexError, ValueError):
             return None
 
-    def edit_is_unlocked(self) -> bool:
-        """! @brief Check whether this request may use edit-only endpoints."""
-        if not self.edit_password:
-            return True
-        token = self.headers.get("X-Edit-Token", "")
-        with self.edit_auth_lock:
-            return token in self.edit_tokens
-
     def require_edit_access(self) -> bool:
         # Every write route goes through this one gate. Listen/read-only mode can
         # still stream media, but metadata writes stop here.
         if not self.editable:
             self.send_error_json("This library is running in read-only mode.", status=HTTPStatus.FORBIDDEN)
             return False
-        if not self.edit_is_unlocked():
-            self.send_error_json("Edit mode is locked.", status=HTTPStatus.UNAUTHORIZED)
-            return False
         return True
-
-    def visitor_identity(self) -> tuple[str, str]:
-        """! @brief Return a privacy-light visitor key and user agent."""
-        forwarded = self.headers.get("CF-Connecting-IP") or self.headers.get("X-Forwarded-For", "")
-        remote_ip = forwarded.split(",", 1)[0].strip() if forwarded else self.client_address[0]
-        user_agent = self.headers.get("User-Agent", "")
-        digest = hashlib.sha256(f"{remote_ip}|{user_agent}".encode("utf-8", errors="replace")).hexdigest()[:24]
-        return digest, user_agent[:220]
-
-    def record_web_visit(self) -> None:
-        """! @brief Privately log page visits for web-share usage counts.
-
-        The log intentionally stores a hashed visitor key, not the raw IP.
-        It is server-side only and never returned to the browser API.
-        """
-        if not self.web_share:
-            return
-        visitor_key, user_agent = self.visitor_identity()
-        with self.log_lock:
-            first_visit = visitor_key not in self.visitor_keys
-            self.visitor_keys.add(visitor_key)
-            with VISITOR_LOG.open("a", encoding="utf-8") as log:
-                log.write(
-                    json.dumps(
-                        {
-                            "time": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "visitor": visitor_key,
-                            "first_visit_this_run": first_visit,
-                            "user_agent": user_agent,
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
 
     def send_file(self, path: Path, cache_control: str = "no-store") -> None:
         """! @brief Send a small static file or cached image.
@@ -352,7 +296,6 @@ class Handler(BaseHTTPRequestHandler):
         # Read routes: app shell, cached library data, artwork, and media streams.
         parsed = urlparse(self.path)
         if parsed.path == "/":
-            self.record_web_visit()
             self.send_file(HTML_PATH)
             return
         if parsed.path.startswith("/assets/"):
@@ -365,7 +308,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(
                 {
                     "editable": self.editable,
-                    "editRequiresPassword": bool(self.edit_password),
                     "webShare": self.web_share,
                     "appName": self.player_config.app_name,
                     "textTabLabel": self.player_config.text_tab_label,
@@ -374,9 +316,6 @@ class Handler(BaseHTTPRequestHandler):
                     "preferredVideoCategories": self.player_config.preferred_video_categories,
                 }
             )
-            return
-        if parsed.path == "/api/edit-status":
-            self.send_ok(unlocked=self.edit_is_unlocked())
             return
         if parsed.path == "/api/videos":
             self.handle_videos_api()
@@ -425,15 +364,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_file(path, cache_control="no-cache")
 
     def do_POST(self) -> None:  # noqa: N802
-        # Write routes: login first, then metadata/artwork changes behind the
-        # edit gate above. Playback never needs POST.
+        # Write routes go through one read-only/editable gate. Playback never
+        # needs POST.
         parsed = urlparse(self.path)
-        if parsed.path == "/api/edit-login":
-            self.handle_edit_login()
-            return
-        if parsed.path == "/api/edit-logout":
-            self.handle_edit_logout()
-            return
         if parsed.path == "/api/listening-stats":
             self.handle_listening_stats_record()
             return
@@ -449,37 +382,6 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_track_metadata(parsed.path)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
-
-    def handle_edit_login(self) -> None:
-        """! @brief Validate the edit password and issue an in-memory token."""
-        # Edit tokens are kept in memory only. Restarting the server locks edit
-        # mode again, which is a nice low-fuss safety reset.
-        if not self.editable:
-            self.send_error_json("This library is running in read-only mode.", status=HTTPStatus.FORBIDDEN)
-            return
-        if not self.edit_password:
-            self.send_ok(token="")
-            return
-        try:
-            payload = self.read_json_body()
-            password = str(payload.get("password", "")) if isinstance(payload, dict) else ""
-        except Exception:
-            self.send_error_json("Invalid login request.", status=HTTPStatus.BAD_REQUEST)
-            return
-        if not hmac.compare_digest(password, self.edit_password):
-            self.send_error_json("Wrong edit password.", status=HTTPStatus.UNAUTHORIZED)
-            return
-        token = secrets.token_urlsafe(32)
-        with self.edit_auth_lock:
-            self.edit_tokens.add(token)
-        self.send_ok(token=token)
-
-    def handle_edit_logout(self) -> None:
-        token = self.headers.get("X-Edit-Token", "")
-        if token:
-            with self.edit_auth_lock:
-                self.edit_tokens.discard(token)
-        self.send_ok()
 
     def handle_listening_stats_record(self) -> None:
         """! @brief Record compact playback stats without requiring Edit Mode."""
@@ -790,7 +692,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run an internet-shareable read-only mode that hides local paths and logs private visit counts.",
     )
-    parser.add_argument("--edit-password", default="", help="Require this password before Edit Mode can write metadata.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8766, type=int)
     return parser
@@ -829,19 +730,12 @@ def main() -> int:
     Handler.player_config = player_config
     Handler.web_share = web_share
     Handler.editable = bool(config.get("editable", True)) and not args.read_only and not web_share
-    Handler.edit_password = args.edit_password or str(config.get("edit_password", "") or "")
-    Handler.edit_tokens = set()
-    Handler.visitor_keys = set()
     Handler.library = Library(media_dir, player_config.library_config())
     Handler.listening_stats = ListeningStats(STATS_DB)
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")
     print(f"Mode: {'web-share read-only' if Handler.web_share else 'editable' if Handler.editable else 'read-only'}")
-    if Handler.editable and Handler.edit_password:
-        print("Edit Mode: password protected")
-    if Handler.web_share:
-        print(f"Visitor log: {VISITOR_LOG}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

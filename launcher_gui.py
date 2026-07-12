@@ -26,13 +26,6 @@ DEFAULT_MEDIA_DIR = APP_DIR.parent.parent / "media"
 APP_SCRIPT = APP_DIR / "media_player.py"
 CODEX_PYTHON = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "python" / "python.exe"
 CLOUDFLARED = APP_DIR.parent / "codex" / "tools" / "cloudflared.exe"
-COLOR_BG = "#05070d"
-COLOR_PANEL = "#0b1220"
-COLOR_FIELD = "#111827"
-COLOR_TEXT = "#e5edf8"
-COLOR_MUTED = "#9aa8bc"
-COLOR_ACCENT = "#3b82f6"
-COLOR_ACCENT_HOVER = "#2563eb"
 
 
 @dataclass(frozen=True)
@@ -99,7 +92,8 @@ class LauncherApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("Media Player Launcher")
-        self.root.geometry("760x540")
+        self.root.geometry("720x500")
+        self.root.minsize(620, 420)
         self.process: subprocess.Popen[str] | None = None
         self.local_edit_process: subprocess.Popen[str] | None = None
         self.cloudflare_process: subprocess.Popen[str] | None = None
@@ -108,58 +102,56 @@ class LauncherApp:
         self.url = StringVar(value="")
         self.public_url = ""
 
-        self.apply_dark_theme()
+        self.apply_native_theme()
         self.build_ui()
         self.update_mode_text()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
-    def apply_dark_theme(self) -> None:
-        """Apply a compact dark theme to Tk/ttk widgets."""
-        self.root.configure(bg=COLOR_BG)
+    def apply_native_theme(self) -> None:
+        """Use the operating system's normal light theme for a simple utility UI."""
         style = ttk.Style(self.root)
-        style.theme_use("clam")
-        style.configure(".", background=COLOR_BG, foreground=COLOR_TEXT, fieldbackground=COLOR_FIELD, bordercolor="#1f2937", lightcolor="#1f2937", darkcolor="#020617")
-        style.configure("TFrame", background=COLOR_BG)
-        style.configure("TLabel", background=COLOR_BG, foreground=COLOR_TEXT)
-        style.configure("Muted.TLabel", background=COLOR_BG, foreground=COLOR_MUTED)
-        style.configure("TCombobox", fieldbackground=COLOR_FIELD, background=COLOR_FIELD, foreground=COLOR_TEXT, arrowcolor=COLOR_TEXT)
-        style.map("TCombobox", fieldbackground=[("readonly", COLOR_FIELD)], selectbackground=[("readonly", COLOR_FIELD)], selectforeground=[("readonly", COLOR_TEXT)])
-        style.configure("TButton", background=COLOR_FIELD, foreground=COLOR_TEXT, borderwidth=1, focusthickness=0, padding=(10, 7))
-        style.map("TButton", background=[("active", "#172033"), ("pressed", "#1d2a44")])
-        style.configure("Accent.TButton", background=COLOR_ACCENT, foreground="white")
-        style.map("Accent.TButton", background=[("active", COLOR_ACCENT_HOVER), ("pressed", COLOR_ACCENT_HOVER)])
+        try:
+            style.theme_use("vista")
+        except Exception:
+            pass
+        style.configure("Title.TLabel", font=("Segoe UI", 15, "bold"))
+        style.configure("Status.TLabel", foreground="#555555")
+        style.configure("Primary.TButton", padding=(14, 6))
+        style.configure("TButton", padding=(10, 6))
 
     def build_ui(self) -> None:
         """Create the small control-panel layout."""
-        frame = ttk.Frame(self.root, padding=14)
+        frame = ttk.Frame(self.root, padding=16)
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text="Local Media Player", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+        ttk.Label(frame, text="Media Player Launcher", style="Title.TLabel").grid(row=0, column=0, columnspan=4, sticky="w")
 
-        ttk.Label(frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(16, 4))
+        ttk.Label(frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(18, 4))
         mode_box = ttk.Combobox(frame, textvariable=self.mode_name, values=list(MODES), state="readonly", width=28)
-        mode_box.grid(row=1, column=1, sticky="we", pady=(16, 4))
+        mode_box.grid(row=1, column=1, sticky="we", pady=(18, 4), padx=(8, 12))
         mode_box.bind("<<ComboboxSelected>>", lambda _event: self.update_mode_text())
 
-        ttk.Label(frame, textvariable=self.status).grid(row=1, column=2, columnspan=2, sticky="e", pady=(16, 4))
+        ttk.Label(frame, textvariable=self.status, style="Status.TLabel").grid(row=1, column=2, columnspan=2, sticky="e", pady=(18, 4))
 
-        self.description_label = ttk.Label(frame, text="", wraplength=680, style="Muted.TLabel")
-        self.description_label.grid(row=2, column=0, columnspan=4, sticky="we", pady=(0, 12))
+        self.description_label = ttk.Label(frame, text="", wraplength=660)
+        self.description_label.grid(row=2, column=0, columnspan=4, sticky="we", pady=(0, 14))
 
-        ttk.Button(frame, text="Start", command=self.start, style="Accent.TButton").grid(row=3, column=0, sticky="we", padx=(0, 6))
+        ttk.Button(frame, text="Start", command=self.start, style="Primary.TButton").grid(row=3, column=0, sticky="we", padx=(0, 6))
         ttk.Button(frame, text="Stop", command=self.stop).grid(row=3, column=1, sticky="we", padx=6)
         ttk.Button(frame, text="Restart", command=self.restart).grid(row=3, column=2, sticky="we", padx=6)
         ttk.Button(frame, text="Open URL", command=self.open_url).grid(row=3, column=3, sticky="we", padx=(6, 0))
 
         ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=4, column=0, sticky="we", pady=10, padx=(0, 6))
-        ttk.Label(frame, textvariable=self.url, wraplength=560, style="Muted.TLabel").grid(row=4, column=1, columnspan=3, sticky="w", pady=10)
+        ttk.Label(frame, textvariable=self.url, wraplength=520, style="Status.TLabel").grid(row=4, column=1, columnspan=3, sticky="w", pady=10)
 
-        self.log = scrolledtext.ScrolledText(frame, height=20, state=DISABLED, font=("Consolas", 10), background="#020617", foreground=COLOR_TEXT, insertbackground=COLOR_TEXT, borderwidth=1, relief="solid")
-        self.log.grid(row=5, column=0, columnspan=4, sticky="nsew")
+        ttk.Label(frame, text="Log").grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 4))
+
+        self.log = scrolledtext.ScrolledText(frame, height=14, state=DISABLED, font=("Consolas", 10), borderwidth=1, relief="solid")
+        self.log.grid(row=6, column=0, columnspan=4, sticky="nsew")
 
         for column in range(4):
             frame.columnconfigure(column, weight=1)
-        frame.rowconfigure(5, weight=1)
+        frame.rowconfigure(6, weight=1)
 
     def update_mode_text(self) -> None:
         """Refresh the description and predicted URL for the selected mode."""

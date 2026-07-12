@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import hashlib
@@ -29,7 +29,6 @@ class LibraryConfig:
     music_dir: str = "Music"
     video_dir: str = "Video"
     text_dir: str = "Interviews"
-    lyrics_dir: str = "Lyrics"
 
 
 @dataclass
@@ -61,7 +60,6 @@ class Library:
         self.music_dir = configured_music_dir if configured_music_dir.is_dir() else media_dir
         self.video_dir = media_dir / config.video_dir
         self.text_dir = media_dir / config.text_dir
-        self.lyrics_dir = media_dir / config.lyrics_dir
         self.tracks: list[Track] = []
         self.paths: list[Path] = []
         self.artwork: dict[int, Artwork] = {}
@@ -78,7 +76,7 @@ class Library:
     def refresh(self) -> None:
         # Build fresh snapshots outside the lock, then swap them in quickly so
         # browser requests do not wait on a full media scan.
-        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.text_dir, self.lyrics_dir)
+        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.text_dir)
 
         with self.lock:
             self.tracks = snapshot.tracks
@@ -126,13 +124,12 @@ class Library:
             return self.video_folder_covers.get(folder)
 
 
-def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Path, lyrics_dir: Path | None = None) -> LibrarySnapshot:
+def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Path) -> LibrarySnapshot:
     """Scan each media source independently, then return one swappable snapshot."""
     # Music uses a metadata/artwork cache because tag reads are the expensive
     # part. Video and interview scans are lightweight path/text scans.
     cache = load_scan_cache()
-    lyrics_index = scan_lyrics(lyrics_dir or music_dir.parent / "Lyrics")
-    tracks, paths, artwork, lyrics, lyrics_formats, next_cache = scan_music(music_dir, cache, lyrics_index)
+    tracks, paths, artwork, lyrics, lyrics_formats, next_cache = scan_music(music_dir, cache)
     videos, video_paths, video_thumbnails, video_folder_covers = scan_videos(video_dir)
     interviews = scan_interviews(interviews_dir)
     save_scan_cache(next_cache)
@@ -175,7 +172,6 @@ def save_scan_cache(files: dict[str, dict[str, object]]) -> None:
 def scan_music(
     music_dir: Path,
     cache: dict[str, dict[str, object]],
-    lyrics_index: dict[str, str],
 ) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[int, str], dict[int, str], dict[str, dict[str, object]]]:
     """! @brief Scan audio files and reuse cached metadata when possible."""
     # Metadata/artwork reads are the slow part. The scan cache lets playback and
@@ -220,7 +216,7 @@ def scan_music(
             folder = "(root)"
         missing_fields = track_missing_fields(title, artist, album, date, tracknumber, genre, art is not None)
         review_flags = track_review_flags(title, artist, album, albumartist)
-        lyric_text, lyric_format = lyrics_for_track(path, title, lyrics_index)
+        lyric_text, lyric_format = lyrics_for_track(path)
         if art:
             artwork[track_id] = art
         if lyric_text:
@@ -265,27 +261,7 @@ def audio_files(music_dir: Path) -> list[Path]:
     )
 
 
-def scan_lyrics(lyrics_dir: Path) -> dict[str, str]:
-    """! @brief Read local lyric text files and index them by cleaned song title."""
-    # Lyrics are intentionally outside the audio metadata cache. They are small
-    # text files, and keeping them separate lets the user edit lyrics without
-    # touching the music files.
-    if not lyrics_dir.is_dir():
-        return {}
-    lyrics: dict[str, str] = {}
-    for path in sorted(lyrics_dir.rglob("*.txt")):
-        if not path.is_file():
-            continue
-        content = read_lyric_text(path)
-        if not content:
-            continue
-        key = normalize_lyrics_key(path.stem)
-        if key and key not in lyrics:
-            lyrics[key] = content
-    return lyrics
-
-
-def lyrics_for_track(path: Path, title: str, lyrics_index: dict[str, str]) -> tuple[str, str]:
+def lyrics_for_track(path: Path) -> tuple[str, str]:
     """! @brief Return the best lyrics for a track, preferring English translations."""
     # English lyrics should win even when a non-English timed LRC exists next to
     # the song. That keeps translated TXT files useful until a timed EN LRC exists.
@@ -298,10 +274,6 @@ def lyrics_for_track(path: Path, title: str, lyrics_index: dict[str, str]) -> tu
     english_text_sidecar = read_lyric_sidecar(path, ((".en.txt", "text"),))
     if english_text_sidecar:
         return english_text_sidecar
-
-    lyric_text = lyrics_index.get(normalize_lyrics_key(title), "")
-    if lyric_text:
-        return lyric_text, "text"
 
     if english_lrc_path.is_file():
         english_lrc = read_lyric_text(english_lrc_path)
@@ -377,13 +349,6 @@ def read_lyric_text(path: Path) -> str:
     except UnicodeDecodeError:
         return path.read_text(encoding="cp949", errors="replace").strip()
 
-
-def normalize_lyrics_key(value: str) -> str:
-    """! @brief Normalize song titles enough to match local lyrics filenames."""
-    text = value.lower().replace("’", "'").replace("`", "'")
-    text = re.sub(r"\([^)]*\)", " ", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
 
 
 def cached_audio_entry(entry: dict[str, object] | None, stat) -> dict[str, object] | None:
