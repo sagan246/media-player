@@ -1,5 +1,5 @@
-﻿#!/usr/bin/env python3
-"""Local Taeyeon media player and optional metadata editor.
+#!/usr/bin/env python3
+"""Local media player and optional metadata editor.
 
 This app is intentionally local-only. It can edit common text metadata fields and
 embedded artwork for MP3/FLAC files.
@@ -28,11 +28,11 @@ from urllib.parse import parse_qs, unquote, urlparse
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_DIR = SCRIPT_DIR.parents[1]
 DEFAULT_MEDIA_DIR = REPO_DIR / "media"
-DEFAULT_CONFIG = SCRIPT_DIR / "taeyeon_media_player_config.json"
-AUDIO_DEBUG_LOG = SCRIPT_DIR / "taeyeon_media_player_audio_debug.log"
-VISITOR_LOG = SCRIPT_DIR / "taeyeon_media_player_visitors.jsonl"
-STATS_DB = SCRIPT_DIR / "taeyeon_media_player_stats.sqlite3"
-ART_THUMB_CACHE_DIR = SCRIPT_DIR / "taeyeon_media_player_cache" / "art_thumbs"
+DEFAULT_CONFIG = SCRIPT_DIR / "media_player_config.json"
+AUDIO_DEBUG_LOG = SCRIPT_DIR / "media_player_audio_debug.log"
+VISITOR_LOG = SCRIPT_DIR / "media_player_visitors.jsonl"
+STATS_DB = SCRIPT_DIR / "media_player_stats.sqlite3"
+ART_THUMB_CACHE_DIR = SCRIPT_DIR / "media_player_cache" / "art_thumbs"
 ART_THUMB_DISPLAY_SIZE = 512
 ART_THUMB_ICON_SIZE = 96
 VENDOR_DIR = SCRIPT_DIR / "vendor"
@@ -53,25 +53,14 @@ except ImportError:  # noqa: E402
 class PlayerConfig:
     """! @brief User-facing config with safe defaults for this library."""
 
-    app_name: str = "Taeyeon Media Player"
+    app_name: str = "Local Media Player"
     music_dir: str = "Music"
     video_dir: str = "Video"
     text_dir: str = "Interviews"
     text_tab_label: str = "Interviews"
     lyrics_dir: str = "Lyrics"
-    preferred_categories: list[str] = field(
-        default_factory=lambda: [
-            "Taeyeon Official",
-            "Taeyeon OST",
-            "Taeyeon Concerts",
-            "Taeyeon Live, Covers & Radio",
-            "Taeyeon Features & Collaborations",
-            "Girls' Generation",
-            "Girls' Generation-TTS",
-            "GOT the beat",
-        ]
-    )
-    preferred_video_categories: list[str] = field(default_factory=lambda: ["Taeyeon Concert"])
+    preferred_categories: list[str] = field(default_factory=lambda: ["Albums", "Soundtracks", "Live", "Covers", "Features"])
+    preferred_video_categories: list[str] = field(default_factory=lambda: ["Concerts"])
 
     @classmethod
     def from_mapping(cls, data: dict[str, object]) -> "PlayerConfig":
@@ -688,10 +677,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         with self.library.lock:
             lyrics = self.library.lyrics.get(track_id, "")
+            lyrics_format = self.library.lyrics_formats.get(track_id, "text")
         if not lyrics:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_json({"lyrics": lyrics})
+        self.send_json({"lyrics": lyrics, "format": lyrics_format})
 
     def handle_video(self, path_text: str) -> None:
         """! @brief Stream video by ID using the shared range-aware pipeline."""
@@ -791,7 +781,7 @@ ASSET_DIR = SCRIPT_DIR / "assets"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the local Taeyeon Media Player.")
+    parser = argparse.ArgumentParser(description="Run the local media player.")
     parser.add_argument("--media-dir", default=DEFAULT_MEDIA_DIR, type=Path)
     parser.add_argument("--config", default=DEFAULT_CONFIG, type=Path, help="Optional JSON config file.")
     parser.add_argument("--read-only", action="store_true", help="Run the library as a player without metadata editing.")

@@ -1,81 +1,118 @@
-# Taeyeon Media Player
+# Local Media Player
 
-A local-first web media player for a Taeyeon-focused music, video, lyrics, and
-interview archive.
+A media player that runs on a local computer and lets you browse, play, and
+organize a local music, video, lyrics, and text archive through a web browser.
 
-The app runs on your computer and serves your own files through a browser UI. It
-can be used locally, on your home network, through a private VPN such as
-Tailscale, or in read-only web-share mode through a temporary tunnel.
+The player is local-first by default. It can also be used on your home network,
+through private remote access with Tailscale, or through a temporary read-only
+Cloudflare web share.
 
 Media files are **not included** in this repository.
 
+## Screenshots
+
+Add screenshots here.
+
 ## Features
 
-- Music library with album, category, newest/oldest, and year views
-- Video library with folder-style video albums and optional folder covers
-- Interview reader for local `.txt` files
+- Browse music by album, category, year, newest, oldest, and sections
+- Browse videos with folder-based organization and optional folder cover artwork
+- Read local text archives, such as interviews or translated articles
+- Display local lyrics during playback, including timed `.lrc` lyrics
 - Music and video queues with resume support
-- Mobile-friendly listening UI with Now Playing and queue screens
-- Audio visualizer on the Now Playing screen
-- Local lyrics sidecars shown on supported songs
-- Listening stats page with day, week, month, year, and all-time summaries
-- HTTP Range streaming for fast MP3, FLAC, M4A, and video playback/seek
-- Optional Edit Mode for MP3/FLAC metadata and embedded artwork
-- Read-only web-share mode that hides local paths and disables editing
-- Windows launcher scripts and a small launcher GUI
+- Now Playing screen with artwork, lyrics, controls, and visualizers
+- Listening statistics with daily, weekly, monthly, yearly, and all-time views
+- Optional metadata editing for supported audio files
+- Desktop and mobile browser interface
+- Multiple access modes:
+  - Local
+  - Home Network (LAN)
+  - Private Remote (Tailscale)
+  - Read-only Cloudflare Web Share
 
-## Expected Media Layout
+## Getting Started
 
-Point the app at a media folder. By default, the library expects this shape:
+The easiest way to start the player is with the included **Media Launcher**.
+
+On Windows, open:
 
 ```text
-media/
-  Music/
-    Taeyeon Official/
-    Taeyeon OST/
-    Taeyeon Live, Covers & Radio/
-    Girls' Generation/
-    Girls' Generation-TTS/
-  Video/
-    Taeyeon Concert/
-    Group Concert/
-    ...
-  Interviews/
-    2021 Interview Name.txt
-  Lyrics/
-    Album Name/
-      Song Title.txt
-  artwork/
-    Album Name.jpg
+windows_commands/open_media_launcher.cmd
+```
+
+On macOS, open:
+
+```text
+mac_commands/open_media_launcher.command
+```
+
+If macOS will not open it, run this once from Terminal:
+
+```bash
+chmod +x mac_commands/open_media_launcher.command
+```
+
+The Windows launcher can start the player in:
+
+- Local mode
+- Home Network (LAN) mode
+- Private Remote (Tailscale) mode
+- Read-only Cloudflare Web Share mode
+
+The macOS launcher supports Local, Home Network, Private Remote, and local
+read-only Web Share modes. It also shows the link to open from a browser.
+
+## Command Line
+
+If you prefer, start the server directly with Python:
+
+```powershell
+python media_player.py --media-dir <media-folder> --host 127.0.0.1 --port 8766
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8766/
+```
+
+To allow other devices on your home network to connect:
+
+```powershell
+python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8766
+```
+
+Then open the server computer's LAN address from another device, for example:
+
+```text
+http://<lan-address>:8766/
+```
+
+## Library Layout
+
+Point the app at a media folder. By default, the player looks for music, video,
+lyrics, artwork, and text archives in this kind of layout:
+
+```text
+Media/
+|-- Music/
+|-- Video/
+|-- Lyrics/
+|-- Interviews/
+`-- artwork/
 ```
 
 The app is forgiving about the exact music subfolders. If `Music` does not
 exist, the selected media folder itself is scanned for audio.
 
-You can override the default folder names and labels with
-`taeyeon_media_player_config.json`:
-
-```json
-{
-  "app_name": "Taeyeon Media Player",
-  "music_dir": "Music",
-  "video_dir": "Video",
-  "text_dir": "Interviews",
-  "text_tab_label": "Interviews",
-  "lyrics_dir": "Lyrics",
-  "preferred_categories": ["Taeyeon Official", "Taeyeon OST"],
-  "preferred_video_categories": ["Taeyeon Concert"]
-}
-```
-
-Missing optional folders such as `Video`, `Interviews`, or `Lyrics` simply show
-empty pages. Missing preferred categories are ignored.
+Missing optional folders, such as `Video`, `Interviews`, or `Lyrics`, simply
+show empty pages.
 
 ## Artwork And Covers
 
-Audio artwork is normally read from embedded MP3/FLAC tags.
+Music artwork is read from embedded MP3/FLAC tags.
 
-Video folder covers are regular image files placed inside the video folder. Use
+Video folder covers are regular image files placed inside a video folder. Use
 one of these names:
 
 ```text
@@ -85,171 +122,134 @@ cover.png
 cover.webp
 ```
 
-Individual videos do not need embedded artwork. Folder covers are used for video
-album cards.
+Individual videos do not need embedded artwork. Folder covers are used for
+video album cards.
 
-## Local Lyrics
+## Lyrics
 
-Lyrics are read from sidecar text files under `Lyrics/`.
+Lyrics can be stored beside songs or in the shared lyrics folder. English lyrics
+are preferred when available.
 
-Recommended layout:
+Preferred sidecar order beside each song:
+
+```text
+01 - Song.flac
+01 - Song.en.lrc
+01 - Song.en.txt
+01 - Song.lrc
+01 - Song.txt
+```
+
+Shared lyrics folder example:
 
 ```text
 Lyrics/
-  Panorama - The Best of TAEYEON/
-    Panorama.txt
-    Letter To Myself.txt
+`-- Panorama - The Best of TAEYEON/
+    |-- Panorama.txt
+    `-- Letter To Myself.txt
 ```
 
-Use the album folder name when possible. Song filenames should match the song
-title closely. Characters that Windows does not allow in filenames can be left
-out or replaced with a simple dash.
+Timed `.lrc` files highlight the current lyric line in Now Playing. Use
+`.en.lrc` or `.en.txt` when you have an English translation.
 
-## Start The Player
+## Remote Access
 
-Run the server with Python:
+Choose the access mode based on how you want to use the player.
+
+### Local
+
+Play media directly on the computer running the server.
+
+### Home Network (LAN)
+
+Access your library from phones, tablets, and other devices connected to your
+home network.
+
+### Tailscale
+
+Access your library remotely through your private Tailscale network.
+
+### Cloudflare Web Share
+
+Generate a temporary public link for sharing playback over the internet:
 
 ```powershell
-python taeyeon_media_player.py --media-dir G:\cod\media --host 127.0.0.1 --port 8766
+python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8767 --web-share
 ```
 
-Then open:
+Cloudflare Web Share always runs in **read-only mode**:
 
-```text
-http://127.0.0.1:8766/
-```
+- Metadata editing is disabled
+- Local file paths are hidden from API responses
+- Playback stays enabled
+- Visitor entries use a hashed visitor key instead of storing raw IP addresses
 
-To let your phone or tablet connect on the same home network, bind to all
-interfaces:
-
-```powershell
-python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 8766
-```
-
-Then open your computer's LAN address from the other device, for example:
-
-```text
-http://10.0.0.160:8766/
-```
-
-## Windows Launchers
-
-Windows helper scripts live in `windows_commands/`.
-
-```text
-open_taeyeon_media_player_launcher_gui.cmd
-start_taeyeon_media_player.cmd
-start_taeyeon_media_player_phone_lan.cmd
-start_taeyeon_media_player_private_tailscale.cmd
-start_taeyeon_media_player_web_share.cmd
-start_taeyeon_media_player_web_share_with_cloudflare.cmd
-show_web_share_visitors.cmd
-```
-
-The launcher GUI is the easiest way to choose local, phone/LAN, Tailscale, or
-Cloudflare web-share mode.
-
-## Web-Share Mode
-
-Use web-share mode for temporary internet-facing playback:
-
-```powershell
-python taeyeon_media_player.py --media-dir G:\cod\media --host 0.0.0.0 --port 8767 --web-share
-```
-
-Web-share mode:
-
-- disables metadata editing
-- hides local file paths from API responses
-- keeps playback enabled
-- records privacy-light visitor entries in `taeyeon_media_player_visitors.jsonl`
-
-Visitor entries use a hashed visitor key rather than storing raw IP addresses.
-
-## Optional Edit Password
-
-Edit Mode can be protected with a password:
-
-```powershell
-python taeyeon_media_player.py --media-dir G:\cod\media --edit-password "your-password"
-```
-
-You can also copy the example config:
-
-```powershell
-copy taeyeon_media_player_config.example.json taeyeon_media_player_config.json
-```
-
-The local config file is ignored by git.
+Treat temporary links like something other people could open if they receive
+them.
 
 ## Edit Mode
 
-Edit Mode writes directly to MP3 and FLAC files.
+Edit Mode allows supported audio metadata and embedded artwork to be updated
+from the browser.
 
-Supported edits:
+Supported edits include:
 
-- title
-- artist
-- album
-- album artist
-- date
-- track number
-- genre
-- embedded artwork
+- Title
+- Artist
+- Album
+- Album Artist
+- Track Number
+- Date
+- Genre
+- Embedded Artwork
 
-Use a copy or backup of your media if you are experimenting.
+Edit Mode writes directly to MP3 and FLAC files. Use a copy or backup of your
+media if you are experimenting.
 
-## Generated Files
-
-These files/folders are created while running and are safe to regenerate:
-
-```text
-taeyeon_media_player_cache/
-taeyeon_media_player_scan_cache.json
-taeyeon_media_player_audio_debug.log
-taeyeon_media_player_stats.sqlite3
-taeyeon_media_player_visitors.jsonl
-docs/doxygen/
-__pycache__/
-```
-
-They are local runtime artifacts and should not be committed.
-
-## Source Map
-
-```text
-taeyeon_media_player.py      Server, API routes, streaming, edit routes
-media_library.py             Music/video/interview scanning, lyrics, artwork cache
-listening_stats.py           SQLite-backed listening stats summaries
-metadata_editor_models.py    Track, Video, and Interview data models
-metadata_tag_tools.py        MP3/FLAC metadata and artwork writing
-metadata_browser.py          Audio metadata and artwork reading
-launcher_gui.py              Windows launcher GUI
-assets/index.html            Browser app shell
-assets/app.js                UI, playback, queues, stats, mobile behavior
-assets/styles.css            Visual design and responsive layout
-windows_commands/            Windows helper launch scripts
-```
-
-## Developer Docs
-
-The source includes Doxygen-style comments and a `Doxyfile`.
-
-To generate local HTML docs, install Doxygen and run:
+Edit Mode can also be protected with a password:
 
 ```powershell
-doxygen Doxyfile
+python media_player.py --media-dir <media-folder> --edit-password "your-password"
 ```
 
-Generated docs go to:
+## Configuration
 
-```text
-docs/doxygen/html/
+Most application behavior can be customized through
+`media_player_config.json`.
+
+To start from the example file:
+
+```powershell
+copy media_player_config.example.json media_player_config.json
 ```
+
+Example:
+
+```json
+{
+  "app_name": "Local Media Player",
+  "music_dir": "Music",
+  "video_dir": "Video",
+  "text_dir": "Interviews",
+  "text_tab_label": "Interviews",
+  "lyrics_dir": "Lyrics",
+  "preferred_categories": ["Albums", "Soundtracks"],
+  "preferred_video_categories": ["Concerts"]
+}
+```
+
+Configuration can control:
+
+- Application name
+- Library folder names
+- Text archive label
+- Preferred music and video categories
+- Launch behavior
+
+Keep passwords and private paths out of committed config files.
 
 ## Notes
 
-This app is designed for personal/local media libraries. It does not upload your
-media anywhere by itself. If you expose it outside your home network, use
-read-only web-share mode, avoid Edit Mode, and treat the temporary link like
-something other people could open if they receive it.
+This app is designed for local media libraries. It does not upload media
+anywhere by itself. For internet sharing, prefer read-only web-share mode and
+avoid exposing Edit Mode.

@@ -14,8 +14,8 @@ from metadata_editor_models import Interview, Track, Video
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SCAN_CACHE_PATH = SCRIPT_DIR / "taeyeon_media_player_scan_cache.json"
-CACHE_DIR = SCRIPT_DIR / "taeyeon_media_player_cache"
+SCAN_CACHE_PATH = SCRIPT_DIR / "media_player_scan_cache.json"
+CACHE_DIR = SCRIPT_DIR / "media_player_cache"
 ARTWORK_CACHE_DIR = CACHE_DIR / "artwork"
 SCAN_CACHE_VERSION = 1
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m2ts", ".mts", ".ts"}
@@ -45,6 +45,7 @@ class LibrarySnapshot:
     video_folder_covers: dict[str, Path]
     interviews: list[Interview]
     lyrics: dict[int, str]
+    lyrics_formats: dict[int, str]
 
 
 class Library:
@@ -70,6 +71,7 @@ class Library:
         self.video_folder_covers: dict[str, Path] = {}
         self.interviews: list[Interview] = []
         self.lyrics: dict[int, str] = {}
+        self.lyrics_formats: dict[int, str] = {}
         self.lock = threading.Lock()
         self.refresh()
 
@@ -88,6 +90,7 @@ class Library:
             self.video_folder_covers = snapshot.video_folder_covers
             self.interviews = snapshot.interviews
             self.lyrics = snapshot.lyrics
+            self.lyrics_formats = snapshot.lyrics_formats
 
     def path_for_id(self, track_id: int) -> Path | None:
         with self.lock:
@@ -129,7 +132,7 @@ def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Pat
     # part. Video and interview scans are lightweight path/text scans.
     cache = load_scan_cache()
     lyrics_index = scan_lyrics(lyrics_dir or music_dir.parent / "Lyrics")
-    tracks, paths, artwork, lyrics, next_cache = scan_music(music_dir, cache, lyrics_index)
+    tracks, paths, artwork, lyrics, lyrics_formats, next_cache = scan_music(music_dir, cache, lyrics_index)
     videos, video_paths, video_thumbnails, video_folder_covers = scan_videos(video_dir)
     interviews = scan_interviews(interviews_dir)
     save_scan_cache(next_cache)
@@ -143,6 +146,7 @@ def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Pat
         video_folder_covers=video_folder_covers,
         interviews=interviews,
         lyrics=lyrics,
+        lyrics_formats=lyrics_formats,
     )
 
 
@@ -172,7 +176,7 @@ def scan_music(
     music_dir: Path,
     cache: dict[str, dict[str, object]],
     lyrics_index: dict[str, str],
-) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[int, str], dict[str, dict[str, object]]]:
+) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[int, str], dict[int, str], dict[str, dict[str, object]]]:
     """! @brief Scan audio files and reuse cached metadata when possible."""
     # Metadata/artwork reads are the slow part. The scan cache lets playback and
     # refreshes stay quick unless a file's size or modified time actually changed.
@@ -180,6 +184,7 @@ def scan_music(
     paths: list[Path] = []
     artwork: dict[int, Artwork] = {}
     lyrics: dict[int, str] = {}
+    lyrics_formats: dict[int, str] = {}
     next_cache: dict[str, dict[str, object]] = {}
     audio_paths = audio_files(music_dir)
 
@@ -215,11 +220,12 @@ def scan_music(
             folder = "(root)"
         missing_fields = track_missing_fields(title, artist, album, date, tracknumber, genre, art is not None)
         review_flags = track_review_flags(title, artist, album, albumartist)
-        lyric_text = lyrics_index.get(normalize_lyrics_key(title), "")
+        lyric_text, lyric_format = lyrics_for_track(path, title, lyrics_index)
         if art:
             artwork[track_id] = art
         if lyric_text:
             lyrics[track_id] = lyric_text
+            lyrics_formats[track_id] = lyric_format
         paths.append(path)
         tracks.append(
             Track(
@@ -241,11 +247,12 @@ def scan_music(
                 folder=folder,
                 has_lyrics=bool(lyric_text),
                 lyrics_url=f"/lyrics/{track_id}" if lyric_text else "",
+                lyrics_format=lyric_format if lyric_text else "",
                 missing_fields=missing_fields,
                 review_flags=review_flags,
             )
         )
-    return tracks, paths, artwork, lyrics, next_cache
+    return tracks, paths, artwork, lyrics, lyrics_formats, next_cache
 
 
 def audio_files(music_dir: Path) -> list[Path]:
@@ -269,16 +276,106 @@ def scan_lyrics(lyrics_dir: Path) -> dict[str, str]:
     for path in sorted(lyrics_dir.rglob("*.txt")):
         if not path.is_file():
             continue
-        try:
-            content = path.read_text(encoding="utf-8-sig").strip()
-        except UnicodeDecodeError:
-            content = path.read_text(encoding="cp949", errors="replace").strip()
+        content = read_lyric_text(path)
         if not content:
             continue
         key = normalize_lyrics_key(path.stem)
         if key and key not in lyrics:
             lyrics[key] = content
     return lyrics
+
+
+def lyrics_for_track(path: Path, title: str, lyrics_index: dict[str, str]) -> tuple[str, str]:
+    """! @brief Return the best lyrics for a track, preferring English translations."""
+    # English lyrics should win even when a non-English timed LRC exists next to
+    # the song. That keeps translated TXT files useful until a timed EN LRC exists.
+    english_lrc_path = path.with_suffix(".en.lrc")
+    if english_lrc_path.is_file():
+        english_lrc = read_lyric_text(english_lrc_path)
+        if english_lrc and lrc_timing_matches_raw(english_lrc, path.with_suffix(".lrc")):
+            return english_lrc, "lrc"
+
+    english_text_sidecar = read_lyric_sidecar(path, ((".en.txt", "text"),))
+    if english_text_sidecar:
+        return english_text_sidecar
+
+    lyric_text = lyrics_index.get(normalize_lyrics_key(title), "")
+    if lyric_text:
+        return lyric_text, "text"
+
+    if english_lrc_path.is_file():
+        english_lrc = read_lyric_text(english_lrc_path)
+        plain_text = strip_lrc_timing(english_lrc)
+        if plain_text:
+            return plain_text, "text"
+
+    non_english_sidecar = read_lyric_sidecar(path, ((".lrc", "lrc"), (".txt", "text")))
+    return non_english_sidecar if non_english_sidecar else ("", "")
+
+
+def lrc_timing_matches_raw(english_lrc: str, raw_lrc_path: Path) -> bool:
+    """! @brief Check whether translated LRC timestamps match the raw non-empty lyric rows."""
+    if not raw_lrc_path.is_file():
+        return True
+    raw_lrc = read_lyric_text(raw_lrc_path)
+    english_timestamps = timed_lrc_timestamps(english_lrc)
+    raw_timestamps = timed_lrc_timestamps(raw_lrc)
+    return bool(english_timestamps and raw_timestamps and english_timestamps == raw_timestamps)
+
+
+def timed_lrc_line_count(content: str) -> int:
+    """! @brief Count LRC rows that contain both a timestamp and lyric text."""
+    return len(timed_lrc_timestamps(content))
+
+
+def timed_lrc_timestamps(content: str) -> list[str]:
+    """! @brief Return timestamps for non-empty LRC lyric rows, ignoring timed blanks."""
+    timestamps: list[str] = []
+    for line in content.splitlines():
+        matches = re.findall(r"\[([0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?)\]", line)
+        if matches:
+            text = re.sub(r"\[[^\]]+\]", "", line).strip()
+            if text and not text.startswith("#"):
+                timestamps.extend(matches)
+    return timestamps
+
+
+def strip_lrc_timing(content: str) -> str:
+    """! @brief Keep readable lyric text while removing unreliable LRC timestamps."""
+    lines: list[str] = []
+    for line in content.splitlines():
+        text = re.sub(r"\[[^\]]+\]", "", line).strip()
+        if text and not text.startswith("#"):
+            lines.append(text)
+    return "\n".join(lines).strip()
+
+
+def read_lyric_sidecar(
+    path: Path,
+    candidates: tuple[tuple[str, str], ...] = (
+        (".en.lrc", "lrc"),
+        (".en.txt", "text"),
+        (".lrc", "lrc"),
+        (".txt", "text"),
+    ),
+) -> tuple[str, str] | None:
+    """! @brief Read .lrc/.txt files next to an audio file without touching tags."""
+    for suffix, lyric_format in candidates:
+        lyric_path = path.with_suffix(suffix)
+        if not lyric_path.is_file():
+            continue
+        content = read_lyric_text(lyric_path)
+        if content:
+            return content, lyric_format
+    return None
+
+
+def read_lyric_text(path: Path) -> str:
+    """! @brief Read a local lyric file using common Korean/Japanese-friendly encodings."""
+    try:
+        return path.read_text(encoding="utf-8-sig").strip()
+    except UnicodeDecodeError:
+        return path.read_text(encoding="cp949", errors="replace").strip()
 
 
 def normalize_lyrics_key(value: str) -> str:
@@ -400,7 +497,7 @@ def scan_interviews(interviews_dir: Path) -> list[Interview]:
     interviews: list[Interview] = []
     for interview_id, path in enumerate(interview_paths):
         relative_path = path.relative_to(interviews_dir).as_posix()
-        title_base = path.stem.replace("_", " ").strip()
+        title_base = clean_interview_title(path.stem)
         year_match = re.search(r"(19|20)\d{2}", title_base)
         year = year_match.group(0) if year_match else ""
         source = re.sub(r"^(19|20)\d{2}\s*", "", title_base).strip(" -_") or title_base
@@ -420,6 +517,15 @@ def scan_interviews(interviews_dir: Path) -> list[Interview]:
             )
         )
     return interviews
+
+
+def clean_interview_title(title: str) -> str:
+    """! @brief Remove translator/source tags from interview display titles."""
+    cleaned = title.replace("_", " ")
+    # 309KTYSS is a translator/source credit, not part of the interview name.
+    cleaned = re.sub(r"\b309KTYSS\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip(" -_")
 
 
 def interview_files(interviews_dir: Path) -> list[Path]:
@@ -468,18 +574,12 @@ def contains_cjk(value: str) -> bool:
 def track_review_flags(title: str, artist: str, album: str, albumartist: str) -> list[str]:
     """! @brief Return soft cleanup warnings for non-English or odd metadata."""
     flags = []
-    artist_lower = artist.strip().lower()
-    albumartist_lower = albumartist.strip().lower()
     if contains_cjk(title):
         flags.append("non-English title")
     if contains_cjk(album):
         flags.append("non-English album")
     if album.strip().lower() in {"tae", "unknown", "none"}:
         flags.append("suspicious album")
-    if artist and "taeyeon" not in artist_lower and "generation" not in artist_lower:
-        flags.append("artist review")
-    if albumartist and "taeyeon" not in albumartist_lower and "generation" not in albumartist_lower:
-        flags.append("album artist review")
     return flags
 
 

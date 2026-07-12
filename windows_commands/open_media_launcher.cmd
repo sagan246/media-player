@@ -11,4 +11,4 @@ if exist "%CODEX_PY%" (
   set "PYTHON_EXE=python"
 )
 
-start "Taeyeon Media Player Launcher" "%PYTHON_EXE%" "%APP_DIR%\launcher_gui.py"
+start "Media Player Launcher" "%PYTHON_EXE%" "%APP_DIR%\launcher_gui.py"

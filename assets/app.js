@@ -32,21 +32,22 @@
     const statsRangeAnchors = {week:localStorage.getItem("statsRangeEnd:week")||legacyStatsRangeEnd,month:localStorage.getItem("statsRangeEnd:month")||legacyStatsRangeEnd,year:localStorage.getItem("statsRangeEnd:year")||legacyStatsRangeEnd};
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
-    let activeTheme = localStorage.getItem("accentTheme") || "blue";
-    if((!localStorage.getItem("accentTheme") || activeTheme === "blue") && localStorage.getItem("themeDefault") !== "albumAdaptive"){
-      activeTheme = "albumAdaptive";
+    let activeTheme = localStorage.getItem("accentTheme") || "albumAdaptiveLight";
+    const themeDefaultVersion = localStorage.getItem("themeDefault");
+    if((!localStorage.getItem("accentTheme") || ["blue","albumAdaptive"].includes(activeTheme)) && themeDefaultVersion !== "albumAdaptiveLight"){
+      activeTheme = "albumAdaptiveLight";
       localStorage.setItem("accentTheme", activeTheme);
-      localStorage.setItem("themeDefault", "albumAdaptive");
+      localStorage.setItem("themeDefault", "albumAdaptiveLight");
     }
     let adaptiveThemeSource = "";
     let appConfig = {
       editable:true,
       editRequiresPassword:false,
-      appName:"Taeyeon Media Player",
+      appName:"Local Media Player",
       textTabLabel:"Interviews",
       textDir:"Interviews",
-      preferredCategories:["Taeyeon Official","Taeyeon OST","Taeyeon Concerts","Taeyeon Live, Covers & Radio","Taeyeon Features & Collaborations","Girls' Generation","Girls' Generation-TTS","GOT the beat"],
-      preferredVideoCategories:["Taeyeon Concert"],
+      preferredCategories:["Albums","Soundtracks","Live","Covers","Features"],
+      preferredVideoCategories:["Concerts"],
     };
     let editToken = localStorage.getItem("editToken") || "";
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
@@ -59,6 +60,7 @@
     let videoQueue = [], videoQueueIndex = -1;
     let albumClickTimer = null, queueToastTimer = null;
     let nowPlayingRenderedTrackId = null, nowPlayingRenderedArtSrc = "";
+    let currentLrcLyrics = null;
     let restoredMusicState = false, lastQueueSaveAt = 0;
     let restoredVideoState = false, restoringVideoStateNow = false, lastVideoSaveAt = 0;
     let listeningStats = null, statsSession = null, lastStatsSentAt = 0;
@@ -74,7 +76,7 @@
     const selectedIds = new Set();
     const adaptiveThemeCache = new Map();
     const MEDIA_TYPES = ["music", "video", "health", "interviews", "statsPage", "customize"];
-    const DEFAULT_THEME_ID = "albumAdaptive";
+    const DEFAULT_THEME_ID = "albumAdaptiveLight";
     const DARK_ADAPTIVE_THEME_ID = "albumAdaptive";
     const LIGHT_ADAPTIVE_THEME_ID = "albumAdaptiveLight";
     const DEFAULT_ADAPTIVE_COLOR = {r:63, g:111, b:216};
@@ -92,28 +94,28 @@
       "--track-number-color",
     ];
     const THEME_CHOICES = [
-      {id:DARK_ADAPTIVE_THEME_ID, label:"Album Adaptive", note:"Dark theme", className:"theme-adaptive", swatchA:"#020617", swatchB:"#8db7ff", swatchRgb:"141,183,255"},
-      {id:LIGHT_ADAPTIVE_THEME_ID, label:"Album Adaptive Light", note:"Light theme", className:"theme-light-adaptive", swatchA:"#f8fafc", swatchB:"#8db7ff", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
-      {id:"blue", label:"Blue", note:"Dark theme", className:"", swatchA:"#3f6fd8", swatchB:"#6f99f2", swatchRgb:"63,111,216"},
-      {id:"purple", label:"Purple", note:"Dark theme", className:"theme-purple", swatchA:"#7c3aed", swatchB:"#a855f7", swatchRgb:"124,58,237"},
-      {id:"pink", label:"Pink", note:"Dark theme", className:"theme-pink", swatchA:"#db2777", swatchB:"#f472b6", swatchRgb:"219,39,119"},
-      {id:"green", label:"Green", note:"Dark theme", className:"theme-green", swatchA:"#059669", swatchB:"#34d399", swatchRgb:"5,150,105"},
-      {id:"gold", label:"Gold", note:"Dark theme", className:"theme-gold", swatchA:"#d97706", swatchB:"#fbbf24", swatchRgb:"217,119,6"},
-      {id:"cyan", label:"Cyan", note:"Dark theme", className:"theme-cyan", swatchA:"#0891b2", swatchB:"#22d3ee", swatchRgb:"8,145,178"},
-      {id:"red", label:"Red", note:"Dark theme", className:"theme-red", swatchA:"#dc2626", swatchB:"#f87171", swatchRgb:"220,38,38"},
-      {id:"silver", label:"Silver", note:"Dark theme", className:"theme-silver", swatchA:"#64748b", swatchB:"#e2e8f0", swatchRgb:"148,163,184"},
-      {id:"lavenderNight", label:"Lavender Night", note:"Dark theme", className:"theme-lavender-night", swatchA:"#111026", swatchB:"#c4b5fd", swatchRgb:"139,92,246"},
-      {id:"light", label:"Light", note:"Light theme", className:"theme-light", swatchA:"#f8fafc", swatchB:"#3b82f6", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
-      {id:"lightPink", label:"Light Pink", note:"Light theme", className:"theme-light-pink", swatchA:"#fff1f2", swatchB:"#f472b6", swatchRgb:"219,39,119", browserColor:"#fdf2f8"},
-      {id:"lightGreen", label:"Light Green", note:"Light theme", className:"theme-light-green", swatchA:"#ecfdf5", swatchB:"#34d399", swatchRgb:"5,150,105", browserColor:"#f0fdf4"},
-      {id:"lightPurple", label:"Light Purple", note:"Light theme", className:"theme-light-purple", swatchA:"#f5f3ff", swatchB:"#a855f7", swatchRgb:"124,58,237", browserColor:"#f5f3ff"},
-      {id:"iceBlueLight", label:"Ice Blue Light", note:"Light theme", className:"theme-light-ice", swatchA:"#eef7ff", swatchB:"#38bdf8", swatchRgb:"2,132,199", browserColor:"#f0f9ff"},
-      {id:"warmPaper", label:"Warm Paper", note:"Light theme", className:"theme-light-paper", swatchA:"#fff7ed", swatchB:"#f59e0b", swatchRgb:"217,119,6", browserColor:"#fff7ed"},
+      {id:LIGHT_ADAPTIVE_THEME_ID, label:"Auto Light", note:"Light", className:"theme-light-adaptive", swatchA:"#f8fafc", swatchB:"#8db7ff", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
+      {id:DARK_ADAPTIVE_THEME_ID, label:"Auto Dark", note:"Dark", className:"theme-adaptive", swatchA:"#020617", swatchB:"#8db7ff", swatchRgb:"141,183,255"},
+      {id:"blue", label:"Blue", note:"Dark", className:"", swatchA:"#3f6fd8", swatchB:"#6f99f2", swatchRgb:"63,111,216"},
+      {id:"purple", label:"Purple", note:"Dark", className:"theme-purple", swatchA:"#7c3aed", swatchB:"#a855f7", swatchRgb:"124,58,237"},
+      {id:"pink", label:"Pink", note:"Dark", className:"theme-pink", swatchA:"#db2777", swatchB:"#f472b6", swatchRgb:"219,39,119"},
+      {id:"green", label:"Green", note:"Dark", className:"theme-green", swatchA:"#059669", swatchB:"#34d399", swatchRgb:"5,150,105"},
+      {id:"gold", label:"Gold", note:"Dark", className:"theme-gold", swatchA:"#d97706", swatchB:"#fbbf24", swatchRgb:"217,119,6"},
+      {id:"cyan", label:"Cyan", note:"Dark", className:"theme-cyan", swatchA:"#0891b2", swatchB:"#22d3ee", swatchRgb:"8,145,178"},
+      {id:"red", label:"Red", note:"Dark", className:"theme-red", swatchA:"#dc2626", swatchB:"#f87171", swatchRgb:"220,38,38"},
+      {id:"silver", label:"Silver", note:"Dark", className:"theme-silver", swatchA:"#64748b", swatchB:"#e2e8f0", swatchRgb:"148,163,184"},
+      {id:"lavenderNight", label:"Lavender", note:"Dark", className:"theme-lavender-night", swatchA:"#111026", swatchB:"#c4b5fd", swatchRgb:"139,92,246"},
+      {id:"light", label:"White", note:"Light", className:"theme-light", swatchA:"#f8fafc", swatchB:"#3b82f6", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
+      {id:"lightPink", label:"Rose", note:"Light", className:"theme-light-pink", swatchA:"#fff1f2", swatchB:"#f472b6", swatchRgb:"219,39,119", browserColor:"#fdf2f8"},
+      {id:"lightGreen", label:"Mint", note:"Light", className:"theme-light-green", swatchA:"#ecfdf5", swatchB:"#34d399", swatchRgb:"5,150,105", browserColor:"#f0fdf4"},
+      {id:"lightPurple", label:"Lilac", note:"Light", className:"theme-light-purple", swatchA:"#f5f3ff", swatchB:"#a855f7", swatchRgb:"124,58,237", browserColor:"#f5f3ff"},
+      {id:"iceBlueLight", label:"Ice", note:"Light", className:"theme-light-ice", swatchA:"#eef7ff", swatchB:"#38bdf8", swatchRgb:"2,132,199", browserColor:"#f0f9ff"},
+      {id:"warmPaper", label:"Paper", note:"Light", className:"theme-light-paper", swatchA:"#fff7ed", swatchB:"#f59e0b", swatchRgb:"217,119,6", browserColor:"#fff7ed"},
     ];
     if(!THEME_CHOICES.some(theme=>theme.id===activeTheme)) activeTheme = DEFAULT_THEME_ID;
     const MOBILE_BREAKPOINT = 860;
-    const VIDEO_EMPTY_TITLE = "Select a video";
-    const VIDEO_EMPTY_META = "Videos play locally from media\\Video.";
+    const VIDEO_EMPTY_TITLE = "";
+    const VIDEO_EMPTY_META = "";
     // Small DOM/API helpers keep the rest of the file readable.
     const byId = id => document.getElementById(id);
     const on = (el, event, handler) => el.addEventListener(event, handler);
@@ -556,8 +558,8 @@
     function detailActionsHtml(buttons){
       return `<div class="albumActions">${buttons.map(detailActionButtonHtml).join("")}</div>`;
     }
-    function sectionGroupHtml(title, countText, cardsHtml, sectionClass="", gridClass=""){
-      return `<section class="albumHomeSection ${sectionClass}"><div class="albumSectionHead"><h2>${esc(groupLabel(title))}</h2><span>${esc(countText)}</span></div><div class="albumSectionGrid ${gridClass}">${cardsHtml}</div></section>`;
+    function sectionGroupHtml(title, countText, cardsHtml, sectionClass="", gridClass="", actionHtml=""){
+      return `<section class="albumHomeSection ${sectionClass}"><div class="albumSectionHead"><div class="albumSectionTitle">${actionHtml}<h2>${esc(groupLabel(title))}</h2></div><span>${esc(countText)}</span></div><div class="albumSectionGrid ${gridClass}">${cardsHtml}</div></section>`;
     }
     function statPillHtml(value, label){
       return `<span class="stat"><strong>${esc(value)}</strong> ${esc(label)}</span>`;
@@ -725,14 +727,19 @@
     function albumYearSections(ordered){const buckets=new Map(); for(const [name,list] of ordered){const bucket=albumYearName(list); if(!buckets.has(bucket))buckets.set(bucket,[]); buckets.get(bucket).push([name,list]);} return [...buckets.entries()].sort((a,b)=>{const ay=Number(a[0]), by=Number(b[0]); if(Number.isFinite(ay)&&Number.isFinite(by))return by-ay; if(a[0]==="Unknown Year")return 1; if(b[0]==="Unknown Year")return -1; return a[0].localeCompare(b[0]);});}
     function albumDisplayEntries(source=albumSource()){const ordered=albumEntries(source); if(albumViewMode==="oldest")return [...ordered].reverse(); if(albumViewMode==="sections"&&!searchQuery())return albumSections(ordered).flatMap(([_title,items])=>items); if(albumViewMode==="years"&&!searchQuery())return albumYearSections(ordered).flatMap(([_title,items])=>items); return ordered;}
     function currentPlaybackList(){if(selectedAlbum!=="All")return albumTrackList(albumList(selectedAlbum)); return albumDisplayEntries(albumSource()).flatMap(([_name,list])=>albumTrackList(list));}
-    function renderAlbumSectionGroups(groups){return groups.map(([title,items])=>sectionGroupHtml(title, `${items.length} album${items.length===1?"":"s"}`, items.map(([name,list])=>albumCardHtml(name,list)).join(""))).join("");}
+    function musicSectionActionHtml(title){
+      return `<button class="secondary iconControl sectionPlayButton" data-music-section-play="${esc(title)}" type="button" title="Play section" aria-label="Play ${esc(groupLabel(title))}">&#9654;</button>`;
+    }
+    function renderAlbumSectionGroups(groups){return groups.map(([title,items])=>sectionGroupHtml(title, `${items.length} album${items.length===1?"":"s"}`, items.map(([name,list])=>albumCardHtml(name,list)).join(""), "", "", musicSectionActionHtml(title))).join("");}
     function renderAlbumSections(ordered){if(searchQuery())return ordered.map(([name,list])=>albumCardHtml(name,list)).join(""); return renderAlbumSectionGroups(albumSections(ordered));}
     function renderAlbumYearSections(ordered){if(searchQuery())return ordered.map(([name,list])=>albumCardHtml(name,list)).join(""); return renderAlbumSectionGroups(albumYearSections(ordered));}
     function sourceAlbumList(source, album){return albumTrackList(source.filter(t=>albumOf(t)===album));}
     function bindAlbumButtons(source){albumGridEl.querySelectorAll("button[data-action]").forEach(btn=>btn.addEventListener("click",(e)=>{e.stopPropagation(); btn.blur(); const album=btn.dataset.album, action=btn.dataset.action; if(action==="resume-play")return; if(action==="select"){openMusicAlbum(album); return;} const list=sourceAlbumList(source,album); if(action==="add"){addToMusicQueue(list); return;} playList(list, action==="shuffle");}));}
     function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
+    function sectionTrackList(title){const ordered=albumEntries(albumSource()); const groups=albumViewMode==="years"?albumYearSections(ordered):albumSections(ordered); const group=groups.find(([groupTitle])=>groupTitle===title); return group?group[1].flatMap(([_name,list])=>albumTrackList(list)):[];}
+    function bindAlbumSectionActions(){albumGridEl.querySelectorAll("button[data-music-section-play]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const list=sectionTrackList(btn.dataset.musicSectionPlay); if(list.length)playList(list);}));}
     function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), queueBtn=byId("albumQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(queueBtn)on(queueBtn,"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); if(edit)on(edit,"click",()=>enterEditMode());}
-    function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); const homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumDetailActions();}
+    function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); const homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumSectionActions(); bindAlbumDetailActions();}
     function trackRowHtml(track, divider=""){
       const trackNo=String(track.tracknumber||"").split("/")[0];
       const art=track.has_artwork?`<img class="coverThumb" src="${smallArtUrl(track)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`;
@@ -1129,16 +1136,98 @@
     function nowPlayingLyricsHtml(t){
       if(!t.has_lyrics)return "";
       const message = t.has_lyrics ? "Loading lyrics..." : "No lyrics found";
-      return `<div class="lyricsBox"><strong>Lyrics</strong><div id="lyricsContent" class="lyricsText">${esc(message)}</div></div>`;
+      return `<div class="lyricsBox"><div id="lyricsContent" class="lyricsText">${esc(message)}</div></div>`;
+    }
+    function parseLrcTimestamp(value){
+      const match = String(value || "").match(/^(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?$/);
+      if(!match)return null;
+      const fraction = match[3] ? Number(`0.${match[3].padEnd(3, "0").slice(0, 3)}`) : 0;
+      return Number(match[1]) * 60 + Number(match[2]) + fraction;
+    }
+    function parseLrc(text){
+      const lines = [];
+      String(text || "").split(/\r?\n/).forEach(rawLine => {
+        const stamps = [...rawLine.matchAll(/\[([0-9:.]+)\]/g)]
+          .map(match => parseLrcTimestamp(match[1]))
+          .filter(value => value !== null);
+        const lyric = rawLine.replace(/\[[^\]]+\]/g, "").trim();
+        if(!stamps.length || !lyric)return;
+        stamps.forEach(time => lines.push({time, lyric}));
+      });
+      return lines.sort((a, b) => a.time - b.time);
+    }
+    function looksLikeLrc(text){
+      return /\[[0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?\]/.test(String(text || ""));
+    }
+    function renderLrcLyrics(box, trackId, text){
+      const lines = parseLrc(text);
+      if(!lines.length){
+        box.textContent = text || "No lyrics found";
+        currentLrcLyrics = null;
+        return;
+      }
+      currentLrcLyrics = {trackId, lines, activeIndex:-1};
+      box.classList.add("syncedLyrics");
+      box.innerHTML = lines.map((line, index) => `<button type="button" class="lrcLine" data-lrc-index="${index}" data-lrc-time="${esc(line.time)}">${esc(line.lyric)}</button>`).join("");
+      box.querySelectorAll(".lrcLine").forEach(lineEl => {
+        lineEl.addEventListener("click", () => {
+          const seekTime = Number(lineEl.dataset.lrcTime);
+          if(Number.isFinite(seekTime)){
+            player.currentTime = seekTime;
+            updateLrcHighlight(true);
+          }
+        });
+      });
+      updateLrcHighlight();
+    }
+    function updateLrcHighlight(forceScroll=false){
+      if(!currentLrcLyrics || currentLrcLyrics.trackId !== playingId)return;
+      const lines = currentLrcLyrics.lines;
+      let activeIndex = -1;
+      for(let i=0; i<lines.length; i++){
+        if(lines[i].time <= player.currentTime + .15)activeIndex = i;
+        else break;
+      }
+      if(activeIndex === currentLrcLyrics.activeIndex && !forceScroll)return;
+      currentLrcLyrics.activeIndex = activeIndex;
+      document.querySelectorAll(".lrcLine.active").forEach(el=>el.classList.remove("active"));
+      const activeLine = document.querySelector(`.lrcLine[data-lrc-index="${activeIndex}"]`);
+      if(activeLine){
+        activeLine.classList.add("active");
+        scrollLyricIntoFocus(activeLine, forceScroll);
+      }
+    }
+    function scrollLyricIntoFocus(activeLine, forceScroll=false){
+      const scroller = activeLine.closest(".syncedLyrics");
+      if(!scroller){
+        activeLine.scrollIntoView({block:"center", behavior:"auto"});
+        return;
+      }
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const desktopLyrics = window.matchMedia("(min-width: 1100px)").matches;
+      const activeCenter = activeLine.offsetTop + activeLine.offsetHeight / 2;
+      const focusRatio = desktopLyrics ? 0.42 : 0.18;
+      scroller.scrollTo({
+        top: Math.max(0, activeCenter - scroller.clientHeight * focusRatio),
+        behavior: forceScroll || reduceMotion || !desktopLyrics ? "auto" : "smooth",
+      });
     }
     async function loadNowPlayingLyrics(t){
       const box = byId("lyricsContent");
       if(!box || !t || !t.has_lyrics || !t.lyrics_url)return;
       if(box.dataset.trackId === String(t.id) && box.dataset.loaded === "true")return;
       box.dataset.trackId = String(t.id);
+      box.classList.remove("syncedLyrics");
+      currentLrcLyrics = null;
       try{
         const data = await fetchJson(t.lyrics_url);
-        if(playingId === t.id){box.textContent = data.lyrics || "No lyrics found"; box.dataset.loaded = "true";}
+        if(playingId === t.id){
+          const lyricsText = data.lyrics || "";
+          const lyricsFormat = data.format || t.lyrics_format || (looksLikeLrc(lyricsText) ? "lrc" : "text");
+          if(lyricsFormat === "lrc")renderLrcLyrics(box, t.id, data.lyrics || "");
+          else box.textContent = data.lyrics || "No lyrics found";
+          box.dataset.loaded = "true";
+        }
       }catch{
         if(playingId === t.id) box.textContent = "Could not load local lyrics.";
       }
@@ -1168,9 +1257,11 @@
       if(!t){
         nowPlayingRenderedTrackId = null;
         nowPlayingRenderedArtSrc = "";
+        nowPlayingBodyEl.classList.remove("hasLyrics");
         nowPlayingBodyEl.innerHTML=`<div class="nowPlayingArt">No Song</div><div><div class="nowPlayingTitle">Nothing playing</div><div class="nowPlayingMeta">Choose a song, album, or category.</div></div>`;
         return;
       }
+      nowPlayingBodyEl.classList.toggle("hasLyrics", !!t.has_lyrics);
       if(nowPlayingRenderedTrackId === t.id && nowPlayingBodyEl.children.length){
         updateNowPlayingControlsOnly();
         return;
@@ -1395,8 +1486,9 @@
     function statsRangeOptions(){
       return STATS_RANGES.map(([value,label])=>`<option value="${value}" ${statsPeriod===value?"selected":""}>${label}</option>`).join("");
     }
-    function statsMetric(number, label){
-      return `<div class="statsMetric"><strong>${esc(number)}</strong><span>${esc(label)}</span></div>`;
+    function statsMetric(number, label, extraClass=""){
+      const className = extraClass ? `statsMetric ${extraClass}` : "statsMetric";
+      return `<div class="${esc(className)}"><strong>${esc(number)}</strong><span>${esc(label)}</span></div>`;
     }
     function formatStatsMonth(day){
       if(!day)return "Not yet";
@@ -1405,7 +1497,9 @@
     }
     function allTimeStatsCard(summary){
       const plays = Number(summary.total_play_count)||0;
-      return `<section class="allTimeStatsCard">${statsMetric(formatStatsMonth(summary.first_day), "started listening")}${statsMetric(plays.toLocaleString(), "songs played")}</section>`;
+      const uniqueTracks = Number(summary.unique_tracks)||0;
+      const listeningDays = Number(summary.listening_days)||0;
+      return `<section class="allTimeStatsCard">${statsMetric(formatStatsMonth(summary.first_day), "started listening")}${statsMetric(listeningDays.toLocaleString(), "listening days")}${statsMetric(plays.toLocaleString(), "songs played")}${statsMetric(uniqueTracks.toLocaleString(), "unique songs played")}</section>`;
     }
     function statsTopControls(summary){
       return `<div class="statsTopControls"><strong>Music Stats</strong><div class="statsTopMetrics">${statPillHtml(fmtDuration(summary.seconds||0), statsPrimaryMetricLabel())}${statPillHtml(fmtDuration(summary.lifetime_seconds||0), "all time")}</div><select id="statsRange" class="statsRange">${statsRangeOptions()}</select>${statsRangeControlHtml()}</div>`;
@@ -1651,7 +1745,7 @@
       if(mediaType === "statsPage") renderListeningStats();
     }
     function applyDisplayConfig(){
-      const appName=appConfig.appName||"Taeyeon Media Player";
+      const appName=appConfig.appName||"Local Media Player";
       const textLabel=appConfig.textTabLabel||"Interviews";
       document.title=appName;
       const titleEl=document.querySelector("header h1");
@@ -1842,6 +1936,7 @@
         if(npCurrent)npCurrent.textContent=currentTimeEl.textContent;
         if(npDuration)npDuration.textContent=nowPlayingRemainingText();
         if(npSeek)npSeek.value=seekBar.value;
+        updateLrcHighlight();
         updateListeningStatsProgress();
         saveMusicState();
       });

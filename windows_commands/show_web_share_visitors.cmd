@@ -4,7 +4,7 @@ setlocal
 rem Summarize the private web-share visitor log.
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "APP_DIR=%%~fI"
-set "VISITOR_LOG=%APP_DIR%\taeyeon_media_player_visitors.jsonl"
+set "VISITOR_LOG=%APP_DIR%\media_player_visitors.jsonl"
 
 if not exist "%VISITOR_LOG%" (
   echo No visitor log found yet.
@@ -27,7 +27,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$uniqueHumans = $humans | Group-Object visitor; " ^
   "$uniqueBots = $bots | Group-Object visitor; " ^
   "Write-Host ''; " ^
-  "Write-Host 'Taeyeon Media Player - Web Share Visitors'; " ^
+  "Write-Host 'Local Media Player - Web Share Visitors'; " ^
   "Write-Host '=========================================='; " ^
   "Write-Host ('Total page loads:       ' + $rows.Count); " ^
   "Write-Host ('Human page loads:       ' + $humans.Count); " ^

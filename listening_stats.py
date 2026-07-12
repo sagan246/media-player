@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summary listening statistics for Taeyeon Media Player.
+"""Summary listening statistics for Local Media Player.
 
 The player stores small daily/lifetime aggregates instead of raw play events.
 That keeps the database private, compact, and useful for "Wrapped"-style views.
@@ -327,6 +327,8 @@ class ListeningStats:
                 """
                 SELECT
                     COALESCE(SUM(play_count),0) play_count,
+                    COUNT(DISTINCT track_key) unique_tracks,
+                    COUNT(DISTINCT day) listening_days,
                     MIN(day) first_day
                 FROM daily_track_stats
                 """
@@ -363,6 +365,8 @@ class ListeningStats:
                 "seconds": sum(item["seconds"] for item in daily.values()),
                 "lifetime_seconds": float(lifetime["seconds"] or 0),
                 "total_play_count": int(all_time["play_count"] or 0),
+                "unique_tracks": int(all_time["unique_tracks"] or 0),
+                "listening_days": int(all_time["listening_days"] or 0),
                 "first_day": all_time["first_day"] or "",
             },
             "chart_unit": "hour" if start and end and start == end else "day",

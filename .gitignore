@@ -6,13 +6,14 @@ __pycache__/
 *.sqlite3
 *_cache.json
 taeyeon_media_player_cache/
+media_player_cache/
 docs/doxygen/
 tools/doxygen-*
 tools/graphviz-*
 
 # Config. This repo's default config is safe to track because it has no password.
-!taeyeon_media_player_config.json
-!taeyeon_media_player_config.example.json
+!media_player_config.json
+!media_player_config.example.json
 
 # Large bundled/runtime dependencies
 vendor/

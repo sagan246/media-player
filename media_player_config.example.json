@@ -1,5 +1,5 @@
 {
-  "app_name": "Taeyeon Media Player",
+  "app_name": "Local Media Player",
   "editable": true,
   "web_share": false,
   "edit_password": "replace-this-with-your-password",
@@ -9,16 +9,13 @@
   "text_tab_label": "Interviews",
   "lyrics_dir": "Lyrics",
   "preferred_categories": [
-    "Taeyeon Official",
-    "Taeyeon OST",
-    "Taeyeon Concerts",
-    "Taeyeon Live, Covers & Radio",
-    "Taeyeon Features & Collaborations",
-    "Girls' Generation",
-    "Girls' Generation-TTS",
-    "GOT the beat"
+    "Albums",
+    "Soundtracks",
+    "Live",
+    "Covers",
+    "Features"
   ],
   "preferred_video_categories": [
-    "Taeyeon Concert"
+    "Concerts"
   ]
 }

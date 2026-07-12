@@ -1,4 +1,4 @@
-"""Small Windows-friendly launcher for the Taeyeon Media Player.
+"""Small Windows-friendly launcher for the Local Media Player.
 
 The player itself is a local web app. This GUI is only a convenience wrapper
 around the same command-line modes used by the .cmd launchers.
@@ -23,7 +23,7 @@ from tkinter import scrolledtext, ttk
 
 APP_DIR = Path(__file__).resolve().parent
 DEFAULT_MEDIA_DIR = APP_DIR.parent.parent / "media"
-APP_SCRIPT = APP_DIR / "taeyeon_media_player.py"
+APP_SCRIPT = APP_DIR / "media_player.py"
 CODEX_PYTHON = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "python" / "python.exe"
 CLOUDFLARED = APP_DIR.parent / "codex" / "tools" / "cloudflared.exe"
 COLOR_BG = "#05070d"
@@ -98,7 +98,7 @@ class LauncherApp:
 
     def __init__(self) -> None:
         self.root = Tk()
-        self.root.title("Taeyeon Media Player Launcher")
+        self.root.title("Media Player Launcher")
         self.root.geometry("760x540")
         self.process: subprocess.Popen[str] | None = None
         self.local_edit_process: subprocess.Popen[str] | None = None
@@ -134,7 +134,7 @@ class LauncherApp:
         frame = ttk.Frame(self.root, padding=14)
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text="Taeyeon Media Player", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
+        ttk.Label(frame, text="Local Media Player", font=("Segoe UI", 16, "bold")).grid(row=0, column=0, columnspan=4, sticky="w")
 
         ttk.Label(frame, text="Mode").grid(row=1, column=0, sticky="w", pady=(16, 4))
         mode_box = ttk.Combobox(frame, textvariable=self.mode_name, values=list(MODES), state="readonly", width=28)
@@ -381,7 +381,7 @@ def local_lan_ip() -> str:
             sock.connect(("8.8.8.8", 80))
             return sock.getsockname()[0]
         except OSError:
-            return "10.0.0.160"
+            return "YOUR_LAN_IP"
 
 
 def tailscale_ip() -> str:

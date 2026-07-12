@@ -1,12 +1,20 @@
 @echo off
 setlocal
 
-set "PYTHON=C:\Users\chees\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
-set "APP=G:\cod\programs\taeyeon_media_player\taeyeon_media_player.py"
-set "MEDIA=G:\cod\media"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "APP_DIR=%%~fI"
+for %%I in ("%APP_DIR%\..\..\media") do set "MEDIA=%%~fI"
+set "APP=%APP_DIR%\media_player.py"
+set "CODEX_PY=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
 set "PORT=8768"
 
-echo Starting Taeyeon Media Player for private Tailscale access...
+if exist "%CODEX_PY%" (
+  set "PYTHON=%CODEX_PY%"
+) else (
+  set "PYTHON=python"
+)
+
+echo Starting Local Media Player for private Tailscale access...
 echo.
 echo This mode is read-only and does not create a public internet link.
 echo Use it when your phone and PC are both signed into Tailscale.

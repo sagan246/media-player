@@ -1,0 +1,21 @@
+{
+  "app_name": "Local Media Player",
+  "editable": true,
+  "web_share": false,
+  "edit_password": "",
+  "music_dir": "Music",
+  "video_dir": "Video",
+  "text_dir": "Interviews",
+  "text_tab_label": "Interviews",
+  "lyrics_dir": "Lyrics",
+  "preferred_categories": [
+    "Albums",
+    "Soundtracks",
+    "Live",
+    "Covers",
+    "Features"
+  ],
+  "preferred_video_categories": [
+    "Concerts"
+  ]
+}

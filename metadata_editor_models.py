@@ -25,6 +25,7 @@ class Track:
     folder: str
     has_lyrics: bool
     lyrics_url: str
+    lyrics_format: str
     missing_fields: list[str]
     review_flags: list[str]
 

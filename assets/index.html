@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#000000">
-  <title>Taeyeon Media Library</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=adaptive-default1">
+  <title>Local Media Player</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=lyric-line-rhythm1">
 </head>
 <body class="listen music">
   <header>
     <div class="bar">
       <div>
-        <h1>Taeyeon Media Library</h1>
+        <h1>Local Media Player</h1>
         <div class="appTabs">
           <button id="musicTab" class="mediaTab iconOnly" title="Music" aria-label="Music"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></button>
           <button id="videoTab" class="mediaTab inactive iconOnly" title="Videos" aria-label="Videos"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4z"/><path d="M4 8l3-5h13l-3 5"/><path d="M9 3L6 8"/><path d="M14 3l-3 5"/></svg></button>
@@ -83,8 +83,8 @@
         </div>
         <div class="videoPlayerCard">
           <video id="videoPlayer" class="videoPlayer" controls preload="metadata" playsinline webkit-playsinline></video>
-          <div class="videoTitle" id="videoTitle">Select a video</div>
-          <div class="videoMeta" id="videoMeta">Videos play locally from media\\Video.</div>
+          <div class="videoTitle" id="videoTitle"></div>
+          <div class="videoMeta" id="videoMeta"></div>
           <div class="videoQueueControls">
             <button id="prevVideo" class="secondary iconControl" title="Previous video" aria-label="Previous video">&#9664;&#9664;</button>
             <button id="nextVideo" class="secondary iconControl" title="Next video" aria-label="Next video">&#9654;&#9654;</button>
@@ -180,6 +180,6 @@
     </div>
     <div id="videoQueueList" class="queueList"></div>
   </section>
-  <script src="/assets/app.js?v=adaptive-default1"></script>
+  <script src="/assets/app.js?v=lyric-line-rhythm1"></script>
 </body>
 </html>
