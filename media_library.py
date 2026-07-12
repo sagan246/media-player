@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from metadata_browser import AUDIO_EXTENSIONS, Artwork, read_artwork, read_metadata
-from metadata_editor_models import Interview, Track, Video
+from media_models import Interview, Track, Video
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent

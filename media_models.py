@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Track:
-    """! @brief Audio track record returned by /api/tracks."""
+    """Audio track record returned by the library scan."""
 
     id: int
     path: str
@@ -32,7 +32,7 @@ class Track:
 
 @dataclass
 class Video:
-    """! @brief Video file or video-folder item returned by /api/videos."""
+    """Video file or video-folder record returned by the library scan."""
 
     id: int
     path: str
@@ -52,7 +52,7 @@ class Video:
 
 @dataclass
 class Interview:
-    """! @brief Plain-text interview record returned by /api/interviews."""
+    """Plain-text archive record returned by the library scan."""
 
     id: int
     path: str
