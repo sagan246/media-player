@@ -1,3 +1,17 @@
+    const ui = window.MediaPlayerUi || {};
+    const byId = ui.byId || (id => document.getElementById(id));
+    const on = ui.on || ((el, event, handler) => el.addEventListener(event, handler));
+    const setOpen = ui.setOpen || ((el, open) => el.classList.toggle("open", open));
+    const toggleOpen = el => setOpen(el, !el.classList.contains("open"));
+    const setActive = ui.setActive || ((el, active) => el.classList.toggle("active", active));
+    const setBodyMode = ui.setBodyMode || ((name, active) => document.body.classList.toggle(name, active));
+    const esc = ui.esc || (value => String(value ?? ""));
+    const localDateString = ui.localDateString || (() => new Date().toISOString().slice(0, 10));
+    const fetchJson = ui.fetchJson || (url => fetch(url, {cache:"no-store"}).then(response => {
+      if(!response.ok) throw new Error(`${url} returned ${response.status}`);
+      return response.json();
+    }));
+
     // App state. Most UI functions read from these values, then call renderCurrentMedia().
     let tracks = [];
     let videos = [];
@@ -32,6 +46,14 @@
     const statsRangeAnchors = {week:localStorage.getItem("statsRangeEnd:week")||legacyStatsRangeEnd,month:localStorage.getItem("statsRangeEnd:month")||legacyStatsRangeEnd,year:localStorage.getItem("statsRangeEnd:year")||legacyStatsRangeEnd};
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
+    const themeData = window.MediaPlayerThemeData || {};
+    const DEFAULT_THEME_ID = themeData.defaultThemeId || "albumAdaptiveLight";
+    const DARK_ADAPTIVE_THEME_ID = themeData.darkAdaptiveThemeId || "albumAdaptive";
+    const LIGHT_ADAPTIVE_THEME_ID = themeData.lightAdaptiveThemeId || "albumAdaptiveLight";
+    const DEFAULT_ADAPTIVE_COLOR = themeData.defaultAdaptiveColor || {r:63, g:111, b:216};
+    const ADAPTIVE_THEME_IDS = new Set([DARK_ADAPTIVE_THEME_ID, LIGHT_ADAPTIVE_THEME_ID]);
+    const ADAPTIVE_STYLE_VARS = themeData.adaptiveStyleVars || [];
+    const THEME_CHOICES = themeData.choices || [];
     let activeTheme = localStorage.getItem("accentTheme") || "albumAdaptiveLight";
     const themeDefaultVersion = localStorage.getItem("themeDefault");
     if((!localStorage.getItem("accentTheme") || ["blue","albumAdaptive"].includes(activeTheme)) && themeDefaultVersion !== "albumAdaptiveLight"){
@@ -74,63 +96,10 @@
     const selectedIds = new Set();
     const adaptiveThemeCache = new Map();
     const MEDIA_TYPES = ["music", "video", "health", "interviews", "statsPage", "customize"];
-    const DEFAULT_THEME_ID = "albumAdaptiveLight";
-    const DARK_ADAPTIVE_THEME_ID = "albumAdaptive";
-    const LIGHT_ADAPTIVE_THEME_ID = "albumAdaptiveLight";
-    const DEFAULT_ADAPTIVE_COLOR = {r:63, g:111, b:216};
-    const ADAPTIVE_THEME_IDS = new Set([DARK_ADAPTIVE_THEME_ID, LIGHT_ADAPTIVE_THEME_ID]);
-    const ADAPTIVE_STYLE_VARS = [
-      "--accent-rgb",
-      "--accent-strong-rgb",
-      "--accent-glow-rgb",
-      "--accent-sheen-rgb",
-      "--accent",
-      "--accent-strong",
-      "--accent-deep",
-      "--accent-link",
-      "--ok",
-      "--track-number-color",
-    ];
-    const THEME_CHOICES = [
-      {id:LIGHT_ADAPTIVE_THEME_ID, label:"Auto Light", note:"Light", className:"theme-light-adaptive", swatchA:"#f8fafc", swatchB:"#8db7ff", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
-      {id:DARK_ADAPTIVE_THEME_ID, label:"Auto Dark", note:"Dark", className:"theme-adaptive", swatchA:"#020617", swatchB:"#8db7ff", swatchRgb:"141,183,255"},
-      {id:"blue", label:"Blue", note:"Dark", className:"", swatchA:"#3f6fd8", swatchB:"#6f99f2", swatchRgb:"63,111,216"},
-      {id:"purple", label:"Purple", note:"Dark", className:"theme-purple", swatchA:"#7c3aed", swatchB:"#a855f7", swatchRgb:"124,58,237"},
-      {id:"pink", label:"Pink", note:"Dark", className:"theme-pink", swatchA:"#db2777", swatchB:"#f472b6", swatchRgb:"219,39,119"},
-      {id:"green", label:"Green", note:"Dark", className:"theme-green", swatchA:"#059669", swatchB:"#34d399", swatchRgb:"5,150,105"},
-      {id:"gold", label:"Gold", note:"Dark", className:"theme-gold", swatchA:"#d97706", swatchB:"#fbbf24", swatchRgb:"217,119,6"},
-      {id:"cyan", label:"Cyan", note:"Dark", className:"theme-cyan", swatchA:"#0891b2", swatchB:"#22d3ee", swatchRgb:"8,145,178"},
-      {id:"red", label:"Red", note:"Dark", className:"theme-red", swatchA:"#dc2626", swatchB:"#f87171", swatchRgb:"220,38,38"},
-      {id:"silver", label:"Silver", note:"Dark", className:"theme-silver", swatchA:"#64748b", swatchB:"#e2e8f0", swatchRgb:"148,163,184"},
-      {id:"lavenderNight", label:"Lavender", note:"Dark", className:"theme-lavender-night", swatchA:"#111026", swatchB:"#c4b5fd", swatchRgb:"139,92,246"},
-      {id:"light", label:"White", note:"Light", className:"theme-light", swatchA:"#f8fafc", swatchB:"#3b82f6", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
-      {id:"lightPink", label:"Rose", note:"Light", className:"theme-light-pink", swatchA:"#fff1f2", swatchB:"#f472b6", swatchRgb:"219,39,119", browserColor:"#fdf2f8"},
-      {id:"lightGreen", label:"Mint", note:"Light", className:"theme-light-green", swatchA:"#ecfdf5", swatchB:"#34d399", swatchRgb:"5,150,105", browserColor:"#f0fdf4"},
-      {id:"lightPurple", label:"Lilac", note:"Light", className:"theme-light-purple", swatchA:"#f5f3ff", swatchB:"#a855f7", swatchRgb:"124,58,237", browserColor:"#f5f3ff"},
-      {id:"iceBlueLight", label:"Ice", note:"Light", className:"theme-light-ice", swatchA:"#eef7ff", swatchB:"#38bdf8", swatchRgb:"2,132,199", browserColor:"#f0f9ff"},
-      {id:"warmPaper", label:"Paper", note:"Light", className:"theme-light-paper", swatchA:"#fff7ed", swatchB:"#f59e0b", swatchRgb:"217,119,6", browserColor:"#fff7ed"},
-    ];
     if(!THEME_CHOICES.some(theme=>theme.id===activeTheme)) activeTheme = DEFAULT_THEME_ID;
     const MOBILE_BREAKPOINT = 860;
     const VIDEO_EMPTY_TITLE = "";
     const VIDEO_EMPTY_META = "";
-    // Small DOM/API helpers keep the rest of the file readable.
-    const byId = id => document.getElementById(id);
-    const on = (el, event, handler) => el.addEventListener(event, handler);
-    const setOpen = (el, open) => {
-      el.classList.toggle("open", open);
-      if(el.id === "nowPlayingDrawer"){
-        document.body.classList.toggle("modalOpen", open);
-      }
-    };
-    const toggleOpen = el => setOpen(el, !el.classList.contains("open"));
-    const setActive = (el, active) => el.classList.toggle("active", active);
-    const setBodyMode = (name, active) => document.body.classList.toggle(name, active);
-    async function fetchJson(url, options={}){
-      const response = await fetch(url, {cache:"no-store", ...options});
-      if(!response.ok) throw new Error(`${url} returned ${response.status}`);
-      return response.json();
-    }
     // Frequently used DOM nodes. Keeping them named here avoids repeated lookups
     // and makes the render functions below less noisy.
     const rowsEl = byId("rows");
@@ -188,12 +157,6 @@
     const listeningStatsPanelEl = byId("listeningStatsPanel");
     const themeGridEl = byId("themeGrid");
     // Text helpers and library grouping rules.
-    function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-    function localDateString(dateValue=new Date()){
-      const date = dateValue instanceof Date ? dateValue : new Date(`${dateValue}T00:00:00`);
-      const offset = date.getTimezoneOffset() * 60000;
-      return new Date(date.getTime() - offset).toISOString().slice(0,10);
-    }
     function shiftDate(dateText, days){
       const date = new Date(`${dateText || localDateString()}T00:00:00`);
       date.setDate(date.getDate() + days);
@@ -562,8 +525,31 @@
     function detailActionsHtml(buttons){
       return `<div class="albumActions">${buttons.map(detailActionButtonHtml).join("")}</div>`;
     }
+    function detailStatsHtml(items){
+      const pills = items.filter(Boolean).map(item=>`<span class="pill">${esc(item)}</span>`).join("");
+      return pills ? `<div class="albumStats detailStats">${pills}</div>` : "";
+    }
+    function detailWarningsHtml(warnings){
+      return warnings ? `<div class="albumWarnings detailWarnings">${warnings}</div>` : "";
+    }
+    function detailPageHtml({classes="", coverHtml="", coverWrapClass="", infoClass="", metaClass="", title="", meta="", stats=[], actions="", warnings=""}){
+      const className = `albumDetail detailPage ${classes} visible`.trim();
+      const coverWrapClasses = `detailArtWrap ${coverWrapClass}`.trim();
+      const infoClasses = `albumDetailInfo detailInfo ${infoClass}`.trim();
+      const metaClasses = `albumDetailMeta detailMeta ${metaClass}`.trim();
+      return `<section class="${className}"><div class="${coverWrapClasses}">${coverHtml}</div><div class="${infoClasses}"><h2 class="detailHeading">${esc(title)}</h2><div class="${metaClasses}">${esc(meta)}</div>${detailStatsHtml(stats)}${actions}${detailWarningsHtml(warnings)}</div></section>`;
+    }
+    function detailRowHtml({id, index, title, meta, active=false, rowClass="", noClass="", textClass="", titleClass="", metaClass=""}){
+      const classes = `${rowClass} detailRow ${active?"active":""}`.trim();
+      return `<div class="${classes}" data-id="${esc(id)}" role="button" tabindex="0"><div class="${`detailRowNo ${noClass}`.trim()}">${index+1}</div><div class="${`detailRowText ${textClass}`.trim()}"><div class="${`detailRowTitle ${titleClass}`.trim()}">${esc(title)}</div><div class="${`detailRowMeta ${metaClass}`.trim()}">${esc(meta)}</div></div></div>`;
+    }
     function sectionGroupHtml(title, countText, cardsHtml, sectionClass="", gridClass="", actionHtml=""){
       return `<section class="albumHomeSection ${sectionClass}"><div class="albumSectionHead"><div class="albumSectionTitle">${actionHtml}<h2>${esc(groupLabel(title))}</h2></div><span>${esc(countText)}</span></div><div class="albumSectionGrid ${gridClass}">${cardsHtml}</div></section>`;
+    }
+    function statCardHtml({title="", body="", actionHtml="", className="", ariaLabel=""}){
+      const header = title ? `<div class="statsSectionHead statsCardHead"><h3>${esc(title)}</h3>${actionHtml}</div>` : "";
+      const label = ariaLabel || title;
+      return `<section class="statsSection statsCard ${className}" ${label?`aria-label="${esc(label)}"`:""}>${header}${body}</section>`;
     }
     function statPillHtml(value, label){
       return `<span class="stat"><strong>${esc(value)}</strong> ${esc(label)}</span>`;
@@ -647,11 +633,12 @@
     function removeQueueButtonHtml(index){
       return `<button class="secondary iconControl" data-remove="${index}" title="Remove" aria-label="Remove">&#10005;</button>`;
     }
-    function emptyQueueHtml(title, subtitle){
-      return `<div class="queueItem"><div class="noArt">?</div><div><div class="queueItemTitle">${esc(title)}</div><div class="queueItemSub">${esc(subtitle)}</div></div></div>`;
+    function emptyQueueHtml(title, subtitle=""){
+      const subtitleHtml = subtitle ? `<div class="queueItemSub">${esc(subtitle)}</div>` : "";
+      return `<div class="queueItem mediaRow"><div class="noArt mediaRowArt">?</div><div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${esc(title)}</div>${subtitleHtml}</div></div>`;
     }
     function queueItemHtml({index, active, artworkHtml, title, subtitle, draggable=false}){
-      return `<div class="queueItem ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div><div class="queueItemTitle">${index+1}. ${esc(title)}</div><div class="queueItemSub">${esc(subtitle)}</div></div>${removeQueueButtonHtml(index)}</div>`;
+      return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${index+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${removeQueueButtonHtml(index)}</div>`;
     }
     function bindQueueList(listEl, playIndex, removeIndex){
       listEl.querySelectorAll(".queueItem[data-index]").forEach(item=>item.addEventListener("click",e=>{
@@ -718,9 +705,21 @@
     function albumArtists(list){return [...new Set(list.map(t=>t.artist).filter(Boolean))].slice(0,4);}
     function albumSizeMb(list){return list.reduce((sum,t)=>sum+(Number(t.size_mb)||0),0).toFixed(1);}
     function albumWarnings(list, formats){const warnings=[]; const missingArt=list.filter(t=>!t.has_artwork).length; const missingDate=list.filter(t=>!t.date).length; const missingTrack=list.filter(t=>!t.tracknumber).length; if(missingArt)warnings.push(`${missingArt} missing art`); if(missingDate)warnings.push(`${missingDate} missing date`); if(missingTrack)warnings.push(`${missingTrack} missing track #`); if(formats.length>1)warnings.push(`Mixed formats: ${formats.join(", ")}`); return warnings;}
-    function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover" src="${fullArtUrl(art)}" alt="" loading="lazy" decoding="async">`:`<div class="albumDetailCover">No Art</div>`;}
+    function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover detailArt" src="${fullArtUrl(art)}" alt="" loading="lazy" decoding="async">`:`<div class="albumDetailCover detailArt">No Art</div>`;}
     function albumWarningHtml(warnings){return warnings.length?warnings.map(w=>`<span class="pill missing">${esc(w)}</span>`).join(""):`<span class="pill">Album metadata looks tidy</span>`;}
-    function renderAlbumDetail(list){if(selectedAlbum==="All"||!list.length)return ""; const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats); const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumQueue",label:"Open queue",icon:`${buttonIcon("queue")}<span>${queue.length}</span>`},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]); return `<section class="albumDetail visible"><div>${albumCoverHtml(list)}</div><div class="albumDetailInfo"><h2>${esc(selectedAlbum)}</h2><div class="albumDetailMeta">${esc(artists.join(", ")||"Unknown artist")}${years.length?` - ${esc(years.join(", "))}`:""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"track")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(albumSizeMb(list))} MB</span></div>${actions}<div class="albumWarnings">${albumWarningHtml(warnings)}</div></div></section>`;}
+    function renderAlbumDetail(list){
+      if(selectedAlbum==="All"||!list.length)return "";
+      const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats);
+      const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumQueue",label:"Open queue",icon:`${buttonIcon("queue")}<span>${queue.length}</span>`},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]);
+      return detailPageHtml({
+        coverHtml:albumCoverHtml(list),
+        title:selectedAlbum,
+        meta:`${artists.join(", ")||"Unknown artist"}${years.length?` - ${years.join(", ")}`:""}`,
+        stats:[countLabel(list.length,"track"), formats.join(", ")||"Unknown format", `${albumSizeMb(list)} MB`],
+        actions,
+        warnings:albumWarningHtml(warnings),
+      });
+    }
     // Albums sort by their earliest track year, so multi-year albums stay together.
     function albumSortYear(list){const years=list.map(t=>Number(String(t.date||"").slice(0,4))).filter(y=>Number.isFinite(y)&&y>0); return years.length?Math.min(...years):-1;}
     function albumEntries(source){const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name)) albums.set(name,[]); albums.get(name).push(t);} return [...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}));}
@@ -749,7 +748,7 @@
       const art=track.has_artwork?`<img class="coverThumb" src="${smallArtUrl(track)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`;
       const selectedClass=track.id===selectedId?"selected":"";
       const playingClass=track.id===playingId?"playingNow":"";
-      return `${divider}<tr data-id="${track.id}" class="${selectedClass} ${playingClass}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${track.id}" ${selectedIds.has(track.id)?"checked":""}></td><td>${art}</td><td class="titleCell"><span class="trackNo">${esc(trackNo||"")}</span>${esc(track.title)}<br><span class="rowBadges"><span class="pill ${track.has_artwork?"":"missing"}">${track.has_artwork?"Art":"No art"}</span> ${badges(track)}</span></td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="pathCell">${esc(track.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
+      return `${divider}<tr data-id="${track.id}" class="mediaTableRow ${selectedClass} ${playingClass}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${track.id}" ${selectedIds.has(track.id)?"checked":""}></td><td>${art}</td><td class="titleCell mediaRowTitle"><span class="trackNo">${esc(trackNo||"")}</span>${esc(track.title)}<br><span class="rowBadges"><span class="pill ${track.has_artwork?"":"missing"}">${track.has_artwork?"Art":"No art"}</span> ${badges(track)}</span></td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="pathCell">${esc(track.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
     }
     function trackRowsHtml(list){
       let lastAlbum=null;
@@ -804,7 +803,7 @@
     function videoActionsHtml(id){return cardActionsHtml([{action:"play",actionAttr:"video-action",valueName:"id",value:id,label:"Play video",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-action",valueName:"id",value:id,label:"Add video to queue",icon:"+",add:true}]);}
     function videoGroupActionsHtml(group){return cardActionsHtml([{action:"play",actionAttr:"video-group-action",valueName:"group",value:group,label:"Play section",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-group-action",valueName:"group",value:group,label:"Add section to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"video-group-action",valueName:"group",value:group,label:"Shuffle section",icon:"&#8644;"}]);}
     function setVideoGridMode(mode){videoGridEl.classList.toggle("videoFileMode",mode==="files"); videoGridEl.classList.toggle("videoCollectionMode",mode==="collections"); if(mode!=="files"){videoGridEl.classList.remove("videoFolderOpen"); document.body.classList.remove("videoAlbumSelected");}}
-    function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb">${cover?`<img src="${cover.folder_cover_url}" alt="" loading="lazy" decoding="async">`:""}</div>`;}
+    function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb ${className==="albumDetailCover"?"detailArt":""}">${cover?`<img src="${cover.folder_cover_url}" alt="" loading="lazy" decoding="async">`:""}</div>`;}
     function videoFolderFormats(list){return [...new Set(list.map(v=>String(v.format||"").toUpperCase()).filter(Boolean))].sort();}
     function videoFolderSizeMb(list){return list.reduce((sum,v)=>sum+(Number(v.size_mb)||0),0).toFixed(1);}
     function savedVideoResumeTime(){
@@ -824,8 +823,36 @@
       return `<div class="resumeCard videoResumeCard" data-action="video-resume" tabindex="0">${art}<div class="resumeCopy"><span class="resumeEyebrow">Continue watching</span><strong>${esc(v.title)}</strong><span>${esc(groupLabel(v.folder||v.category||"Video"))}${time}</span><span>${queueText} in queue</span></div><button class="playButton iconControl" data-action="video-resume-play" type="button" title="Resume video" aria-label="Resume video">&#9654;</button></div>`;
     }
     function videoCollectionCardHtml(name,list,kind="folder"){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const actions=kind==="section"?videoGroupActionsHtml(name):videoFolderActionsHtml(name); return `<div class="videoCard videoFolderCard" data-${kind}="${esc(name)}" title="${esc(name)}" role="button" tabindex="0">${actions}${videoFolderCoverHtml(list)}<div class="videoName">${esc(groupLabel(name))}</div><div class="videoMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""}</div></div>`;}
-    function videoFolderDetailHtml(name,list){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const formats=videoFolderFormats(list); const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]); return `<section class="albumDetail videoAlbumDetail visible"><div class="videoAlbumCoverWrap">${videoFolderCoverHtml(list,"albumDetailCover")}</div><div class="albumDetailInfo videoAlbumInfo"><h2>${esc(groupLabel(name))}</h2><div class="albumDetailMeta videoAlbumMeta">${years.length?esc(years.slice(0,3).join(", ")):""}</div><div class="albumStats"><span class="pill">${countLabel(list.length,"video")}</span><span class="pill">${esc(formats.join(", ")||"Unknown format")}</span><span class="pill">${esc(videoFolderSizeMb(list))} MB</span></div>${actions}</div></section>`;}
-    function videoAlbumRowsHtml(list){return `<div class="videoAlbumTrackList">${list.map((v,index)=>`<div class="videoAlbumVideoRow ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" role="button" tabindex="0"><div class="videoAlbumTrackNo">${index+1}</div><div class="videoAlbumTrackText"><div class="videoAlbumTrackTitle">${esc(v.title)}</div><div class="videoAlbumTrackMeta">${esc(videoMetaSummary(v))}${v.browser_friendly?"":" - may need conversion"}</div></div></div>`).join("")}</div>`;}
+    function videoFolderDetailHtml(name,list){
+      const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a);
+      const formats=videoFolderFormats(list);
+      const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]);
+      return detailPageHtml({
+        classes:"videoAlbumDetail",
+        coverHtml:videoFolderCoverHtml(list,"albumDetailCover"),
+        coverWrapClass:"videoAlbumCoverWrap",
+        infoClass:"videoAlbumInfo",
+        metaClass:"videoAlbumMeta",
+        title:groupLabel(name),
+        meta:years.length?years.slice(0,3).join(", "):"",
+        stats:[countLabel(list.length,"video"), formats.join(", ")||"Unknown format", `${videoFolderSizeMb(list)} MB`],
+        actions,
+      });
+    }
+    function videoAlbumRowsHtml(list){
+      return `<div class="videoAlbumTrackList detailTrackList">${list.map((v,index)=>detailRowHtml({
+        id:v.id,
+        index,
+        title:v.title,
+        meta:`${videoMetaSummary(v)}${v.browser_friendly?"":" - may need conversion"}`,
+        active:v.id===selectedVideoId,
+        rowClass:"videoAlbumVideoRow",
+        noClass:"videoAlbumTrackNo",
+        textClass:"videoAlbumTrackText",
+        titleClass:"videoAlbumTrackTitle",
+        metaClass:"videoAlbumTrackMeta",
+      })).join("")}</div>`;
+    }
     function videoSectionGroups(){const groups=new Map(); for(const v of videos){const name=v.category||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].sort(videoFolderSort);}
     function bindVideoFolderCards(){videoGridEl.querySelectorAll("button[data-folder-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const folder=btn.dataset.folder, action=btn.dataset.folderAction; const list=videos.filter(v=>v.folder===folder).sort(videoFileCompare); if(action==="add"){addToVideoQueue(list); return;} playVideoList(list, action==="shuffle");})); videoGridEl.querySelectorAll(".videoFolderCard[data-folder]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; openVideoFolder(card.dataset.folder);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openVideoFolder(card.dataset.folder);});});}
     function bindVideoResumeCard(){const card=videoGridEl.querySelector(".videoResumeCard"); if(!card)return; const resume=()=>{const id=selectedVideoId||videoQueue[videoQueueIndex]; if(id!==undefined)selectVideo(id,{autoplay:true,resumeAt:savedVideoResumeTime()});}; card.addEventListener("click",e=>{if(e.target.closest("button"))return; resume();}); card.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault(); resume();}}); const btn=card.querySelector("button[data-action='video-resume-play']"); if(btn)btn.addEventListener("click",e=>{e.stopPropagation(); btn.blur(); resume();});}
@@ -986,7 +1013,7 @@
               subtitle:videoQueueSubtitle(v),
             });
           }).join("")
-        : emptyQueueHtml("Video queue is empty", "Use Play Shown or click a video.");
+        : emptyQueueHtml("Video queue is empty");
       bindQueueList(videoQueueListEl, playVideoQueueIndex, removeVideoQueueIndex);
       bindQueueDrag(videoQueueListEl, moveVideoQueueItem);
     }
@@ -1105,7 +1132,7 @@
               subtitle:`${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
             });
           }).join("")
-        : emptyQueueHtml("Queue is empty", "Play an album or shown list to fill it.");
+        : emptyQueueHtml("Queue is empty");
       bindQueueList(queueListEl, playQueueIndex, removeQueueIndex);
       bindQueueDrag(queueListEl, moveQueueItem);
     }
@@ -1346,7 +1373,7 @@
       updatePlayingHighlights();
       updateRepeatButtons();
       if(!t){
-        nowInfoEl.innerHTML=`<div class="noArt">?</div><div class="nowText"><div class="nowTitle">Nothing playing</div><div class="nowSub">Choose a song, album, or category</div></div>`;
+        nowInfoEl.innerHTML=`<div class="noArt">?</div><div class="nowText"></div>`;
         renderNowPlaying(null);
         return;
       }
@@ -1424,7 +1451,7 @@
       return `background:rgba(${themeCssValue("--accent-rgb","63,111,216")},${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
     }
     function statsChartSection(title, body){
-      return `<section class="statsSection statsChart" aria-label="${esc(title)}">${body}</section>`;
+      return statCardHtml({className:"statsChart", ariaLabel:title, body});
     }
     function statsTimeChart(rows, unit="day"){
       if(!rows.length)return statsChartSection("Listening Minutes", `<div class="statsEmpty">No listening time recorded yet.</div>`);
@@ -1540,7 +1567,7 @@
       return `<div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(clampStatsDay(statsDay))}" max="${esc(localDateString())}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day"${dayNextDisabled}>&#9654;</button></div>`;
     }
     function statsTableSection(title, rows, columns, emptyText, actionHtml=""){
-      return `<section class="statsSection"><div class="statsSectionHead"><h3>${esc(title)}</h3>${actionHtml}</div>${statsRows(rows, columns, emptyText)}</section>`;
+      return statCardHtml({title, actionHtml, body:statsRows(rows, columns, emptyText)});
     }
     function statsSongTrack(row){
       if(!row)return null;
