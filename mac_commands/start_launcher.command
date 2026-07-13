@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-# Simple macOS launcher for the Local Media Player.
+# Simple macOS launcher for the Media Player.
 # Double-click this file in Finder, or run it from Terminal.
 
 set -u
@@ -12,15 +12,15 @@ DEFAULT_MEDIA_DIR="$(cd "$APP_DIR/../.." && pwd)/media"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 MEDIA_DIR="${MEDIA_DIR:-$DEFAULT_MEDIA_DIR}"
 
-echo "Local Media Player"
-echo "=================="
+echo "Media Player"
+echo "============"
 echo
 echo "Media folder: $MEDIA_DIR"
 echo
 echo "Choose a launch mode:"
 echo "  1) Local edit"
 echo "  2) Home network (LAN)"
-echo "  3) Private remote (Tailscale/read-only)"
+echo "  3) Private remote (read-only)"
 echo "  4) Web share local only (read-only)"
 echo
 printf "Mode [1]: "

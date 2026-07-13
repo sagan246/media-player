@@ -3,6 +3,20 @@
 This guide covers configuration, media layout, artwork, lyrics, and access
 modes.
 
+## Launchers
+
+The easiest start path is one of the included launchers:
+
+```text
+windows_commands/start_launcher.cmd
+windows_commands/start_player.cmd
+mac_commands/start_launcher.command
+mac_commands/start_player.command
+```
+
+Use `start_launcher` for the menu-style launcher. Use `start_player` for a
+plain local editable start on port `8766`.
+
 ## Configuration
 
 The app reads `media_player_config.json` by default. If the file is missing,

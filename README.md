@@ -28,22 +28,29 @@ Use the included launcher:
 Windows:
 
 ```text
-windows_commands/open_media_launcher.cmd
+windows_commands/start_launcher.cmd
 ```
 
 macOS:
 
 ```text
-mac_commands/open_media_launcher.command
+mac_commands/start_launcher.command
 ```
 
 If macOS blocks the launcher, run once:
 
 ```bash
-chmod +x mac_commands/open_media_launcher.command
+chmod +x mac_commands/start_launcher.command mac_commands/start_player.command
 ```
 
 Editable mode uses port `8766`. Read-only web-share mode uses port `8767`.
+
+For a simple local editable start without the launcher, use:
+
+```text
+windows_commands/start_player.cmd
+mac_commands/start_player.command
+```
 
 ## Command Line
 
