@@ -106,6 +106,7 @@ More detail:
 - [Usage](docs/USAGE.md)
 - [Design Notes](docs/DESIGN.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [QA Checklist](docs/QA.md)
 - [Security](SECURITY.md)
 
 ## License
