@@ -182,9 +182,9 @@
       --media-empty-bg:#eef2f8;
       --dark-empty-bg:#eef2f8;
       --soft-border:rgba(15,23,42,.10);
-      --overlay-close-bg:rgba(255,255,255,.045);
-      --overlay-close-hover-bg:rgba(255,255,255,.12);
-      --overlay-close-border:rgba(15,23,42,.025);
+      --overlay-close-bg:rgba(255,255,255,.018);
+      --overlay-close-hover-bg:rgba(255,255,255,.075);
+      --overlay-close-border:rgba(15,23,42,.012);
     }
     body.theme-light-pink {
       --accent-rgb:219,39,119;

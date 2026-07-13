@@ -139,19 +139,23 @@ class LauncherApp:
         ttk.Button(frame, text="Start", command=self.start, style="Primary.TButton").grid(row=3, column=0, sticky="we", padx=(0, 6))
         ttk.Button(frame, text="Stop", command=self.stop).grid(row=3, column=1, sticky="we", padx=6)
         ttk.Button(frame, text="Restart", command=self.restart).grid(row=3, column=2, sticky="we", padx=6)
-        ttk.Button(frame, text="Open URL", command=self.open_url).grid(row=3, column=3, sticky="we", padx=(6, 0))
+        ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=3, column=3, sticky="we", padx=(6, 0))
 
-        ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=4, column=0, sticky="we", pady=10, padx=(0, 6))
-        ttk.Label(frame, textvariable=self.url, wraplength=520, style="Status.TLabel").grid(row=4, column=1, columnspan=3, sticky="w", pady=10)
+        ttk.Button(frame, text="Open Current", command=self.open_url).grid(row=4, column=0, sticky="we", pady=(10, 2), padx=(0, 6))
+        ttk.Button(frame, text="Open Edit", command=self.open_local_edit).grid(row=4, column=1, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open Local", command=self.open_local_current).grid(row=4, column=2, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open LAN", command=self.open_lan_current).grid(row=4, column=3, sticky="we", pady=(10, 2), padx=(6, 0))
 
-        ttk.Label(frame, text="Log").grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 4))
+        ttk.Label(frame, textvariable=self.url, wraplength=660, style="Status.TLabel").grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 10))
+
+        ttk.Label(frame, text="Log").grid(row=6, column=0, columnspan=4, sticky="w", pady=(4, 4))
 
         self.log = scrolledtext.ScrolledText(frame, height=14, state=DISABLED, font=("Consolas", 10), borderwidth=1, relief="solid")
-        self.log.grid(row=6, column=0, columnspan=4, sticky="nsew")
+        self.log.grid(row=7, column=0, columnspan=4, sticky="nsew")
 
         for column in range(4):
             frame.columnconfigure(column, weight=1)
-        frame.rowconfigure(6, weight=1)
+        frame.rowconfigure(7, weight=1)
 
     def update_mode_text(self) -> None:
         """Refresh the description and predicted URL for the selected mode."""
@@ -261,6 +265,20 @@ class LauncherApp:
         url = self.public_url or self.primary_display_url(MODES[self.mode_name.get()])
         if url:
             webbrowser.open(url)
+
+    def open_local_edit(self) -> None:
+        """Open editable localhost mode on the standard edit port."""
+        webbrowser.open("http://127.0.0.1:8766/")
+
+    def open_local_current(self) -> None:
+        """Open the selected mode using localhost and its configured port."""
+        mode = MODES[self.mode_name.get()]
+        webbrowser.open(f"http://127.0.0.1:{mode.port}/")
+
+    def open_lan_current(self) -> None:
+        """Open the selected mode using the computer's LAN address."""
+        mode = MODES[self.mode_name.get()]
+        webbrowser.open(f"http://{local_lan_ip()}:{mode.port}/")
 
     def refresh_library(self) -> None:
         """Ask the running server to rescan media without restarting."""

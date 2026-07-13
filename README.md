@@ -1,11 +1,12 @@
 # Media Player
 
-A local-first web media player for a personal music, video, lyrics, and text
-archive.
+A local-first web media player for keeping music, videos, lyrics, and text
+archives in one place.
 
-It runs on your computer, streams local files to a browser, and can optionally
-be shared on a home network, private remote network, or temporary read-only web
-link.
+It runs on your computer, streams local files to a browser, and is designed for
+a personal media library with a UI tailored to the collection. It can stay local
+by default, stream to a phone on the home network, work remotely through a
+private network, or create a temporary read-only web link.
 
 ## Features
 
@@ -14,6 +15,7 @@ link.
 - Read local text archives
 - Display plain text and timed `.lrc` lyrics
 - Music and video queues with resume support
+- Preload the next music track for faster track changes
 - Now Playing screen with artwork, lyrics, controls, and visualizers
 - Listening stats by day, week, month, year, and all time
 - Optional MP3/FLAC metadata and artwork editing

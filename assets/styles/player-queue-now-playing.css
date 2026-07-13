@@ -47,6 +47,14 @@
       border-color:transparent;
     }
     .transport .playButton.iconControl { font-size:24px; }
+    .transport .playButton.iconControl:hover,
+    .transport .playButton.iconControl:active,
+    .nowPlayingTransport .playButton.iconControl:hover,
+    .nowPlayingTransport .playButton.iconControl:active {
+      background:transparent;
+      border-color:transparent;
+      box-shadow:none;
+    }
     .queueBadge { color:var(--muted); font-size:12px; min-width:70px; }
     .playback { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:center; color:var(--muted); }
     .playback input[type=range] { padding:0; height:24px; }

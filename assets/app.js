@@ -154,6 +154,8 @@
     const albumGridEl = byId("albumGrid");
     const viewTitleEl = byId("viewTitle");
     const player = byId("player");
+    const nextTrackPreloader = new Audio();
+    nextTrackPreloader.preload = "auto";
     const nowInfoEl = byId("nowInfo");
     const playPauseBtn = byId("playPauseBtn");
     const repeatBtn = byId("repeatBtn");
@@ -384,7 +386,13 @@
       button.title = repeatLabel(mode, prefix);
       button.setAttribute("aria-label", button.title);
     }
-    function cycleMusicRepeat(){repeatMode=nextRepeatMode(repeatMode); localStorage.setItem("repeatMode",repeatMode); saveMusicState({force:true}); updateRepeatButtons();}
+    function cycleMusicRepeat(){
+      repeatMode=nextRepeatMode(repeatMode);
+      localStorage.setItem("repeatMode",repeatMode);
+      saveMusicState({force:true});
+      updateRepeatButtons();
+      preloadNextTrack();
+    }
     function cycleVideoRepeat(){videoRepeatMode=nextRepeatMode(videoRepeatMode); localStorage.setItem("videoRepeatMode",videoRepeatMode); saveVideoState({force:true}); updateRepeatButtons();}
     function updateRepeatButtons(){updateRepeatButton(repeatBtn, repeatMode); updateRepeatButton(byId("repeatQueue"), repeatMode); updateRepeatButton(videoRepeatBtn, videoRepeatMode, "Video repeat"); updateRepeatButton(byId("repeatVideoQueue"), videoRepeatMode, "Video repeat");}
     function isTypingTarget(target){return !!target?.closest?.("input, textarea, select, [contenteditable='true']");}
@@ -431,6 +439,7 @@
       selectTrack(t.id);
       updateNow();
       renderQueue();
+      preloadNextTrack();
       if(mediaType==="music"&&selectedAlbum==="All")renderAlbums();
     }
     function saveVideoState({force=false}={}){
@@ -1013,7 +1022,50 @@
     function playSingleTrack(id, options={}){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id, options); return;} playList([t], false, id, options);}
     // If the queue was empty, adding songs starts playback immediately. If
     // something is already playing, additions are non-disruptive.
-    function addToMusicQueue(list){const ids=list.map(t=>t.id).filter(id=>!queue.includes(id)); if(!ids.length)return; const wasEmpty=queue.length===0; queue.push(...ids); showQueueToast(ids.length===1?"Added to queue":`Added ${ids.length} to queue`); pulseQueueButton(topQueueLabelEl); if(wasEmpty){queueIndex=0; saveMusicState({force:true}); playQueueIndex(0);} else {saveMusicState({force:true}); updateNow(); renderQueue();}}
+    function addToMusicQueue(list){
+      const ids=list.map(t=>t.id).filter(id=>!queue.includes(id));
+      if(!ids.length)return;
+      const wasEmpty=queue.length===0;
+      queue.push(...ids);
+      showQueueToast(ids.length===1?"Added to queue":`Added ${ids.length} to queue`);
+      pulseQueueButton(topQueueLabelEl);
+      if(wasEmpty){
+        queueIndex=0;
+        saveMusicState({force:true});
+        playQueueIndex(0);
+      } else {
+        saveMusicState({force:true});
+        updateNow();
+        renderQueue();
+        preloadNextTrack();
+      }
+    }
+    function queueTrackAt(index){
+      return index>=0&&index<queue.length ? tracks.find(t=>t.id===queue[index]) || null : null;
+    }
+    function nextTrackToPreload(){
+      if(!queue.length||queueIndex<0)return null;
+      if(queueIndex+1<queue.length)return queueTrackAt(queueIndex+1);
+      if(repeatMode==="all")return queueTrackAt(0);
+      return null;
+    }
+    function clearPreloadedTrack(){
+      nextTrackPreloader.removeAttribute("src");
+      nextTrackPreloader.load();
+      nextTrackPreloader.dataset.trackId = "";
+    }
+    // Keep one upcoming track warm so Next/album playback starts quickly,
+    // especially over phone or Cloudflare connections. This is a hint to the
+    // browser, not a second player, so it keeps lock-screen playback stable.
+    function preloadNextTrack(){
+      const nextTrack = nextTrackToPreload();
+      if(!nextTrack||nextTrack.id===playingId){clearPreloadedTrack(); return;}
+      if(nextTrackPreloader.dataset.trackId===String(nextTrack.id)&&nextTrackPreloader.src.endsWith(nextTrack.audio_url))return;
+      nextTrackPreloader.dataset.trackId = String(nextTrack.id);
+      nextTrackPreloader.src = nextTrack.audio_url;
+      nextTrackPreloader.load();
+      console.debug("[audio] preloading next track", {id:nextTrack.id, title:nextTrack.title});
+    }
     function playQueueIndex(index, options={}){
       if(index<0||index>=queue.length)return;
       flushListeningStats({force:true});
@@ -1036,9 +1088,45 @@
       if(options.selectInMusic!==false)selectTrack(t.id);
       requestAnimationFrame(startVisualizer);
       renderQueue();
+      preloadNextTrack();
     }
-    function removeQueueIndex(index){if(index<0||index>=queue.length)return; queue.splice(index,1); if(index<queueIndex)queueIndex--; else if(index===queueIndex){if(queue.length){queueIndex=Math.min(index,queue.length-1); saveMusicState({force:true}); playQueueIndex(queueIndex);}else{queueIndex=-1; player.pause(); player.removeAttribute("src"); playingId=null; saveMusicState({force:true}); updateNow(); renderRows();}} saveMusicState({force:true}); updateNow(); renderQueue();}
-    function moveQueueItem(fromIndex,toIndex){if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=queue.length||toIndex>=queue.length)return; const current=queue[queueIndex]; const [item]=queue.splice(fromIndex,1); queue.splice(toIndex,0,item); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();}
+    function removeQueueIndex(index){
+      if(index<0||index>=queue.length)return;
+      queue.splice(index,1);
+      if(index<queueIndex){
+        queueIndex--;
+      } else if(index===queueIndex){
+        if(queue.length){
+          queueIndex=Math.min(index,queue.length-1);
+          saveMusicState({force:true});
+          playQueueIndex(queueIndex);
+        } else {
+          queueIndex=-1;
+          player.pause();
+          player.removeAttribute("src");
+          playingId=null;
+          clearPreloadedTrack();
+          saveMusicState({force:true});
+          updateNow();
+          renderRows();
+        }
+      }
+      saveMusicState({force:true});
+      updateNow();
+      renderQueue();
+      preloadNextTrack();
+    }
+    function moveQueueItem(fromIndex,toIndex){
+      if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=queue.length||toIndex>=queue.length)return;
+      const current=queue[queueIndex];
+      const [item]=queue.splice(fromIndex,1);
+      queue.splice(toIndex,0,item);
+      queueIndex=current===undefined?-1:queue.indexOf(current);
+      saveMusicState({force:true});
+      updateNow();
+      renderQueue();
+      preloadNextTrack();
+    }
     function queueDurationText(){const durations=queue.map(id=>knownDurations.get(id)); if(!queue.length||durations.some(v=>!Number.isFinite(v)))return ""; return fmt(durations.reduce((sum,v)=>sum+v,0));}
     // Dragging reorders the queue array, but keeps queueIndex attached to the
     // same currently playing track instead of the same numeric slot.
@@ -1659,7 +1747,30 @@
     function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
     function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
     function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("stopVideo"),"click",()=>{stopVideoPlayback(); saveVideoState({force:true}); renderVideos(); renderVideoQueue();}); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("repeatVideoQueue"),"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
-    function bindQueueControls(){on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false)); on(byId("repeatQueue"),"click",cycleMusicRepeat); on(byId("clearQueue"),"click",()=>{queue=[]; queueIndex=-1; player.pause(); playingId=null; saveMusicState({force:true}); updateNow(); renderQueue();}); on(byId("shuffleQueue"),"click",()=>{const current=queue[queueIndex]; queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id); queueIndex=current===undefined?-1:queue.indexOf(current); saveMusicState({force:true}); updateNow(); renderQueue();});}
+    function bindQueueControls(){
+      on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false));
+      on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false));
+      on(byId("repeatQueue"),"click",cycleMusicRepeat);
+      on(byId("clearQueue"),"click",()=>{
+        queue=[];
+        queueIndex=-1;
+        player.pause();
+        playingId=null;
+        clearPreloadedTrack();
+        saveMusicState({force:true});
+        updateNow();
+        renderQueue();
+      });
+      on(byId("shuffleQueue"),"click",()=>{
+        const current=queue[queueIndex];
+        queue=shuffle(queue.map(id=>tracks.find(t=>t.id===id)).filter(Boolean)).map(t=>t.id);
+        queueIndex=current===undefined?-1:queue.indexOf(current);
+        saveMusicState({force:true});
+        updateNow();
+        renderQueue();
+        preloadNextTrack();
+      });
+    }
     /** @brief Wire mini-player, audio element events, and Now Playing sync. */
     function bindAudioPlayer(){
       on(byId("prevBtn"),"click",()=>playQueueIndex(queueIndex-1));
