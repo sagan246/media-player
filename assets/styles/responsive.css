@@ -1,0 +1,287 @@
+﻿    @media (prefers-reduced-motion: reduce) {
+      .albumCard.playingNow::after, tr.playingNow, .queuePulse { animation:none; }
+    }
+    @media (max-width:1180px) { main, body.listen.music main { grid-template-columns:230px 1fr; } body.listen.browseCollapsed.music main { grid-template-columns:1fr; } aside { grid-column:2; position:static; } .tableWrap { max-height:50vh; } body.music:not(.albumSelected) .tableWrap { max-height:68vh; } .playerBar { grid-template-columns:minmax(220px,1fr) auto minmax(220px,1.2fr); gap:10px; padding:9px 14px; } .playerBar .volume { display:none; } }
+    @media (min-width:861px) { .nowPlayingDrawer { scrollbar-gutter:stable; } }
+    @media (min-width:1100px) {
+      .nowPlayingBody.hasLyrics {
+        max-width:1280px;
+        align-items:center;
+        grid-template-columns:minmax(420px, 560px) minmax(480px, 1fr);
+        grid-template-areas:
+          "art lyrics"
+          "text lyrics"
+          "viz lyrics"
+          "seek lyrics"
+          "controls lyrics";
+        column-gap:72px;
+      }
+      .nowPlayingBody.hasLyrics .lyricsBox {
+        align-self:stretch;
+        min-height:0;
+        height:min(76vh, 760px);
+        display:flex;
+        align-items:flex-start;
+        padding-top:clamp(18px, 5vh, 64px);
+      }
+      .nowPlayingBody.hasLyrics .syncedLyrics {
+        height:100%;
+        width:100%;
+        padding:28% 4px 52%;
+      }
+      .nowPlayingBody.hasLyrics .lrcLine {
+        max-width:720px;
+        margin-left:auto;
+        margin-right:auto;
+      }
+      .nowPlayingBody.hasLyrics .lrcLine.active {
+        max-width:780px;
+        font-size:clamp(25px, 2.1vw, 34px);
+        line-height:1.26;
+        margin-top:28px;
+        margin-bottom:46px;
+      }
+    }
+    @media (max-width:980px) { .bar,main { grid-template-columns:1fr; } .playerBar { grid-template-columns:minmax(220px,1fr) auto minmax(220px,1.2fr); gap:10px; padding:9px 14px; } .playerBar .volume { display:none; } body.listen.music main, body.readOnly main, body.browseCollapsed.music main, body.readOnly.browseCollapsed.music main, body.browseCollapsed.video main { grid-template-columns:1fr; } aside,nav { position:static; } nav { max-height:none; } th { top:0; } .transport { justify-content:center; } .videoGrid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); } .videoCard { height:238px; } .albumDetail { grid-template-columns:1fr; } }
+    @media (max-width:860px) {
+      header { position:static; }
+      .bar { grid-template-columns:1fr; padding:8px 10px; gap:8px; }
+      .bar > div:first-child { flex:1 0 100%; width:100%; }
+      #searchBox { display:none; }
+      .appTabs { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; width:100%; }
+      .mediaTab { width:100%; min-width:0; height:40px; }
+      .mediaTab.iconOnly { width:100%; min-width:0; }
+      #healthTab { display:none; }
+      #musicFilter, #refresh { display:none; }
+      body.interviews .bar { padding:8px 10px; }
+      body.interviews main { padding-top:8px; }
+      #listenMode, #editMode, .iconLink { display:none; }
+      .stats { display:none; }
+      body.customize .stats { display:none; }
+      body.video .videoPanel > .controls .viewTitle,
+      body.interviews .workspace > .controls.interviewsOnly .viewTitle { display:none; }
+      body.interviews .workspace > .controls.interviewsOnly { display:grid; grid-template-columns:38px minmax(0,1fr) 38px; gap:4px; align-items:center; }
+      body.interviews #browseInterviews { grid-column:1; width:38px; min-width:38px; padding:0; }
+      body.interviews #shuffleInterviews { grid-column:3; justify-self:end; width:38px; min-width:38px; height:34px; padding:0; margin-left:0; }
+      .desktopOnly { display:none !important; }
+      .statsHero { align-items:stretch; padding:12px; }
+      body.statsPage .statsHero > div:first-child { display:none; }
+      .statsHero, .statsControls { flex-direction:column; }
+      .statsControls { align-items:stretch; }
+      .statsHeroMetrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:stretch; margin-left:0; gap:8px; }
+      .statsMetric { min-width:0; padding:8px; }
+      .statsMetric strong { font-size:16px; }
+      .statsMetric span { font-size:10px; line-height:1.15; }
+      .statsRange, .statsCustomRange input, .statsDayRange input { width:100%; }
+      .statsDayRange, .statsStepRange { display:none; grid-template-columns:auto minmax(0,1fr) auto; }
+      .statsDayRange.visible, .statsStepRange.visible { display:grid; }
+      .statsStepRange { min-width:0; }
+      .statsStepRange span { min-width:0; }
+      .statsCustomRange { display:none; grid-template-columns:1fr auto 1fr; }
+      .statsCustomRange.visible { display:grid; }
+      .statsHourHeat { grid-template-columns:repeat(6,minmax(0,1fr)); gap:6px; padding:10px; }
+      .allTimeStatsCard { grid-template-columns:repeat(2,minmax(0,1fr)); max-width:none; }
+      .statsHeatBlock { min-height:34px; font-size:9px; }
+      .statsHeatLabel { font-size:10px; }
+      .desktopHourLabel, .desktopDuration { display:none; }
+      .mobileHourLabel, .mobileDuration { display:inline; }
+      .statsWeekBars { height:180px; gap:6px; padding:12px 10px; }
+      .statsWeekBar { grid-template-rows:16px 1fr 16px; gap:5px; }
+      .statsYearHeat { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; padding:10px; }
+      .statsYearCell { min-height:58px; padding:7px; }
+      .statsYearCell span, .statsYearCell strong { font-size:11px; }
+      .statsCalendarWeekdays { gap:4px; padding:10px 10px 0; font-size:10px; }
+      .statsCalendarGrid { gap:4px; padding:6px 10px 10px; }
+      .statsCalendarCell { min-height:42px; padding:5px; border-radius:7px; }
+      .statsCalendarCell span, .statsCalendarCell strong { font-size:10px; }
+      main { padding-top:10px; }
+      body.listen.music main,
+      body.readOnly main,
+      body.video main { grid-template-columns:1fr; }
+      .browseToggle, .closeBrowse { display:inline-grid; place-items:center; }
+      body.browseCollapsed nav { display:grid; }
+      nav,
+      body.interviews .interviewList { position:fixed; top:10px; left:10px; bottom:10px; z-index:7; width:min(360px,84vw); max-height:none; transform:translateX(calc(-100% - 16px)); transition:transform .18s ease; box-shadow:12px 0 28px var(--shadow); border-radius:10px; }
+      body[class*="theme-light"] .browsePanel { background:var(--card-bg-strong); }
+      nav.open,
+      body.interviews .interviewList.open { transform:translateX(0); }
+      body.music nav,
+      body.video nav { bottom:auto; width:min(340px,84vw); max-height:min(72vh,560px); grid-template-rows:auto minmax(0,auto); }
+      body.music nav .browseList,
+      body.video nav .browseList { max-height:calc(min(72vh,560px) - 58px); }
+      .browseHead { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; }
+      .browseList { display:grid; gap:0; overflow:auto; padding:8px; }
+      .groupItem { width:100%; max-width:none; margin:0; }
+      body.music .browseList, body.video .browseList { gap:0; padding:6px; }
+      body.music .groupItem, body.video .groupItem { min-height:31px; height:auto; padding:5px 8px; font-size:13px; align-items:center; }
+      body.music .groupCount, body.video .groupCount { font-size:11px; padding-top:0; }
+      body.interviews .interviewList { display:grid; grid-template-rows:auto minmax(0,1fr); }
+      body.interviews .interviewsPanel { grid-template-columns:1fr; }
+      body.interviews .interviewReader { resize:none; min-width:0; max-width:none; }
+      .pathCell, th[data-sort="path"] { display:none; }
+      .checkCell, th[data-sort="artist"], .artistCell, th[data-sort="album"], .albumCell { display:none; }
+      .mobileAlbumRow { display:table-row; }
+      .mobileAlbumRow td { padding:8px 10px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+      .rowBadges { display:none; }
+      .nowPlayingDrawer { padding-top:28px; }
+      .nowPlayingHead { top:12px; right:max(4px, env(safe-area-inset-right)); left:auto; width:44px; }
+      body.music.albumSelected #showAllAlbums { top:12px; right:12px; left:auto; }
+      .nowPlayingBody { grid-template-columns:1fr; grid-template-areas:"art" "text" "viz" "seek" "controls" "lyrics"; max-width:560px; column-gap:0; }
+      .nowPlayingBody .nowPlayingArt { width:100vw; max-width:none; margin-left:calc(50% - 50vw); }
+      .nowPlayingMeta { min-height:2.35em; }
+      .nowPlayingVisualizer + .nowPlayingSeek { margin-top:-14px; }
+      .nowPlayingSeek { margin-bottom:-4px; }
+      .nowPlayingControls { display:flex; justify-content:center; align-items:center; gap:8px; }
+      .nowPlayingQueueButton { display:none; }
+      body.music.albumSelected .albumActions #albumQueue { display:none; }
+      .nowPlayingTransport { grid-column:auto; display:grid; grid-template-columns:48px 64px 48px 48px; justify-content:center; align-items:center; gap:8px; transform:translateX(28px); }
+      .nowPlayingVolume { display:none; }
+      .lyricsBox { position:relative; z-index:1; height:auto; min-height:clamp(280px, 47vh, 570px); max-height:none; margin-top:10px; overflow:hidden; }
+      .syncedLyrics { height:clamp(320px, 51vh, 590px); padding:12% 4px 76%; -webkit-mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); }
+      .lrcLine.active { min-height:3.9em; margin-top:18px; margin-bottom:46px; line-height:1.28; }
+      body.music:not(.albumSelected) .tableWrap { display:none; }
+      body.music.albumSelected .albumGrid { display:block; max-height:none; overflow:visible; }
+      body.music.albumSelected .mobileAlbumRow { display:none; }
+      body.music.albumSelected .albumShelf { border:0; background:transparent; box-shadow:none; padding:0; }
+      body.music.albumSelected .albumDetail { max-width:560px; margin:0 auto 14px; text-align:center; }
+      body.music.albumSelected .detailArtWrap,
+      body.music.albumSelected .detailInfo { max-width:min(420px,88vw); width:100%; margin-inline:auto; }
+      body.music.albumSelected .detailStats { justify-content:center; }
+      body.music.albumSelected .albumActions { justify-content:center; }
+      body.music.albumSelected .tableWrap { border:0; background:transparent; box-shadow:none; }
+      .tableWrap { max-height:58vh; }
+      .tableWrap table, .tableWrap tbody { display:block; min-width:0; width:100%; }
+      .tableWrap thead { display:none; }
+      .tableWrap tr[data-id] { display:grid; grid-template-columns:44px minmax(0,1fr) auto; grid-template-areas:"art title actions" "art date actions"; gap:2px 10px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
+      .tableWrap tr[data-id] td { display:block; padding:0; border-bottom:0; }
+      .tableWrap tr[data-id] td:nth-child(2) { grid-area:art; }
+      .tableWrap tr[data-id] .titleCell { grid-area:title; max-width:none; }
+      .tableWrap tr[data-id] td:nth-child(6) { grid-area:date; color:var(--muted); font-size:12px; }
+      .tableWrap tr[data-id] .rowActions { grid-area:actions; width:auto; }
+      table { min-width:0; }
+      .albumGrid,
+      .albumSectionGrid,
+      .videoGrid.videoCollectionMode,
+      .videoSectionGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 10px; }
+      .albumGrid,
+      .videoGrid.videoCollectionMode { max-height:none; overflow:visible; }
+      .resumeCard { grid-template-columns:54px minmax(0,1fr) 38px; gap:9px; padding:9px; margin-bottom:2px; border-radius:8px; }
+      .resumeCard img, .resumeNoArt { width:54px; height:54px; }
+      .resumeCopy strong { font-size:14px; }
+      .resumeCopy span:not(.resumeEyebrow) { font-size:11px; }
+      .resumeEyebrow { font-size:10px; }
+      .albumCard,
+      .videoGrid.videoCollectionMode .videoFolderCard { display:grid; gap:6px; padding:0; border-color:transparent; background:transparent; box-shadow:none; overflow:visible; }
+      .albumCard.playingNow { overflow:hidden; }
+      .albumCard:hover, .albumCard.active,
+      .videoCard:hover, .videoCard.active { border-color:transparent; background:transparent; }
+      .albumCard .artButton { width:100%; aspect-ratio:1/1; border-radius:0; }
+      .albumCard .albumArt { border-radius:0; }
+      .albumCard .albumName { min-height:0; font-size:12px; line-height:1.22; -webkit-line-clamp:2; }
+      .albumCard .albumMeta { font-size:11px; }
+      .albumCard .cardActions,
+      .videoCard .cardActions { display:none; }
+      .videoPanel { gap:10px; }
+      .videoPlayerCard { padding:10px; }
+      .videoPlayer { max-height:22vh; }
+      .videoTitle { font-size:16px; margin:8px 0 2px; }
+      .videoQueueControls { margin-top:8px; }
+      .videoGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 10px; max-height:78vh; }
+      .videoGrid.videoFileMode { grid-template-columns:1fr; gap:10px; }
+      .videoGrid.videoFolderOpen { grid-template-columns:1fr; max-width:none; margin:0; }
+      .videoGrid.videoFolderOpen .videoAlbumDetail { padding:0 0 8px; border:0; background:transparent; }
+      .videoGrid.videoFolderOpen .videoAlbumCoverWrap { display:none; }
+      .videoGrid.videoFolderOpen .detailInfo { max-width:min(560px,92vw); padding-right:36px; }
+      .detailTrackList { border-top:0; }
+      .videoAlbumVideoRow { grid-template-columns:28px minmax(0,1fr); padding:9px 0; }
+      .videoAlbumVideoRow .rowActions { display:none !important; }
+      .videoCard { display:grid; grid-template-columns:1fr; grid-template-rows:auto auto auto; grid-template-areas:"thumb" "name" "meta"; height:auto; min-height:0; padding:0; gap:6px; border-color:transparent; background:transparent; box-shadow:none; }
+      .videoGrid.videoFileMode .videoCard[data-id] { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto; grid-template-areas:"name" "meta"; align-items:center; gap:4px 10px; height:auto; min-height:48px; }
+      .videoCard .videoThumb { grid-area:thumb; width:100%; aspect-ratio:16/9; border-radius:8px; }
+      .videoGrid.videoCollectionMode .videoFolderCard .videoThumb { aspect-ratio:1/1; border-radius:0; }
+      .videoCard .videoName { grid-area:name; font-size:12px; line-height:1.22; -webkit-line-clamp:2; }
+      .videoGrid.videoCollectionMode .videoFolderCard .videoName { min-height:44px; font-weight:var(--card-title-weight); -webkit-line-clamp:3; }
+      .videoCard .videoMeta { grid-area:meta; min-height:0; font-size:11px; line-height:normal; -webkit-line-clamp:1; }
+      .videoCard .videoWarn { display:none; }
+    }
+    @media (max-width:680px) {
+      body { --player-bar-space:76px; font-size:13px; }
+      .bar { padding:10px; gap:8px; }
+      h1 { font-size:18px; }
+      .appTabs { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; width:100%; }
+      .mediaTab { min-width:0; width:100%; height:38px; }
+      .mediaTab.iconOnly { width:100%; min-width:0; }
+      input,select,button { height:34px; min-width:0; }
+      .stats { padding:0 10px 10px; gap:6px; overflow:auto; flex-wrap:nowrap; }
+      .stat { flex:0 0 auto; min-height:26px; padding:0 8px; }
+      main { padding:10px; gap:10px; }
+      nav { border-radius:8px; }
+      .browseHead { padding:10px; }
+      .groupItem { min-height:34px; }
+      body.music .groupItem, body.video .groupItem { min-height:30px; padding:5px 8px; }
+      .bulkPanel { display:none; }
+      .controls { gap:6px; }
+      .viewTitle { width:100%; font-size:20px; }
+      .controls .spacer { display:none; }
+      /* Mobile top controls use the same five-slot rhythm on music and video. */
+      body.music:not(.albumSelected) .controls.musicOnly { display:grid; grid-template-columns:38px 58px minmax(92px,1fr) 38px 38px; gap:4px; align-items:center; }
+      body.music:not(.albumSelected) .controls.musicOnly .viewTitle { display:none; }
+      body.music:not(.albumSelected) .controls.musicOnly .browseToggle { width:38px; min-width:38px; padding:0; }
+      body.music:not(.albumSelected) #playShownMusic,
+      body.music:not(.albumSelected) #shuffleShownMusic { width:38px; min-width:38px; height:34px; padding:0; }
+      body.music:not(.albumSelected) #topQueueToggle { width:58px; min-width:58px; padding:0 6px; font-size:12px; white-space:nowrap; }
+      body.music:not(.albumSelected) #albumViewMode { width:100%; min-width:0; padding:0 6px; font-size:12px; }
+      body.video .videoPanel > .controls { display:grid; grid-template-columns:72px minmax(0,1fr) 38px; gap:4px; align-items:center; }
+      body.video .videoPanel > .controls .browseToggle { width:38px; min-width:38px; padding:0; }
+      body.video #videoQueueToggle { grid-column:1; width:72px; min-width:72px; padding:0 6px; font-size:12px; white-space:nowrap; }
+      body.video #videoSort { width:100%; min-width:0; padding:0 6px; font-size:12px; }
+      body.video #shuffleShownVideo { width:38px; min-width:38px; height:34px; padding:0; }
+      body.video #shuffleShownVideo { grid-column:3; justify-self:end; }
+      .albumShelf { padding:10px; width:100%; }
+      .albumGrid { width:100%; }
+      .albumCard { width:100%; }
+      .albumHomeSection { gap:8px; }
+      .albumSectionHead h2 { font-size:16px; }
+      .albumName { min-height:32px; font-size:12px; }
+      .albumMeta { font-size:11px; }
+      .albumDetail { padding:12px; gap:12px; border-width:0; background:transparent; }
+      .detailHeading { font-size:24px; line-height:1.15; }
+      .detailMeta { font-size:13px; }
+      body.music.albumSelected .albumDetail { padding:0 0 8px; }
+      body.music.albumSelected .albumDetailCover { border-radius:0; }
+      body.music.albumSelected .detailStats { margin:10px 0; }
+      .albumActions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .albumActions .iconControl { width:38px; height:34px; min-width:38px; padding:0; }
+      body.music.albumSelected .albumActions .iconControl { width:48px; height:42px; min-width:48px; font-size:20px; }
+      .albumActions #albumEdit { display:none; }
+      .tableWrap { max-height:58vh; overflow:auto; }
+      table { min-width:0; }
+      th,td { padding:8px; }
+      .pathCell { max-width:260px; }
+      aside { min-height:auto; padding:10px; }
+      body.listen aside { display:none; }
+      .playerBar { grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:7px 10px; }
+      .queueToast { left:12px; right:12px; bottom:86px; text-align:center; }
+      .now { min-width:0; }
+      .now img, .now .noArt { width:38px; height:38px; }
+      .transport { justify-content:flex-end; }
+      .transport button { width:34px; height:32px; }
+      .transport .playButton { width:40px; }
+      .playback { display:none; }
+      .volume { display:none; }
+      .queueDrawer { width:100vw; }
+      .queueHeadTop .queueTitleButton { font-size:17px; }
+      .queuePanelActions button { height:32px; }
+      .videoGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 10px; max-height:76vh; }
+      .videoGrid.videoFileMode .videoCard[data-id] { min-height:46px; }
+      .videoHomeSection { gap:8px; }
+      .healthHero { display:grid; padding:12px; }
+      .healthGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .healthCard { padding:10px; }
+      .healthNumber { font-size:24px; }
+      .healthSections { grid-template-columns:1fr; }
+      .interviewsPanel { grid-template-columns:1fr; }
+      .interviewList, .interviewReader { max-height:none; }
+      body.interviews .interviewReader { min-height:calc(100vh - 118px); min-width:0; max-width:none; resize:none; }
+      .interviewText { max-width:none; }
+    }

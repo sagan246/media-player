@@ -11,8 +11,44 @@
       if(!response.ok) throw new Error(`${url} returned ${response.status}`);
       return response.json();
     }));
+    const components = window.MediaPlayerComponents || {};
+    const {
+      browseItemsHtml,
+      browseSummaryText: componentBrowseSummaryText,
+      buttonIcon,
+      sectionGroupHtml: componentSectionGroupHtml,
+      selectOptionsHtml,
+      topControlBarHtml,
+      topIconButton,
+      topQueueButton,
+    } = components;
+    const musicComponents = window.MediaPlayerMusicComponents || {};
+    const queueComponents = window.MediaPlayerQueueComponents || {};
+    const {
+      queueListHtml,
+      queueSummaryText,
+    } = queueComponents;
+    const videoComponents = window.MediaPlayerVideoComponents || {};
+    const lyricsHelpers = window.MediaPlayerLyrics || {};
+    const nowPlayingComponents = window.MediaPlayerNowPlayingComponents || {};
+    const statsComponents = window.MediaPlayerStatsComponents || {};
+    const {
+      allTimeStatsCard,
+      fmtStatsSongTime,
+      statsHero: statsHeroHtml,
+      statsMetric,
+      statsRangeControlHtml: statsRangeControlComponentHtml,
+      statsTableSection,
+    } = statsComponents;
+    const themeEngine = window.MediaPlayerThemeEngine || {};
 
-    // App state. Most UI functions read from these values, then call renderCurrentMedia().
+    // app.js is the stateful coordinator. Stateless markup lives in
+    // components.js/stats-components.js so the music, video, queue, and stats
+    // screens keep sharing one visual language without sharing playback state.
+
+    // Library caches are loaded once and reused by render functions. Playback
+    // endpoints stream directly from disk; metadata/artwork should already be
+    // available from these cached scan results before the user presses play.
     let tracks = [];
     let videos = [];
     let interviews = [];
@@ -20,12 +56,17 @@
     let videosLoaded = false;
     let interviewsLoaded = false;
 
+    // Current selections. selectedId/selectedVideoId are UI focus, while
+    // playingId/videoQueueIndex describe the actual active media.
     let selectedId = null;
     let playingId = null;
     let selectedVideoId = null;
     let selectedInterviewId = null;
     let selectedInterviewKey = localStorage.getItem("selectedInterviewKey") || "";
 
+    // View mode state is intentionally persisted where it affects what the user
+    // expects to see after refresh, but transient details like selected albums
+    // stay in memory.
     let mediaType = "music";
     let appMode = "listen";
     let groupMode = "category";
@@ -46,21 +87,10 @@
     const statsRangeAnchors = {week:localStorage.getItem("statsRangeEnd:week")||legacyStatsRangeEnd,month:localStorage.getItem("statsRangeEnd:month")||legacyStatsRangeEnd,year:localStorage.getItem("statsRangeEnd:year")||legacyStatsRangeEnd};
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
-    const themeData = window.MediaPlayerThemeData || {};
-    const DEFAULT_THEME_ID = themeData.defaultThemeId || "albumAdaptiveLight";
-    const DARK_ADAPTIVE_THEME_ID = themeData.darkAdaptiveThemeId || "albumAdaptive";
-    const LIGHT_ADAPTIVE_THEME_ID = themeData.lightAdaptiveThemeId || "albumAdaptiveLight";
-    const DEFAULT_ADAPTIVE_COLOR = themeData.defaultAdaptiveColor || {r:63, g:111, b:216};
-    const ADAPTIVE_THEME_IDS = new Set([DARK_ADAPTIVE_THEME_ID, LIGHT_ADAPTIVE_THEME_ID]);
-    const ADAPTIVE_STYLE_VARS = themeData.adaptiveStyleVars || [];
-    const THEME_CHOICES = themeData.choices || [];
-    let activeTheme = localStorage.getItem("accentTheme") || "albumAdaptiveLight";
-    const themeDefaultVersion = localStorage.getItem("themeDefault");
-    if((!localStorage.getItem("accentTheme") || ["blue","albumAdaptive"].includes(activeTheme)) && themeDefaultVersion !== "albumAdaptiveLight"){
-      activeTheme = "albumAdaptiveLight";
-      localStorage.setItem("accentTheme", activeTheme);
-      localStorage.setItem("themeDefault", "albumAdaptiveLight");
-    }
+    const DEFAULT_THEME_ID = themeEngine.DEFAULT_THEME_ID || "albumAdaptiveLight";
+    const DEFAULT_ADAPTIVE_COLOR = themeEngine.DEFAULT_ADAPTIVE_COLOR || {r:63, g:111, b:216};
+    const THEME_CHOICES = themeEngine.THEME_CHOICES || [];
+    let activeTheme = themeEngine.initialTheme ? themeEngine.initialTheme() : DEFAULT_THEME_ID;
     let adaptiveThemeSource = "";
     let appConfig = {
       editable:true,
@@ -74,6 +104,8 @@
     if(!STATS_RANGES.some(([value])=>value===statsPeriod)) statsPeriod = "week";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
     if(!["off","all","one"].includes(videoRepeatMode)) videoRepeatMode = "off";
+    // Playback queues are client-side so phone/desktop can resume quickly
+    // without rebuilding a queue on every page load.
     let browseCollapsed = true;
     let queue = [], queueIndex = -1, seeking = false, switchingAudioTrack = false;
     const knownDurations = new Map();
@@ -83,6 +115,8 @@
     let currentLrcLyrics = null;
     let restoredMusicState = false, lastQueueSaveAt = 0;
     let restoredVideoState = false, restoringVideoStateNow = false, lastVideoSaveAt = 0;
+    // Stats are batched to avoid recording skipped tracks as listens. A play is
+    // only counted after the threshold, while time is periodically flushed.
     let listeningStats = null, statsSession = null, lastStatsSentAt = 0;
     let statsTopSongTrackIds = [];
     const STATS_MIN_SECONDS_TO_RECORD = 5;
@@ -92,6 +126,8 @@
       localStorage.setItem("visualizerMode", "bars");
       localStorage.setItem("visualizerDefault", "bars");
     }
+    // The visualizer uses Web Audio only while the page is visible/playing; on
+    // iPhone lock screen we keep normal audio playback behavior instead.
     let audioContext = null, analyserNode = null, audioSourceNode = null, visualizerData = null, visualizerFrame = null, visualizerMode = savedVisualizerMode || "bars";
     const selectedIds = new Set();
     const adaptiveThemeCache = new Map();
@@ -495,77 +531,30 @@
       if(player.paused)playCurrentAudio();
       else player.pause();
     }
-    // Shared UI builders. Music, video, and interview screens should look like
-    // one app, so common button/card pieces live here instead of being copied.
-    function browseItemHtml(name, count, active){
-      return `<button class="groupItem ${active?"active":""}" data-group="${esc(name)}" title="${esc(name)}"><span class="groupName">${esc(groupLabel(name))}</span><span class="groupCount">${count}</span></button>`;
-    }
+    // Shared UI glue. The markup fragments come from components.js, but these
+    // functions still bind app-specific state and click handlers.
     function browseSummaryText(count, singular){
-      return `${count} ${singular}${count===1?"":"s"}`;
+      return componentBrowseSummaryText(count, singular);
     }
     function renderBrowseItems(items, isActive, onChoose, summaryText=""){
       if(browseSummaryEl) browseSummaryEl.textContent = summaryText;
-      groupsEl.innerHTML = items.map(([name,count]) => browseItemHtml(name, count, isActive(name))).join("");
+      groupsEl.innerHTML = browseItemsHtml(items.map(([name,count]) => ({name,label:groupLabel(name),count,active:isActive(name)})));
       groupsEl.querySelectorAll(".groupItem").forEach(btn=>btn.addEventListener("click",()=>{
         onChoose(btn.dataset.group);
         setOpen(navEl, false);
       }));
     }
-    function actionButtonHtml({action, actionAttr="action", valueName, value, label, icon, primary=false, add=false}){
-      const classes = `${primary?"":"secondary "}iconButton iconControl${add?" addIcon":""}`.trim();
-      return `<button class="${classes}" data-${actionAttr}="${esc(action)}" data-${valueName}="${esc(value)}" title="${esc(label)}" aria-label="${esc(label)}">${icon}</button>`;
-    }
-    function cardActionsHtml(buttons){
-      return `<div class="cardActions">${buttons.map(actionButtonHtml).join("")}</div>`;
-    }
-    function detailActionButtonHtml({id, label, icon, primary=false, add=false, text=""}){
-      const classes = `${primary?"playButton":"secondary"} ${icon?"iconControl":""}${add?" addIcon":""}`.trim();
-      return `<button id="${esc(id)}" class="${classes}" title="${esc(label)}" aria-label="${esc(label)}">${icon || esc(text)}</button>`;
-    }
-    function detailActionsHtml(buttons){
-      return `<div class="albumActions">${buttons.map(detailActionButtonHtml).join("")}</div>`;
-    }
-    function detailStatsHtml(items){
-      const pills = items.filter(Boolean).map(item=>`<span class="pill">${esc(item)}</span>`).join("");
-      return pills ? `<div class="albumStats detailStats">${pills}</div>` : "";
-    }
-    function detailWarningsHtml(warnings){
-      return warnings ? `<div class="albumWarnings detailWarnings">${warnings}</div>` : "";
-    }
-    function detailPageHtml({classes="", coverHtml="", coverWrapClass="", infoClass="", metaClass="", title="", meta="", stats=[], actions="", warnings=""}){
-      const className = `albumDetail detailPage ${classes} visible`.trim();
-      const coverWrapClasses = `detailArtWrap ${coverWrapClass}`.trim();
-      const infoClasses = `albumDetailInfo detailInfo ${infoClass}`.trim();
-      const metaClasses = `albumDetailMeta detailMeta ${metaClass}`.trim();
-      return `<section class="${className}"><div class="${coverWrapClasses}">${coverHtml}</div><div class="${infoClasses}"><h2 class="detailHeading">${esc(title)}</h2><div class="${metaClasses}">${esc(meta)}</div>${detailStatsHtml(stats)}${actions}${detailWarningsHtml(warnings)}</div></section>`;
-    }
-    function detailRowHtml({id, index, title, meta, active=false, rowClass="", noClass="", textClass="", titleClass="", metaClass=""}){
-      const classes = `${rowClass} detailRow ${active?"active":""}`.trim();
-      return `<div class="${classes}" data-id="${esc(id)}" role="button" tabindex="0"><div class="${`detailRowNo ${noClass}`.trim()}">${index+1}</div><div class="${`detailRowText ${textClass}`.trim()}"><div class="${`detailRowTitle ${titleClass}`.trim()}">${esc(title)}</div><div class="${`detailRowMeta ${metaClass}`.trim()}">${esc(meta)}</div></div></div>`;
-    }
     function sectionGroupHtml(title, countText, cardsHtml, sectionClass="", gridClass="", actionHtml=""){
-      return `<section class="albumHomeSection ${sectionClass}"><div class="albumSectionHead"><div class="albumSectionTitle">${actionHtml}<h2>${esc(groupLabel(title))}</h2></div><span>${esc(countText)}</span></div><div class="albumSectionGrid ${gridClass}">${cardsHtml}</div></section>`;
-    }
-    function statCardHtml({title="", body="", actionHtml="", className="", ariaLabel=""}){
-      const header = title ? `<div class="statsSectionHead statsCardHead"><h3>${esc(title)}</h3>${actionHtml}</div>` : "";
-      const label = ariaLabel || title;
-      return `<section class="statsSection statsCard ${className}" ${label?`aria-label="${esc(label)}"`:""}>${header}${body}</section>`;
-    }
-    function statPillHtml(value, label){
-      return `<span class="stat"><strong>${esc(value)}</strong> ${esc(label)}</span>`;
-    }
-    function topIconButton(action, label, icon, extraClass=""){
-      return `<button class="secondary iconControl ${extraClass}" data-top-action="${esc(action)}" type="button" title="${esc(label)}" aria-label="${esc(label)}">${icon}</button>`;
-    }
-    function topQueueButton(action, label, count){
-      return `<button class="secondary queueCountButton" data-top-action="${esc(action)}" type="button" title="${esc(label)}" aria-label="${esc(label)}">${buttonIcon("queue")}<span>${esc(count)}</span></button>`;
+      return componentSectionGroupHtml({title,label:groupLabel(title),countText,cardsHtml,sectionClass,gridClass,actionHtml});
     }
     function topControlBar(title, metricsHtml, controlsHtml){
-      statsEl.innerHTML = `<div class="topTabControls">${title?`<strong>${esc(title)}</strong>`:""}${metricsHtml?`<div class="topTabMetrics">${metricsHtml}</div>`:""}<div class="topTabActions">${controlsHtml}</div></div>`;
+      statsEl.innerHTML = topControlBarHtml({title,metricsHtml,controlsHtml});
       bindTopControls();
     }
+    // Top controls are rebuilt by each tab so desktop and mobile can share the
+    // same compact header instead of carrying duplicate controls inside panels.
     function albumViewOptions(){
-      return [["newest","Newest"],["oldest","Oldest"],["sections","Sections"],["years","Year"]].map(([value,label])=>`<option value="${value}" ${albumViewMode===value?"selected":""}>${label}</option>`).join("");
+      return selectOptionsHtml([["newest","Newest"],["oldest","Oldest"],["sections","Sections"],["years","Year"]], albumViewMode);
     }
     function renderMusicTopControls(){
       const controls = [
@@ -617,28 +606,6 @@
           else if(action==="healthRefresh")refreshHealth();
         });
       });
-    }
-    /**
-     * @brief Return inline SVG for small toolbar/action icons.
-     * @param {string} name Icon key used by render helpers.
-     * @returns {string} SVG markup or an empty string.
-     */
-    function buttonIcon(name){
-      const icons = {
-        browse: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 3h10v9H3z"/><path d="M3 7v12"/></svg>`,
-        queue: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>`,
-      };
-      return icons[name] || "";
-    }
-    function removeQueueButtonHtml(index){
-      return `<button class="secondary iconControl" data-remove="${index}" title="Remove" aria-label="Remove">&#10005;</button>`;
-    }
-    function emptyQueueHtml(title, subtitle=""){
-      const subtitleHtml = subtitle ? `<div class="queueItemSub">${esc(subtitle)}</div>` : "";
-      return `<div class="queueItem mediaRow"><div class="noArt mediaRowArt">?</div><div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${esc(title)}</div>${subtitleHtml}</div></div>`;
-    }
-    function queueItemHtml({index, active, artworkHtml, title, subtitle, draggable=false}){
-      return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${index+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${removeQueueButtonHtml(index)}</div>`;
     }
     function bindQueueList(listEl, playIndex, removeIndex){
       listEl.querySelectorAll(".queueItem[data-index]").forEach(item=>item.addEventListener("click",e=>{
@@ -706,24 +673,24 @@
     function albumSizeMb(list){return list.reduce((sum,t)=>sum+(Number(t.size_mb)||0),0).toFixed(1);}
     function albumWarnings(list, formats){const warnings=[]; const missingArt=list.filter(t=>!t.has_artwork).length; const missingDate=list.filter(t=>!t.date).length; const missingTrack=list.filter(t=>!t.tracknumber).length; if(missingArt)warnings.push(`${missingArt} missing art`); if(missingDate)warnings.push(`${missingDate} missing date`); if(missingTrack)warnings.push(`${missingTrack} missing track #`); if(formats.length>1)warnings.push(`Mixed formats: ${formats.join(", ")}`); return warnings;}
     function albumCoverHtml(list){const art=list.find(t=>t.has_artwork); return art?`<img class="albumDetailCover detailArt" src="${fullArtUrl(art)}" alt="" loading="lazy" decoding="async">`:`<div class="albumDetailCover detailArt">No Art</div>`;}
-    function albumWarningHtml(warnings){return warnings.length?warnings.map(w=>`<span class="pill missing">${esc(w)}</span>`).join(""):`<span class="pill">Album metadata looks tidy</span>`;}
+    function albumWarningHtml(warnings){return musicComponents.albumWarningHtml(warnings);}
     function renderAlbumDetail(list){
       if(selectedAlbum==="All"||!list.length)return "";
       const years=albumYears(list), formats=albumFormats(list), artists=albumArtists(list), warnings=albumWarnings(list,formats);
-      const actions=detailActionsHtml([{id:"albumPlay",label:"Play album",icon:"&#9654;",primary:true},{id:"albumShuffle",label:"Shuffle album",icon:"&#8644;"},{id:"albumAddQueue",label:"Add album to queue",icon:"+",add:true},{id:"albumQueue",label:"Open queue",icon:`${buttonIcon("queue")}<span>${queue.length}</span>`},{id:"albumEdit",label:"Edit Album Tracks",text:"Edit Album Tracks"}]);
-      return detailPageHtml({
+      return musicComponents.albumDetailHtml({
         coverHtml:albumCoverHtml(list),
         title:selectedAlbum,
         meta:`${artists.join(", ")||"Unknown artist"}${years.length?` - ${years.join(", ")}`:""}`,
         stats:[countLabel(list.length,"track"), formats.join(", ")||"Unknown format", `${albumSizeMb(list)} MB`],
-        actions,
-        warnings:albumWarningHtml(warnings),
+        warnings,
+        queueCount:queue.length,
+        queueIconHtml:buttonIcon("queue"),
       });
     }
     // Albums sort by their earliest track year, so multi-year albums stay together.
     function albumSortYear(list){const years=list.map(t=>Number(String(t.date||"").slice(0,4))).filter(y=>Number.isFinite(y)&&y>0); return years.length?Math.min(...years):-1;}
     function albumEntries(source){const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name)) albums.set(name,[]); albums.get(name).push(t);} return [...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}));}
-    function albumCardHtml(name,list){const art=list.find(t=>t.has_artwork); const years=[...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort(); const isPlaying=list.some(t=>t.id===playingId); const actions=cardActionsHtml([{action:"play",valueName:"album",value:name,label:"Play album",icon:"&#9654;",primary:true},{action:"add",valueName:"album",value:name,label:"Add album to queue",icon:"+",add:true},{action:"shuffle",valueName:"album",value:name,label:"Shuffle album",icon:"&#8644;"}]); return `<div class="albumCard ${isPlaying?"playingNow":""}" data-album="${esc(name)}" tabindex="0">${actions}<button class="artButton" data-action="select" data-album="${esc(name)}">${art?`<img class="albumArt" src="${artUrl(art)}" alt="" loading="lazy" decoding="async">`:"No Art"}</button><div class="albumName">${esc(name)}</div><div class="albumMeta">${countLabel(list.length,"track")}${years.length?` - ${esc(years.join(", "))}`:""}</div></div>`;}
+    function albumCardHtml(name,list){const art=list.find(t=>t.has_artwork); const years=[...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort(); return musicComponents.albumCardHtml({name,artHtml:art?`<img class="albumArt" src="${artUrl(art)}" alt="" loading="lazy" decoding="async">`:"No Art",years,countText:countLabel(list.length,"track"),isPlaying:list.some(t=>t.id===playingId)});}
     function albumSectionName(list){const counts=new Map(); for(const t of list){const name=categoryOf(t); counts.set(name,(counts.get(name)||0)+1);} return [...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}))[0]?.[0]||"(root)";}
     function albumSections(ordered){const buckets=new Map(); for(const [name,list] of ordered){const bucket=albumSectionName(list); if(!buckets.has(bucket))buckets.set(bucket,[]); buckets.get(bucket).push([name,list]);} return [...buckets.entries()].sort(musicCategoryCompare);}
     function albumYearName(list){const year=albumSortYear(list); return year>0?String(year):"Unknown Year";}
@@ -746,15 +713,13 @@
     function trackRowHtml(track, divider=""){
       const trackNo=String(track.tracknumber||"").split("/")[0];
       const art=track.has_artwork?`<img class="coverThumb" src="${smallArtUrl(track)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`;
-      const selectedClass=track.id===selectedId?"selected":"";
-      const playingClass=track.id===playingId?"playingNow":"";
-      return `${divider}<tr data-id="${track.id}" class="mediaTableRow ${selectedClass} ${playingClass}"><td class="checkCell"><input class="rowCheck" type="checkbox" data-id="${track.id}" ${selectedIds.has(track.id)?"checked":""}></td><td>${art}</td><td class="titleCell mediaRowTitle"><span class="trackNo">${esc(trackNo||"")}</span>${esc(track.title)}<br><span class="rowBadges"><span class="pill ${track.has_artwork?"":"missing"}">${track.has_artwork?"Art":"No art"}</span> ${badges(track)}</span></td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="pathCell">${esc(track.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
+      return `${divider}${musicComponents.trackRowHtml({track,trackNo:trackNo||"",artHtml:art,badgesHtml:badges(track),selected:track.id===selectedId,playing:track.id===playingId,checked:selectedIds.has(track.id)})}`;
     }
     function trackRowsHtml(list){
       let lastAlbum=null;
       return list.map(track=>{
         const album=albumOf(track);
-        const divider=album!==lastAlbum?`<tr class="mobileAlbumRow"><td colspan="8">${esc(album)}</td></tr>`:"";
+        const divider=album!==lastAlbum?musicComponents.mobileAlbumDividerHtml(album):"";
         lastAlbum=album;
         return trackRowHtml(track,divider);
       }).join("");
@@ -799,11 +764,11 @@
     function videoNameCompare(a,b){const ar=videoCategoryRank(a), br=videoCategoryRank(b); if(ar!==br)return ar-br; return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"});}
     function videoFolderSort(a,b){const ar=videoCategoryRank(a[0]), br=videoCategoryRank(b[0]); if(ar!==br)return ar-br; const ay=Math.max(...a[1].map(videoYear).filter(Boolean),0), by=Math.max(...b[1].map(videoYear).filter(Boolean),0); if(ay!==by)return videoSort==="oldest"?ay-by:by-ay; return a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"});}
     function videoFolderGroups(category){const groups=new Map(); const source=category==="All"?videos:videos.filter(v=>v.category===category); for(const v of source){const name=v.folder||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].filter(([name])=>name!=="(root)").sort(videoFolderSort);}
-    function videoFolderActionsHtml(folder){return cardActionsHtml([{action:"play",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Play folder",icon:"&#9654;",primary:true},{action:"add",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Add folder to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"folder-action",valueName:"folder",value:folder,label:"Shuffle folder",icon:"&#8644;"}]);}
-    function videoActionsHtml(id){return cardActionsHtml([{action:"play",actionAttr:"video-action",valueName:"id",value:id,label:"Play video",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-action",valueName:"id",value:id,label:"Add video to queue",icon:"+",add:true}]);}
-    function videoGroupActionsHtml(group){return cardActionsHtml([{action:"play",actionAttr:"video-group-action",valueName:"group",value:group,label:"Play section",icon:"&#9654;",primary:true},{action:"add",actionAttr:"video-group-action",valueName:"group",value:group,label:"Add section to queue",icon:"+",add:true},{action:"shuffle",actionAttr:"video-group-action",valueName:"group",value:group,label:"Shuffle section",icon:"&#8644;"}]);}
+    function videoFolderActionsHtml(folder){return videoComponents.folderActionsHtml(folder);}
+    function videoActionsHtml(id){return videoComponents.videoActionsHtml(id);}
+    function videoGroupActionsHtml(group){return videoComponents.groupActionsHtml(group);}
     function setVideoGridMode(mode){videoGridEl.classList.toggle("videoFileMode",mode==="files"); videoGridEl.classList.toggle("videoCollectionMode",mode==="collections"); if(mode!=="files"){videoGridEl.classList.remove("videoFolderOpen"); document.body.classList.remove("videoAlbumSelected");}}
-    function videoFolderCoverHtml(list, className="videoThumb"){const cover=list.find(v=>v.has_folder_cover); return `<div class="${className} videoCoverThumb ${className==="albumDetailCover"?"detailArt":""}">${cover?`<img src="${cover.folder_cover_url}" alt="" loading="lazy" decoding="async">`:""}</div>`;}
+    function videoFolderCoverHtml(list, className="videoThumb"){return videoComponents.folderCoverHtml(list, className);}
     function videoFolderFormats(list){return [...new Set(list.map(v=>String(v.format||"").toUpperCase()).filter(Boolean))].sort();}
     function videoFolderSizeMb(list){return list.reduce((sum,v)=>sum+(Number(v.size_mb)||0),0).toFixed(1);}
     function savedVideoResumeTime(){
@@ -817,41 +782,28 @@
       const v=videos.find(x=>x.id===selectedVideoId)||videos.find(x=>x.id===videoQueue[videoQueueIndex]);
       if(!v)return "";
       const resumeAt=savedVideoResumeTime();
-      const time=resumeAt>1?` at ${fmt(resumeAt)}`:"";
       const queueText=videoQueue.length===1?"1 video":`${videoQueue.length} videos`;
-      const art=v.has_folder_cover?`<img src="${v.folder_cover_url}" alt="" loading="lazy" decoding="async">`:`<div class="resumeNoArt">Video</div>`;
-      return `<div class="resumeCard videoResumeCard" data-action="video-resume" tabindex="0">${art}<div class="resumeCopy"><span class="resumeEyebrow">Continue watching</span><strong>${esc(v.title)}</strong><span>${esc(groupLabel(v.folder||v.category||"Video"))}${time}</span><span>${queueText} in queue</span></div><button class="playButton iconControl" data-action="video-resume-play" type="button" title="Resume video" aria-label="Resume video">&#9654;</button></div>`;
+      return videoComponents.resumeCardHtml({
+        video:v,
+        resumeAtText:resumeAt>1?` at ${fmt(resumeAt)}`:"",
+        queueText,
+        groupLabel:groupLabel(v.folder||v.category||"Video"),
+      });
     }
-    function videoCollectionCardHtml(name,list,kind="folder"){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const actions=kind==="section"?videoGroupActionsHtml(name):videoFolderActionsHtml(name); return `<div class="videoCard videoFolderCard" data-${kind}="${esc(name)}" title="${esc(name)}" role="button" tabindex="0">${actions}${videoFolderCoverHtml(list)}<div class="videoName">${esc(groupLabel(name))}</div><div class="videoMeta">${list.length} video${list.length===1?"":"s"}${years.length?` - ${esc(years.slice(0,3).join(", "))}`:""}</div></div>`;}
+    function videoCollectionCardHtml(name,list,kind="folder"){const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a); const actions=kind==="section"?videoGroupActionsHtml(name):videoFolderActionsHtml(name); return videoComponents.collectionCardHtml({name,label:groupLabel(name),list,kind,years,actionsHtml:actions});}
     function videoFolderDetailHtml(name,list){
       const years=[...new Set(list.map(videoYear).filter(Boolean))].sort((a,b)=>b-a);
       const formats=videoFolderFormats(list);
-      const actions=detailActionsHtml([{id:"videoFolderPlay",label:"Play folder",icon:"&#9654;",primary:true},{id:"videoFolderShuffle",label:"Shuffle folder",icon:"&#8644;"},{id:"videoFolderAdd",label:"Add folder to queue",icon:"+",add:true}]);
-      return detailPageHtml({
-        classes:"videoAlbumDetail",
-        coverHtml:videoFolderCoverHtml(list,"albumDetailCover"),
-        coverWrapClass:"videoAlbumCoverWrap",
-        infoClass:"videoAlbumInfo",
-        metaClass:"videoAlbumMeta",
-        title:groupLabel(name),
-        meta:years.length?years.slice(0,3).join(", "):"",
-        stats:[countLabel(list.length,"video"), formats.join(", ")||"Unknown format", `${videoFolderSizeMb(list)} MB`],
-        actions,
-      });
+      return videoComponents.folderDetailHtml({name,label:groupLabel(name),list,years,formats,sizeMb:videoFolderSizeMb(list),countText:countLabel(list.length,"video")});
     }
     function videoAlbumRowsHtml(list){
-      return `<div class="videoAlbumTrackList detailTrackList">${list.map((v,index)=>detailRowHtml({
+      return videoComponents.albumRowsHtml(list.map((v,index)=>({
         id:v.id,
         index,
         title:v.title,
         meta:`${videoMetaSummary(v)}${v.browser_friendly?"":" - may need conversion"}`,
         active:v.id===selectedVideoId,
-        rowClass:"videoAlbumVideoRow",
-        noClass:"videoAlbumTrackNo",
-        textClass:"videoAlbumTrackText",
-        titleClass:"videoAlbumTrackTitle",
-        metaClass:"videoAlbumTrackMeta",
-      })).join("")}</div>`;
+      })));
     }
     function videoSectionGroups(){const groups=new Map(); for(const v of videos){const name=v.category||"(root)"; if(!groups.has(name))groups.set(name,[]); groups.get(name).push(v);} return [...groups.entries()].sort(videoFolderSort);}
     function bindVideoFolderCards(){videoGridEl.querySelectorAll("button[data-folder-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const folder=btn.dataset.folder, action=btn.dataset.folderAction; const list=videos.filter(v=>v.folder===folder).sort(videoFileCompare); if(action==="add"){addToVideoQueue(list); return;} playVideoList(list, action==="shuffle");})); videoGridEl.querySelectorAll(".videoFolderCard[data-folder]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; openVideoFolder(card.dataset.folder);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openVideoFolder(card.dataset.folder);});});}
@@ -976,7 +928,7 @@
     function videoThumb(v){if(v.has_thumbnail)return `<img src="${v.thumbnail_url}" alt="" loading="lazy" decoding="async">`; return v.browser_friendly?"Preview":esc(String(v.format||"video").toUpperCase());}
     function isVideoFolder(group){return group!=="All"&&(selectedVideoAsFolder||!isVideoCategory(group))&&videos.some(v=>v.folder===group);}
     function bindVideoFolderDetail(list){const play=byId("videoFolderPlay"), shuffleBtn=byId("videoFolderShuffle"), add=byId("videoFolderAdd"), back=byId("videoBackToAlbums"); if(play)on(play,"click",()=>playVideoList(list)); if(shuffleBtn)on(shuffleBtn,"click",()=>playVideoList(list,true)); if(add)on(add,"click",()=>addToVideoQueue(list)); if(back)on(back,"click",closeVideoFolder);}
-    function renderVideos(){if(renderVideoSections())return; if((selectedVideoGroup==="All"||isVideoCategory(selectedVideoGroup))&&renderVideoFolderCards(selectedVideoGroup))return; setVideoGridMode("files"); const list=videoFiltered(); const folderOpen=isVideoFolder(selectedVideoGroup); document.body.classList.toggle("videoAlbumSelected",folderOpen); videoGridEl.classList.toggle("videoFolderOpen",folderOpen); videoViewTitleEl.textContent=selectedVideoGroup==="All"?"All Videos":groupLabel(selectedVideoGroup); renderVideoStats(list); const detail=folderOpen?videoFolderDetailHtml(selectedVideoGroup,list):""; const closeButton=folderOpen?`<button id="videoBackToAlbums" class="secondary iconControl videoAlbumClose overlayClose" title="Close video album" aria-label="Close video album">&#10005;</button>`:""; const filesHtml=folderOpen?videoAlbumRowsHtml(list):(list.length?list.map(v=>`<div class="videoCard ${v.id===selectedVideoId?"active":""}" data-id="${v.id}" title="${esc(v.path)}" role="button" tabindex="0">${videoActionsHtml(v.id)}<div class="videoName">${esc(v.title)}</div><div class="videoMeta">${videoMetaSummary(v)}</div>${v.browser_friendly?"":`<div class="videoWarn">Browser may not play this format</div>`}</div>`).join(""):`<div class="videoCard"><div class="videoName">Nothing matched</div><div class="videoMeta">Try a different folder.</div></div>`); videoGridEl.innerHTML=(folderOpen?"":videoResumeCardHtml())+closeButton+detail+filesHtml; bindVideoResumeCard(); if(folderOpen)bindVideoFolderDetail(list); videoGridEl.querySelectorAll("button[data-video-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const id=Number(btn.dataset.id), action=btn.dataset.videoAction; if(action==="add"){const v=videos.find(x=>x.id===id); if(v)addToVideoQueue([v]); return;} playVideoList(list,false,id);})); videoGridEl.querySelectorAll(".videoCard[data-id], .videoAlbumVideoRow[data-id]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions")||e.target.closest(".rowActions"))return; playVideoList(list,false,Number(card.dataset.id));}); card.addEventListener("keydown",e=>{if(e.key==="Enter")playVideoList(list,false,Number(card.dataset.id));});});}
+    function renderVideos(){if(renderVideoSections())return; if((selectedVideoGroup==="All"||isVideoCategory(selectedVideoGroup))&&renderVideoFolderCards(selectedVideoGroup))return; setVideoGridMode("files"); const list=videoFiltered(); const folderOpen=isVideoFolder(selectedVideoGroup); document.body.classList.toggle("videoAlbumSelected",folderOpen); videoGridEl.classList.toggle("videoFolderOpen",folderOpen); videoViewTitleEl.textContent=selectedVideoGroup==="All"?"All Videos":groupLabel(selectedVideoGroup); renderVideoStats(list); const detail=folderOpen?videoFolderDetailHtml(selectedVideoGroup,list):""; const closeButton=folderOpen?videoComponents.closeAlbumButtonHtml():""; const filesHtml=folderOpen?videoAlbumRowsHtml(list):(list.length?list.map(v=>videoComponents.fileCardHtml({video:v,active:v.id===selectedVideoId,meta:videoMetaSummary(v),warning:v.browser_friendly?"":"Browser may not play this format"})).join(""):videoComponents.emptyCardHtml()); videoGridEl.innerHTML=(folderOpen?"":videoResumeCardHtml())+closeButton+detail+filesHtml; bindVideoResumeCard(); if(folderOpen)bindVideoFolderDetail(list); videoGridEl.querySelectorAll("button[data-video-action]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const id=Number(btn.dataset.id), action=btn.dataset.videoAction; if(action==="add"){const v=videos.find(x=>x.id===id); if(v)addToVideoQueue([v]); return;} playVideoList(list,false,id);})); videoGridEl.querySelectorAll(".videoCard[data-id], .videoAlbumVideoRow[data-id]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions")||e.target.closest(".rowActions"))return; playVideoList(list,false,Number(card.dataset.id));}); card.addEventListener("keydown",e=>{if(e.key==="Enter")playVideoList(list,false,Number(card.dataset.id));});});}
     function renderVideoAll(){renderVideoGroups(); renderVideos();}
     function playVideoList(list, randomize=false, startId=null){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; videoQueue=playable.map(v=>v.id); videoQueueIndex=startId===null?0:Math.max(0,videoQueue.indexOf(startId)); saveVideoState({force:true}); playVideoQueueIndex(videoQueueIndex);}
     function addToVideoQueue(list){const ids=list.map(v=>v.id).filter(id=>!videoQueue.includes(id)); if(!ids.length)return; const wasEmpty=videoQueue.length===0; videoQueue.push(...ids); showQueueToast(ids.length===1?"Added video to queue":`Added ${ids.length} videos to queue`); pulseQueueButton(videoQueueToggleEl); if(wasEmpty){videoQueueIndex=0; saveVideoState({force:true}); playVideoQueueIndex(0);} else {saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}}
@@ -984,7 +936,7 @@
     function selectVideo(id,{autoplay=true,resumeAt=null,persist=true}={}){const v=videos.find(x=>x.id===id); if(!v)return; player.pause(); selectedVideoId=id; const seekAfterLoad=()=>{const seconds=Number(resumeAt)||0; if(seconds>0&&Number.isFinite(videoPlayerEl.duration))videoPlayerEl.currentTime=Math.min(seconds,Math.max(0,videoPlayerEl.duration-.25));}; videoPlayerEl.addEventListener("loadedmetadata",seekAfterLoad,{once:true}); videoPlayerEl.src=v.video_url; videoPlayerEl.load(); if(autoplay){const p=videoPlayerEl.play(); if(p&&typeof p.catch==="function")p.catch(()=>{});}else videoPlayerEl.pause(); videoTitleEl.textContent=v.title; videoMetaEl.textContent=`${videoMetaSummary(v)}${v.browser_friendly?"":" - may need conversion for browser playback"}`; if(persist)saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos();}
     function removeVideoQueueIndex(index){if(index<0||index>=videoQueue.length)return; videoQueue.splice(index,1); if(index<videoQueueIndex)videoQueueIndex--; else if(index===videoQueueIndex){if(videoQueue.length){videoQueueIndex=Math.min(index,videoQueue.length-1); saveVideoState({force:true}); playVideoQueueIndex(videoQueueIndex);}else{videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); renderVideos();}} saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}
     function moveVideoQueueItem(fromIndex,toIndex){if(fromIndex===toIndex||fromIndex<0||toIndex<0||fromIndex>=videoQueue.length||toIndex>=videoQueue.length)return; const current=videoQueue[videoQueueIndex]; const [item]=videoQueue.splice(fromIndex,1); videoQueue.splice(toIndex,0,item); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}
-    function videoQueueSummaryText(){return `${videoQueue.length} video${videoQueue.length===1?"":"s"}`;}
+    function videoQueueSummaryText(){return queueSummaryText ? queueSummaryText(videoQueue.length, "video") : `${videoQueue.length} video${videoQueue.length===1?"":"s"}`;}
     function updateVideoQueueLabel(){videoQueueToggleEl.innerHTML=`${buttonIcon("queue")}<span>${videoQueue.length}</span>`; if(videoQueueSummaryEl)videoQueueSummaryEl.textContent=videoQueueSummaryText(); updateTopQueueCounts();}
     function videoQueueArtHtml(v){
       return v.has_folder_cover
@@ -999,21 +951,15 @@
     }
     function renderVideoQueue(){
       updateVideoQueueLabel();
-      videoQueueListEl.innerHTML = videoQueue.length
-        ? videoQueue.map((id,index)=>{
-            const v = videos.find(x=>x.id===id);
-            if(!v) return "";
-            const label = index===videoQueueIndex ? `<div class="queueSectionLabel">Now Playing</div>` : index===videoQueueIndex+1 ? `<div class="queueSectionLabel">Up Next</div>` : "";
-            return label + queueItemHtml({
-              index,
-              active:index===videoQueueIndex,
-              draggable:true,
-              artworkHtml:videoQueueArtHtml(v),
-              title:v.title,
-              subtitle:videoQueueSubtitle(v),
-            });
-          }).join("")
-        : emptyQueueHtml("Video queue is empty");
+      const items = videoQueue.map((id,index)=>({index, video:videos.find(x=>x.id===id)})).filter(item=>item.video).map(({index, video:v})=>({
+        index,
+        artworkHtml: videoQueueArtHtml(v),
+        title: v.title,
+        subtitle: videoQueueSubtitle(v),
+      }));
+      videoQueueListEl.innerHTML = queueListHtml
+        ? queueListHtml({items, activeIndex:videoQueueIndex, emptyTitle:"Video queue is empty"})
+        : "";
       bindQueueList(videoQueueListEl, playVideoQueueIndex, removeVideoQueueIndex);
       bindQueueDrag(videoQueueListEl, moveVideoQueueItem);
     }
@@ -1033,6 +979,9 @@
     function fillRounded(ctx,x,y,width,height,radius){if(ctx.roundRect){ctx.beginPath(); ctx.roundRect(x,y,width,height,radius); ctx.fill();}else{ctx.fillRect(x,y,width,height);}}
     function prepVisualizer(canvas){const ctx=canvas.getContext("2d"); if(!ctx||!analyserNode||!visualizerData)return null; const rect=canvas.getBoundingClientRect(); const dpr=window.devicePixelRatio||1; const width=Math.max(1,Math.round(rect.width*dpr)), height=Math.max(1,Math.round(rect.height*dpr)); if(canvas.width!==width||canvas.height!==height){canvas.width=width; canvas.height=height;} analyserNode.getByteFrequencyData(visualizerData); ctx.clearRect(0,0,width,height); return {ctx,dpr,width,height};}
     function visualizerValue(start,end){let sum=0; for(let j=start;j<end;j++)sum+=visualizerData[j]; return sum/(end-start)/255;}
+    function themeCssValue(name, fallback){
+      return themeEngine.themeCssValue ? themeEngine.themeCssValue(name, fallback) : fallback;
+    }
     function themeColor(name, fallback){return themeCssValue(name, fallback);}
     function themeRgba(name, fallback, alpha){return `rgba(${themeCssValue(name, fallback)},${alpha})`;}
     function usingLightTheme(){return [...document.body.classList].some(name=>name.includes("theme-light"));}
@@ -1117,22 +1066,16 @@
     /** @brief Render the draggable music queue drawer. */
     function renderQueue(){
       const durationText = queueDurationText();
-      queueSummaryEl.textContent = `${queue.length} track${queue.length===1?"":"s"}${durationText?` - ${durationText}`:""}`;
-      queueListEl.innerHTML = queue.length
-        ? queue.map((id,index)=>{
-            const t = tracks.find(x=>x.id===id);
-            if(!t) return "";
-            const label = index===queueIndex ? `<div class="queueSectionLabel">Now Playing</div>` : index===queueIndex+1 ? `<div class="queueSectionLabel">Up Next</div>` : "";
-            return label + queueItemHtml({
-              index,
-              active:index===queueIndex,
-              draggable:true,
-              artworkHtml:t.has_artwork ? `<img src="${smallArtUrl(t)}" alt="">` : `<div class="noArt">?</div>`,
-              title:t.title,
-              subtitle:`${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
-            });
-          }).join("")
-        : emptyQueueHtml("Queue is empty");
+      queueSummaryEl.textContent = queueSummaryText ? queueSummaryText(queue.length, "track", durationText) : `${queue.length} track${queue.length===1?"":"s"}${durationText?` - ${durationText}`:""}`;
+      const items = queue.map((id,index)=>({index, track:tracks.find(x=>x.id===id)})).filter(item=>item.track).map(({index, track:t})=>({
+        index,
+        artworkHtml: t.has_artwork ? `<img src="${smallArtUrl(t)}" alt="">` : `<div class="noArt">?</div>`,
+        title: t.title,
+        subtitle: `${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
+      }));
+      queueListEl.innerHTML = queueListHtml
+        ? queueListHtml({items, activeIndex:queueIndex, emptyTitle:"Queue is empty"})
+        : "";
       bindQueueList(queueListEl, playQueueIndex, removeQueueIndex);
       bindQueueDrag(queueListEl, moveQueueItem);
     }
@@ -1159,63 +1102,9 @@
         ? `-${fmt(Math.max(0, player.duration - player.currentTime))}`
         : durationEl.textContent;
     }
-    /** @brief Artwork block for Now Playing, falling back to a text placeholder. */
     function nowPlayingArtSrc(t){return t?.has_artwork?stableAlbumArtUrl(t):"";}
-    function nowPlayingArtworkHtml(t){
-      const src=nowPlayingArtSrc(t);
-      return src
-        ? `<img class="nowPlayingArt" src="${src}" alt="">`
-        : `<div class="nowPlayingArt">No Artwork</div>`;
-    }
-    /** @brief Title, album, artist, year, and format line for Now Playing. */
-    function nowPlayingMetaHtml(t){
-      const year = String(t.date || "").slice(0, 4);
-      const format = String(t.format || "").toUpperCase();
-      return `<div class="nowPlayingText"><div class="nowPlayingTitle">${esc(t.title)}</div><div class="nowPlayingMeta">${esc(t.album || "No album")} - ${esc(t.artist || "Unknown artist")}${year ? ` - ${esc(year)}` : ""}${format ? ` - ${esc(format)}` : ""}</div></div>`;
-    }
-    /** @brief Optional visualizer canvas; omitted on iOS. */
-    function nowPlayingVisualizerHtml(){
-      return visualizerAllowed()
-        ? `<canvas id="nowPlayingVisualizer" class="nowPlayingVisualizer" width="560" height="96" aria-hidden="true" title="Visualizer: ${esc(visualizerMode)}. Click to switch."></canvas>`
-        : "";
-    }
-    /** @brief Seek bar plus elapsed/remaining labels for Now Playing. */
-    function nowPlayingSeekHtml(){
-      return `<div class="nowPlayingSeek"><input id="npSeekBar" type="range" min="0" max="1000" value="${esc(seekBar.value)}"><span id="npCurrentTime">${esc(currentTimeEl.textContent)}</span><span id="npDuration">${esc(nowPlayingRemainingText())}</span></div>`;
-    }
-    /** @brief Previous/play/next controls and desktop volume for Now Playing. */
-    function nowPlayingControlsHtml(){
-      const playIcon = player.paused ? "&#9654;" : "&#10074;&#10074;";
-      return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${queue.length}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(player.volume)}"></label></div>`;
-    }
-    function nowPlayingLyricsHtml(t){
-      if(!t.has_lyrics)return "";
-      const message = t.has_lyrics ? "Loading lyrics..." : "No lyrics found";
-      return `<div class="lyricsBox"><div id="lyricsContent" class="lyricsText">${esc(message)}</div></div>`;
-    }
-    function parseLrcTimestamp(value){
-      const match = String(value || "").match(/^(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?$/);
-      if(!match)return null;
-      const fraction = match[3] ? Number(`0.${match[3].padEnd(3, "0").slice(0, 3)}`) : 0;
-      return Number(match[1]) * 60 + Number(match[2]) + fraction;
-    }
-    function parseLrc(text){
-      const lines = [];
-      String(text || "").split(/\r?\n/).forEach(rawLine => {
-        const stamps = [...rawLine.matchAll(/\[([0-9:.]+)\]/g)]
-          .map(match => parseLrcTimestamp(match[1]))
-          .filter(value => value !== null);
-        const lyric = rawLine.replace(/\[[^\]]+\]/g, "").trim();
-        if(!stamps.length || !lyric)return;
-        stamps.forEach(time => lines.push({time, lyric}));
-      });
-      return lines.sort((a, b) => a.time - b.time);
-    }
-    function looksLikeLrc(text){
-      return /\[[0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?\]/.test(String(text || ""));
-    }
     function renderLrcLyrics(box, trackId, text){
-      const lines = parseLrc(text);
+      const lines = lyricsHelpers.parseLrc ? lyricsHelpers.parseLrc(text) : [];
       if(!lines.length){
         box.textContent = text || "No lyrics found";
         currentLrcLyrics = null;
@@ -1223,7 +1112,7 @@
       }
       currentLrcLyrics = {trackId, lines, activeIndex:-1};
       box.classList.add("syncedLyrics");
-      box.innerHTML = lines.map((line, index) => `<button type="button" class="lrcLine" data-lrc-index="${index}" data-lrc-time="${esc(line.time)}">${esc(line.lyric)}</button>`).join("");
+      box.innerHTML = lyricsHelpers.syncedLyricsHtml ? lyricsHelpers.syncedLyricsHtml(lines) : "";
       box.querySelectorAll(".lrcLine").forEach(lineEl => {
         lineEl.addEventListener("click", () => {
           const seekTime = Number(lineEl.dataset.lrcTime);
@@ -1238,11 +1127,7 @@
     function updateLrcHighlight(forceScroll=false){
       if(!currentLrcLyrics || currentLrcLyrics.trackId !== playingId)return;
       const lines = currentLrcLyrics.lines;
-      let activeIndex = -1;
-      for(let i=0; i<lines.length; i++){
-        if(lines[i].time <= player.currentTime + .15)activeIndex = i;
-        else break;
-      }
+      const activeIndex = lyricsHelpers.activeLrcIndex ? lyricsHelpers.activeLrcIndex(lines, player.currentTime) : -1;
       if(activeIndex === currentLrcLyrics.activeIndex && !forceScroll)return;
       currentLrcLyrics.activeIndex = activeIndex;
       document.querySelectorAll(".lrcLine.active").forEach(el=>el.classList.remove("active"));
@@ -1253,19 +1138,8 @@
       }
     }
     function scrollLyricIntoFocus(activeLine, forceScroll=false){
-      const scroller = activeLine.closest(".syncedLyrics");
-      if(!scroller){
-        activeLine.scrollIntoView({block:"center", behavior:"auto"});
-        return;
-      }
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const desktopLyrics = window.matchMedia("(min-width: 1100px)").matches;
-      const activeCenter = activeLine.offsetTop + activeLine.offsetHeight / 2;
-      const focusRatio = desktopLyrics ? 0.42 : 0.18;
-      scroller.scrollTo({
-        top: Math.max(0, activeCenter - scroller.clientHeight * focusRatio),
-        behavior: forceScroll || reduceMotion || !desktopLyrics ? "auto" : "smooth",
-      });
+      if(lyricsHelpers.scrollLyricIntoFocus) lyricsHelpers.scrollLyricIntoFocus(activeLine, forceScroll);
+      else activeLine.scrollIntoView({block:"center", behavior:"auto"});
     }
     async function loadNowPlayingLyrics(t){
       const box = byId("lyricsContent");
@@ -1278,7 +1152,8 @@
         const data = await fetchJson(t.lyrics_url);
         if(playingId === t.id){
           const lyricsText = data.lyrics || "";
-          const lyricsFormat = data.format || t.lyrics_format || (looksLikeLrc(lyricsText) ? "lrc" : "text");
+          const looksSynced = lyricsHelpers.looksLikeLrc ? lyricsHelpers.looksLikeLrc(lyricsText) : false;
+          const lyricsFormat = data.format || t.lyrics_format || (looksSynced ? "lrc" : "text");
           if(lyricsFormat === "lrc")renderLrcLyrics(box, t.id, data.lyrics || "");
           else box.textContent = data.lyrics || "No lyrics found";
           box.dataset.loaded = "true";
@@ -1313,7 +1188,7 @@
         nowPlayingRenderedTrackId = null;
         nowPlayingRenderedArtSrc = "";
         nowPlayingBodyEl.classList.remove("hasLyrics");
-        nowPlayingBodyEl.innerHTML=`<div class="nowPlayingArt">No Song</div><div><div class="nowPlayingTitle">Nothing playing</div><div class="nowPlayingMeta">Choose a song, album, or category.</div></div>`;
+        nowPlayingBodyEl.innerHTML = nowPlayingComponents.emptyHtml ? nowPlayingComponents.emptyHtml() : "";
         return;
       }
       nowPlayingBodyEl.classList.toggle("hasLyrics", !!t.has_lyrics);
@@ -1325,9 +1200,9 @@
       if(nowPlayingBodyEl.children.length&&nowPlayingRenderedArtSrc===artSrc){
         nowPlayingRenderedTrackId = t.id;
         const text=nowPlayingBodyEl.querySelector(".nowPlayingText");
-        if(text)text.outerHTML=nowPlayingMetaHtml(t);
+        if(text && nowPlayingComponents.metaHtml)text.outerHTML=nowPlayingComponents.metaHtml(t);
         const existingLyrics=nowPlayingBodyEl.querySelector(".lyricsBox");
-        const lyricsHtml=nowPlayingLyricsHtml(t);
+        const lyricsHtml=nowPlayingComponents.lyricsHtml ? nowPlayingComponents.lyricsHtml(t) : "";
         if(existingLyrics&&lyricsHtml)existingLyrics.outerHTML=lyricsHtml;
         else if(existingLyrics&&!lyricsHtml)existingLyrics.remove();
         else if(!existingLyrics&&lyricsHtml)nowPlayingBodyEl.insertAdjacentHTML("beforeend",lyricsHtml);
@@ -1337,14 +1212,18 @@
       }
       nowPlayingRenderedTrackId = t.id;
       nowPlayingRenderedArtSrc = artSrc;
-      nowPlayingBodyEl.innerHTML = [
-        nowPlayingArtworkHtml(t),
-        nowPlayingMetaHtml(t),
-        nowPlayingVisualizerHtml(),
-        nowPlayingSeekHtml(),
-        nowPlayingControlsHtml(),
-        nowPlayingLyricsHtml(t)
-      ].join("");
+      nowPlayingBodyEl.innerHTML = nowPlayingComponents.fullHtml ? nowPlayingComponents.fullHtml({
+        track:t,
+        artSrc,
+        visualizerEnabled:visualizerAllowed(),
+        visualizerMode,
+        seekValue:seekBar.value,
+        currentTime:currentTimeEl.textContent,
+        remainingTime:nowPlayingRemainingText(),
+        paused:player.paused,
+        queueCount:queue.length,
+        volume:player.volume,
+      }) : "";
       bindNowPlayingControls();
       loadNowPlayingLyrics(t);
     }
@@ -1434,140 +1313,34 @@
         flushListeningStats({countPlay});
       }
     }
-    function statsRows(rows, columns, emptyText){
-      if(!rows.length)return `<div class="statsEmpty">${esc(emptyText)}</div>`;
-      return `<table class="statsTable"><thead><tr>${columns.map(c=>`<th>${esc(c.label)}</th>`).join("")}</tr></thead><tbody>${rows.map(row=>{const playAttr=row.playable_id!==""&&row.playable_id!==undefined?` class="playableStatsRow" data-play-track="${esc(row.playable_id)}" tabindex="0" title="Play this song"`:""; return `<tr${playAttr}>${columns.map(c=>`<td>${c.render(row)}</td>`).join("")}</tr>`;}).join("")}</tbody></table>`;
-    }
-    function statsMinutes(row){return (Number(row?.seconds)||0)/60;}
-    function statsIntensity(minutes, maxMinutes){
-      if(minutes<=0)return .08;
-      return Math.min(.92, .18 + (minutes/Math.max(maxMinutes,1))*.74);
-    }
-    function themeCssValue(name, fallback){
-      const value = getComputedStyle(document.body).getPropertyValue(name).trim();
-      return value || fallback;
-    }
-    function statsHeatStyle(minutes, maxMinutes){
-      return `background:rgba(${themeCssValue("--accent-rgb","63,111,216")},${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
-    }
-    function statsChartSection(title, body){
-      return statCardHtml({className:"statsChart", ariaLabel:title, body});
-    }
+    // Stats rendering is split: app.js owns date-range rules and playback
+    // lookups, while stats-components.js owns the chart/table markup.
     function statsTimeChart(rows, unit="day"){
-      if(!rows.length)return statsChartSection("Listening Minutes", `<div class="statsEmpty">No listening time recorded yet.</div>`);
-      if(unit==="hour")return statsHourHeatmap(rows);
-      if(statsPeriod==="week")return statsWeekBars(rows);
-      if(statsPeriod==="month")return statsMonthCalendar(rows);
-      if(statsPeriod==="year")return statsYearHeatmap(rows);
-      return "";
-    }
-    function statsHourLabel(hour, compact=false){
-      const value=Number(hour)||0;
-      const period=value<12?"AM":"PM";
-      const display=value%12||12;
-      return compact ? `${display}${period.toLowerCase()}` : `${display} ${period}`;
-    }
-    function statsMinutesLabel(minutes, compact=false){
-      const total=Math.round(Number(minutes)||0);
-      if(compact||total<60)return `${total}m`;
-      const hours=Math.floor(total/60), rest=total%60;
-      return rest ? `${hours}h ${rest}m` : `${hours}h`;
-    }
-    function statsResponsiveMinutes(minutes){
-      return `<span class="desktopDuration">${esc(statsMinutesLabel(minutes))}</span><span class="mobileDuration">${esc(statsMinutesLabel(minutes,true))}</span>`;
-    }
-    function statsHourHeatmap(rows){
-      const maxMinutes=Math.max(...rows.map(statsMinutes),1);
-      const cells=rows.map(row=>{
-        const hour=String(row.hour??"").padStart(2,"0");
-        const minutes=statsMinutes(row);
-        return `<div class="statsHeatCell" title="${esc(`${statsHourLabel(row.hour)} - ${statsMinutesLabel(minutes)}`)}"><div class="statsHeatBlock" style="${statsHeatStyle(minutes,maxMinutes)}">${minutes>0?esc(statsMinutesLabel(minutes,true)):""}</div><div class="statsHeatLabel"><span class="desktopHourLabel">${esc(statsHourLabel(row.hour))}</span><span class="mobileHourLabel">${esc(statsHourLabel(row.hour,true))}</span></div></div>`;
-      }).join("");
-      return statsChartSection("Hourly Listening", `<div class="statsHourHeat">${cells}</div>`);
-    }
-    function statsWeekBars(rows){
-      const labels=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const ordered=[...rows].sort((a,b)=>String(a.day||"").localeCompare(String(b.day||"")));
-      const maxMinutes=Math.max(...ordered.map(statsMinutes),1);
-      const bars=ordered.map(row=>{
-        const minutes=statsMinutes(row);
-        const height=minutes>0?Math.max(8,Math.round((minutes/maxMinutes)*100)):0;
-        const date=row.day?new Date(`${row.day}T00:00:00`):null;
-        const label=date?labels[date.getDay()]:String(row.day||"").slice(5);
-        const future=isFutureStatsDay(row.day);
-        return `<div class="statsWeekBar${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-day="${esc(row.day||"")}" role="button" tabindex="0"`} title="${esc(`${row.day} - ${statsMinutesLabel(minutes)}`)}"><div class="statsBarValue">${statsResponsiveMinutes(minutes)}</div><div class="statsBarTrack"><div class="statsBarFill" style="height:${height}%"></div></div><div class="statsBarLabel">${esc(label)}</div></div>`;
-      }).join("");
-      return statsChartSection("Weekly Listening", `<div class="statsWeekBars">${bars}</div>`);
-    }
-    function statsMonthCalendar(rows){
-      const labels=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const maxMinutes=Math.max(...rows.map(statsMinutes),1);
-      const cells=[];
-      const firstDate=rows[0]?.day?new Date(`${rows[0].day}T00:00:00`):null;
-      for(let index=0; index<(firstDate?firstDate.getDay():0); index++)cells.push(`<div class="statsCalendarCell blankCalendarCell"></div>`);
-      for(const row of rows){
-        const minutes=statsMinutes(row);
-        const dayNumber=String(row.day||"").slice(8).replace(/^0/,"");
-        const future=isFutureStatsDay(row.day);
-        cells.push(`<div class="statsCalendarCell${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-day="${esc(row.day||"")}" role="button" tabindex="0"`} title="${esc(`${row.day} - ${statsMinutesLabel(minutes)}`)}" style="${future?"":statsHeatStyle(minutes,maxMinutes)}"><span>${esc(dayNumber)}</span>${minutes>0&&!future?`<strong>${esc(statsMinutesLabel(minutes,true))}</strong>`:""}</div>`);
-      }
-      while(cells.length%7!==0)cells.push(`<div class="statsCalendarCell blankCalendarCell"></div>`);
-      return statsChartSection("Monthly Listening", `<div class="statsCalendarTitle">${esc(statsMonthTitle())}</div><div class="statsCalendarWeekdays">${labels.map(label=>`<span>${label}</span>`).join("")}</div><div class="statsCalendarGrid">${cells.join("")}</div>`);
-    }
-    function statsYearHeatmap(rows){
-      const monthNames=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      const months=monthNames.map((label,index)=>({label,seconds:0,month:index}));
-      for(const row of rows){
-        const monthIndex=Number(String(row.day||"").slice(5,7))-1;
-        if(months[monthIndex])months[monthIndex].seconds+=Number(row.seconds)||0;
-      }
-      const maxMinutes=Math.max(...months.map(statsMinutes),1);
-      const year=statsRangeDates().start.slice(0,4);
-      const cells=months.map(item=>{
-        const minutes=statsMinutes(item);
-        const monthStartDate=`${year}-${String(item.month+1).padStart(2,"0")}-01`;
-        const future=isFutureStatsRangeAnchor("month", monthStartDate);
-        return `<div class="statsYearCell${future?" statsFutureCell":" statsDrillCell"}" ${future?"":`data-stats-month="${esc(monthStartDate)}" role="button" tabindex="0"`} title="${esc(`${item.label} - ${statsMinutesLabel(minutes)}`)}" style="${future?"":statsHeatStyle(minutes,maxMinutes)}"><span>${esc(item.label)}</span>${minutes>0&&!future?`<strong>${esc(statsMinutesLabel(minutes,true))}</strong>`:""}</div>`;
-      }).join("");
-      return statsChartSection("Yearly Listening", `<div class="statsYearHeat">${cells}</div>`);
+      return statsComponents.statsTimeChart(rows, unit, {
+        period: statsPeriod,
+        isFutureStatsDay,
+        isFutureStatsRangeAnchor,
+        rangeStart: statsRangeDates().start,
+        statsMonthTitle,
+      });
     }
     function statsHero(rangeOptions, summary){
-      const dayClass = statsPeriod === "day" ? " visible" : "";
-      const stepClass = statsSteppablePeriod() ? " visible" : "";
-      const nextDisabled = statsAtCurrentRange() ? " disabled" : "";
-      const dayNextDisabled = statsAtToday() ? " disabled" : "";
-      return `<div class="statsHero"><div><h2>Music Stats</h2></div><div class="statsHeroMetrics">${statsMetric(fmtDuration(summary.seconds||0), statsPrimaryMetricLabel())}${statsMetric(fmtDuration(summary.lifetime_seconds||0), "all-time listening")}</div><div class="statsControls"><select id="statsRange" class="statsRange">${rangeOptions}</select><div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(clampStatsDay(statsDay))}" max="${esc(localDateString())}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day"${dayNextDisabled}>&#9654;</button></div></div></div>`;
+      return statsHeroHtml({rangeOptionsHtml:rangeOptions, summary, fmtDuration, primaryMetricLabel:statsPrimaryMetricLabel(), rangeControlHtml:statsRangeControlHtml()});
     }
     function statsRangeOptions(){
       return STATS_RANGES.map(([value,label])=>`<option value="${value}" ${statsPeriod===value?"selected":""}>${label}</option>`).join("");
     }
-    function statsMetric(number, label, extraClass=""){
-      const className = extraClass ? `statsMetric ${extraClass}` : "statsMetric";
-      return `<div class="${esc(className)}"><strong>${esc(number)}</strong><span>${esc(label)}</span></div>`;
-    }
-    function formatStatsMonth(day){
-      if(!day)return "Not yet";
-      const date = new Date(`${day}T00:00:00`);
-      return date.toLocaleDateString(undefined, {month:"short", year:"numeric"});
-    }
-    function allTimeStatsCard(summary){
-      const plays = Number(summary.total_play_count)||0;
-      const uniqueTracks = Number(summary.unique_tracks)||0;
-      const listeningDays = Number(summary.listening_days)||0;
-      return `<section class="allTimeStatsCard">${statsMetric(formatStatsMonth(summary.first_day), "started listening")}${statsMetric(listeningDays.toLocaleString(), "listening days")}${statsMetric(plays.toLocaleString(), "songs played")}${statsMetric(uniqueTracks.toLocaleString(), "unique songs played")}</section>`;
-    }
     function statsTopControls(summary){
-      return `<div class="statsTopControls"><strong>Music Stats</strong><div class="statsTopMetrics">${statPillHtml(fmtDuration(summary.seconds||0), statsPrimaryMetricLabel())}${statPillHtml(fmtDuration(summary.lifetime_seconds||0), "all time")}</div><select id="statsRange" class="statsRange">${statsRangeOptions()}</select>${statsRangeControlHtml()}</div>`;
+      return statsComponents.statsTopControls({
+        summary,
+        fmtDuration,
+        primaryMetricLabel: statsPrimaryMetricLabel(),
+        rangeOptionsHtml: statsRangeOptions(),
+        rangeControlHtml: statsRangeControlHtml(),
+      });
     }
     function statsRangeControlHtml(){
-      const dayClass = statsPeriod === "day" ? " visible" : "";
-      const stepClass = statsSteppablePeriod() ? " visible" : "";
-      const nextDisabled = statsAtCurrentRange() ? " disabled" : "";
-      const dayNextDisabled = statsAtToday() ? " disabled" : "";
-      return `<div class="statsStepRange${stepClass}"><button id="statsPrevRange" class="secondary iconControl" type="button" title="Previous range" aria-label="Previous range">&#9664;</button><span>${esc(statsRangeLabel())}</span><button id="statsNextRange" class="secondary iconControl" type="button" title="Next range" aria-label="Next range"${nextDisabled}>&#9654;</button></div><div class="statsDayRange${dayClass}"><button id="statsPrevDay" class="secondary iconControl" type="button" title="Previous day" aria-label="Previous day">&#9664;</button><input id="statsDay" type="date" value="${esc(clampStatsDay(statsDay))}" max="${esc(localDateString())}" aria-label="Stats day"><button id="statsNextDay" class="secondary iconControl" type="button" title="Next day" aria-label="Next day"${dayNextDisabled}>&#9654;</button></div>`;
-    }
-    function statsTableSection(title, rows, columns, emptyText, actionHtml=""){
-      return statCardHtml({title, actionHtml, body:statsRows(rows, columns, emptyText)});
+      return statsRangeControlComponentHtml({period:statsPeriod, rangeLabel:statsRangeLabel(), dayValue:clampStatsDay(statsDay), maxDay:localDateString(), currentRange:statsAtCurrentRange(), today:statsAtToday()});
     }
     function statsSongTrack(row){
       if(!row)return null;
@@ -1586,12 +1359,6 @@
         const track = statsSongTrack(row);
         return {...row, playable_id: track ? track.id : ""};
       });
-    }
-    function fmtStatsSongTime(seconds){
-      if(!Number.isFinite(Number(seconds))||Number(seconds)<=0)return "0:00";
-      const total=Math.round(Number(seconds));
-      const hours=Math.floor(total/3600), minutes=Math.floor((total%3600)/60), secs=total%60;
-      return hours?`${hours}h ${minutes}m ${String(secs).padStart(2,"0")}s`:`${minutes}:${String(secs).padStart(2,"0")}`;
     }
     function statsTables(songs){
       const orderedSongs = [...songs].sort((a,b)=>(Number(b.seconds)||0)-(Number(a.seconds)||0));
@@ -1691,7 +1458,8 @@
         }
       }
     }
-    // App mode and data loading.
+    // Theme customization. Fixed themes are simple CSS classes; adaptive themes
+    // sample the current artwork so the accent can follow the album/song.
     function renderCustomize(){
       if(!themeGridEl) return;
       statsEl.innerHTML = `<div class="topTabControls"><strong>Customize</strong><div class="topTabMetrics"><span class="stat">Pick a color theme.</span></div></div>`;
@@ -1704,62 +1472,12 @@
       });
     }
     function clearAdaptiveThemeVars(){
-      ADAPTIVE_STYLE_VARS.forEach(name=>document.body.style.removeProperty(name));
+      if(themeEngine.clearAdaptiveThemeVars) themeEngine.clearAdaptiveThemeVars();
       adaptiveThemeSource = "";
     }
-    function clampColor(value){return Math.max(0,Math.min(255,Math.round(value)));}
-    function rgbToHex({r,g,b}){return `#${[r,g,b].map(v=>clampColor(v).toString(16).padStart(2,"0")).join("")}`;}
-    function mixRgb(color, target, amount){return {r:clampColor(color.r+(target.r-color.r)*amount),g:clampColor(color.g+(target.g-color.g)*amount),b:clampColor(color.b+(target.b-color.b)*amount)};}
-    function colorScore(r,g,b){
-      const max=Math.max(r,g,b), min=Math.min(r,g,b), sat=max-min, lum=(max+min)/2;
-      return sat * (lum>28&&lum<238 ? 1 : .25);
-    }
-    function isAdaptiveTheme(){return ADAPTIVE_THEME_IDS.has(activeTheme);}
-    function applyAdaptiveColor(color){
-      const lightAdaptive=activeTheme===LIGHT_ADAPTIVE_THEME_ID;
-      const strong=mixRgb(color,{r:255,g:255,b:255},.34);
-      const glow=mixRgb(color,{r:255,g:255,b:255},.22);
-      const sheen=mixRgb(color,{r:255,g:255,b:255},.58);
-      const deep=mixRgb(color,{r:0,g:0,b:0},.22);
-      document.body.style.setProperty("--accent-rgb",`${color.r},${color.g},${color.b}`);
-      document.body.style.setProperty("--accent-strong-rgb",`${strong.r},${strong.g},${strong.b}`);
-      document.body.style.setProperty("--accent-glow-rgb",`${glow.r},${glow.g},${glow.b}`);
-      document.body.style.setProperty("--accent-sheen-rgb",`${sheen.r},${sheen.g},${sheen.b}`);
-      document.body.style.setProperty("--accent",rgbToHex(color));
-      document.body.style.setProperty("--accent-strong",rgbToHex(strong));
-      document.body.style.setProperty("--accent-deep",rgbToHex(deep));
-      // Light adaptive needs darker sampled accents for text, while dark adaptive
-      // can use the brighter sheen color without losing contrast.
-      const readableAccent=lightAdaptive ? color : sheen;
-      document.body.style.setProperty("--accent-link",rgbToHex(lightAdaptive ? deep : sheen));
-      document.body.style.setProperty("--ok",rgbToHex(lightAdaptive ? color : strong));
-      document.body.style.setProperty("--track-number-color",rgbToHex(readableAccent));
-    }
-    function sampleAdaptiveColor(src){
-      return new Promise((resolve,reject)=>{
-        const img=new Image();
-        img.onload=()=>{
-          try{
-            const canvas=document.createElement("canvas"), size=36;
-            canvas.width=size; canvas.height=size;
-            const ctx=canvas.getContext("2d",{willReadFrequently:true});
-            ctx.drawImage(img,0,0,size,size);
-            const data=ctx.getImageData(0,0,size,size).data;
-            let total=0, rSum=0, gSum=0, bSum=0;
-            for(let i=0;i<data.length;i+=4){
-              const alpha=data[i+3]/255;
-              if(alpha<.45)continue;
-              const r=data[i], g=data[i+1], b=data[i+2], score=Math.max(1,colorScore(r,g,b))*alpha;
-              total+=score; rSum+=r*score; gSum+=g*score; bSum+=b*score;
-            }
-            if(!total)throw new Error("No sampleable pixels");
-            resolve({r:clampColor(rSum/total),g:clampColor(gSum/total),b:clampColor(bSum/total)});
-          }catch(err){reject(err);}
-        };
-        img.onerror=reject;
-        img.src=src;
-      });
-    }
+    function isAdaptiveTheme(){return themeEngine.isAdaptiveTheme ? themeEngine.isAdaptiveTheme(activeTheme) : false;}
+    function applyAdaptiveColor(color){if(themeEngine.applyAdaptiveColor) themeEngine.applyAdaptiveColor(activeTheme, color);}
+    function sampleAdaptiveColor(src){return themeEngine.sampleAdaptiveColor ? themeEngine.sampleAdaptiveColor(src) : Promise.reject(new Error("Theme engine unavailable"));}
     async function applyAdaptiveTheme(){
       if(!isAdaptiveTheme()){clearAdaptiveThemeVars(); return;}
       const track=tracks.find(t=>t.id===playingId)||tracks.find(t=>t.id===selectedId);
@@ -1777,20 +1495,9 @@
       }
     }
     function setAccentTheme(themeId){
-      const theme = THEME_CHOICES.find(item => item.id === themeId) || THEME_CHOICES[0];
+      const theme = themeEngine.themeById ? themeEngine.themeById(themeId) : (THEME_CHOICES.find(item => item.id === themeId) || THEME_CHOICES[0]);
       clearAdaptiveThemeVars();
-      THEME_CHOICES.forEach(item => {
-        if(item.className){
-          document.body.classList.remove(item.className);
-          document.documentElement.classList.remove(item.className);
-        }
-      });
-      if(theme.className){
-        document.body.classList.add(theme.className);
-        document.documentElement.classList.add(theme.className);
-      }
-      const themeMeta = document.querySelector('meta[name="theme-color"]');
-      if(themeMeta) themeMeta.setAttribute("content", theme.browserColor || "#000000");
+      if(themeEngine.applyThemeClass) themeEngine.applyThemeClass(theme);
       activeTheme = theme.id;
       localStorage.setItem("accentTheme", activeTheme);
       applyAdaptiveTheme();
@@ -1905,6 +1612,8 @@
       saveVideoState({force:true});
       videoPlayerEl.pause();
     }
+    // Switching tabs should never stop music, but video is paused so it does
+    // not keep decoding in the background while the user is browsing music or stats.
     function setMediaType(type){
       if(!appConfig.editable && type === "health") type = "music";
       mediaType = type;
@@ -1942,7 +1651,8 @@
       renderCurrentMedia();
       ensureMediaLoaded(type).catch(err=>console.error("[library] load failed", err));
     }
-    // Event binding lives at the end so startup is easy to follow.
+    // Event binding lives at the end so startup is easy to follow. These
+    // functions mostly connect stable DOM controls to the stateful functions above.
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}

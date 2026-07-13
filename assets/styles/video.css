@@ -1,0 +1,46 @@
+﻿    .videoCard { position:relative; display:grid; grid-template-rows:auto 2.7em 2.75em auto; gap:9px; align-content:start; height:258px; min-width:0; padding:8px; background:var(--card-bg); border:1px solid transparent; border-radius:8px; text-align:left; color:var(--text); overflow:hidden; white-space:normal; box-shadow:var(--card-shadow); cursor:pointer; }
+    .videoGrid.videoFileMode .videoCard { grid-template-rows:minmax(2.8em,auto) auto auto; grid-template-areas:"name" "meta" "warn"; height:auto; min-height:96px; }
+    .videoGrid.videoFileMode .videoCard .videoName { grid-area:name; min-height:0; }
+    .videoGrid.videoFileMode .videoCard .videoMeta { grid-area:meta; min-height:0; }
+    .videoGrid.videoFileMode .videoCard .videoWarn { grid-area:warn; }
+    .videoGrid.videoFolderOpen { position:relative; display:grid; grid-template-columns:minmax(0,1fr); align-items:start; max-width:980px; max-height:none; overflow:visible; margin:0; padding-right:0; }
+    .videoGrid.videoFolderOpen .videoCard[data-id] { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto auto; grid-template-areas:"name" "meta" "warn"; align-items:center; height:auto; min-height:64px; }
+    .videoCard:hover, .videoCard.active { border-color:var(--card-border-hover); background:var(--row-hover); }
+    .videoGrid.videoCollectionMode .videoCard { height:auto; min-height:0; padding:8px; gap:7px; box-shadow:none; overflow:hidden; }
+    .videoFolderCard { grid-template-rows:auto auto auto; }
+    .videoGrid.videoCollectionMode .videoFolderCard .videoThumb { aspect-ratio:1/1; border-radius:0; background:var(--media-empty-bg); }
+    .videoGrid.videoCollectionMode .videoFolderCard .videoThumb::after { content:""; display:none; }
+    .videoGrid.videoCollectionMode .videoFolderCard .videoName { min-height:50px; line-height:1.22; font-size:13px; font-weight:var(--card-title-weight); -webkit-line-clamp:3; }
+    .videoGrid.videoCollectionMode .videoFolderCard .videoMeta { min-height:0; font-size:12px; line-height:normal; color:var(--muted); font-weight:var(--card-meta-weight); }
+    .videoAlbumDetail { position:relative; grid-column:1 / -1; display:grid; margin:0 0 2px; text-align:center; }
+    .videoAlbumDetail .albumDetailCover { overflow:hidden; font-weight:800; }
+    .videoAlbumDetail .detailArtWrap,
+    .videoAlbumDetail .detailInfo { max-width:min(420px,100%); width:100%; margin-inline:auto; }
+    .videoAlbumDetail .videoCoverThumb img { width:100%; height:100%; object-fit:cover; display:block; }
+    .videoAlbumDetail .albumClose { position:absolute; top:0; right:0; width:36px; height:36px; padding:0; border-color:transparent; background:transparent; box-shadow:none; font-size:24px; }
+    .videoAlbumDetail .albumClose:hover { background:transparent; border-color:transparent; transform:translateX(-2px); }
+    .videoAlbumClose { position:absolute; top:0; right:0; z-index:2; }
+    .videoAlbumMeta { margin-bottom:12px; }
+    .detailTrackList { grid-column:1 / -1; display:grid; border-top:1px solid var(--soft-border); }
+    .detailRow { display:grid; grid-template-columns:36px minmax(0,1fr); gap:10px; align-items:center; min-height:58px; padding:9px 10px; border-bottom:1px solid var(--soft-border); cursor:pointer; }
+    .detailRow:hover,
+    .detailRow.active { background:var(--row-hover); }
+    .detailRowNo { color:var(--track-number-color); font-size:12px; font-weight:800; text-align:right; }
+    .detailRowText { min-width:0; }
+    .detailRowTitle { font-weight:var(--card-title-weight); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .detailRowMeta { color:var(--muted); font-size:12px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    body.video.videoAlbumSelected .videoGrid { max-height:none; overflow:visible; }
+    body.video.videoAlbumSelected .videoAlbumDetail { grid-template-columns:1fr; gap:16px; max-width:560px; margin:0 auto 18px; padding:0; border:0; background:transparent; box-shadow:none; text-align:center; }
+    body.video.videoAlbumSelected .videoAlbumDetail .detailHeading { margin:0 0 6px; font-size:24px; line-height:1.15; font-weight:900; }
+    body.video.videoAlbumSelected .videoAlbumDetail .detailStats { justify-content:center; margin:12px 0; }
+    body.video.videoAlbumSelected .videoAlbumDetail .albumActions { justify-content:center; align-items:center; gap:14px; margin-top:14px; }
+    body.video.videoAlbumSelected .videoAlbumDetail .albumActions .iconControl { width:48px; height:42px; flex:0 0 48px; font-size:20px; }
+    body.video.videoAlbumSelected .videoAlbumDetail .albumActions .playButton { width:64px; height:46px; flex-basis:64px; font-size:24px; }
+    body.video.videoAlbumSelected .playVideo { display:none; }
+    @media (min-width:981px) {
+      body.video.videoAlbumSelected .videoGrid.videoFolderOpen { grid-template-columns:minmax(260px,360px) minmax(520px,760px); justify-content:center; align-items:start; gap:26px; max-width:1180px; }
+      body.video.videoAlbumSelected .videoAlbumDetail { grid-column:1; position:sticky; top:28px; margin:0; max-width:none; }
+      body.video.videoAlbumSelected .videoAlbumDetail .albumActions { justify-content:center; }
+      body.video.videoAlbumSelected .videoAlbumClose { right:-46px; }
+      body.video.videoAlbumSelected .detailTrackList { grid-column:2; max-height:none; overflow:visible; border-top:0; }
+    }

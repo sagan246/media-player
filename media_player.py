@@ -19,6 +19,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 from pathlib import Path
+from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 
@@ -34,6 +35,9 @@ ART_THUMB_ICON_SIZE = 96
 VENDOR_DIR = SCRIPT_DIR / "vendor"
 if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
+
+JsonObject = dict[str, object]
+RouteHandler = Callable[[], None]
 
 
 from media_library import Library, LibraryConfig  # noqa: E402
@@ -65,27 +69,16 @@ class PlayerConfig:
             value = data.get(key, fallback)
             return str(value).strip() or fallback
 
-        raw_categories = data.get("preferred_categories", defaults.preferred_categories)
-        preferred_categories = (
-            [str(item).strip() for item in raw_categories if str(item).strip()]
-            if isinstance(raw_categories, list)
-            else defaults.preferred_categories
-        )
-        raw_video_categories = data.get("preferred_video_categories", defaults.preferred_video_categories)
-        preferred_video_categories = (
-            [str(item).strip() for item in raw_video_categories if str(item).strip()]
-            if isinstance(raw_video_categories, list)
-            else defaults.preferred_video_categories
-        )
-
         return cls(
             app_name=text_value("app_name", defaults.app_name),
             music_dir=text_value("music_dir", defaults.music_dir),
             video_dir=text_value("video_dir", defaults.video_dir),
             text_dir=text_value("text_dir", defaults.text_dir),
             text_tab_label=text_value("text_tab_label", defaults.text_tab_label),
-            preferred_categories=preferred_categories,
-            preferred_video_categories=preferred_video_categories,
+            preferred_categories=config_string_list(data, "preferred_categories", defaults.preferred_categories),
+            preferred_video_categories=config_string_list(
+                data, "preferred_video_categories", defaults.preferred_video_categories
+            ),
         )
 
     def library_config(self) -> LibraryConfig:
@@ -103,6 +96,15 @@ def content_type_for(path: Path) -> str:
     if path.suffix.lower() == ".m4a":
         return "audio/mp4"
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+
+
+def config_string_list(data: dict[str, object], key: str, fallback: list[str]) -> list[str]:
+    """! @brief Read a config list while ignoring blank/non-list values."""
+    raw_value = data.get(key, fallback)
+    if not isinstance(raw_value, list):
+        return fallback
+    values = [str(item).strip() for item in raw_value if str(item).strip()]
+    return values or fallback
 
 
 def parse_range_header(range_header: str | None, file_size: int) -> tuple[HTTPStatus, int, int]:
@@ -185,6 +187,18 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
+    def read_json_object(self) -> JsonObject | None:
+        """! @brief Decode a POST body and require a JSON object payload."""
+        try:
+            payload = self.read_json_body()
+        except json.JSONDecodeError:
+            self.send_error_json("Invalid JSON payload.", status=HTTPStatus.BAD_REQUEST)
+            return None
+        if not isinstance(payload, dict):
+            self.send_error_json("JSON payload must be an object.", status=HTTPStatus.BAD_REQUEST)
+            return None
+        return payload
+
     def parse_last_int(self, path_text: str) -> int | None:
         try:
             return int(path_text.rsplit("/", 1)[-1])
@@ -196,6 +210,15 @@ class Handler(BaseHTTPRequestHandler):
             return int(path_text.split("/")[3])
         except (IndexError, ValueError):
             return None
+
+    def resolve_track_path(self, track_id: int | None) -> Path | None:
+        """! @brief Resolve a track ID to a readable local file path."""
+        if track_id is None:
+            return None
+        path = self.library.path_for_id(track_id)
+        if path is None or not path.is_file():
+            return None
+        return path
 
     def require_edit_access(self) -> bool:
         # Every write route goes through this one gate. Listen/read-only mode can
@@ -252,6 +275,25 @@ class Handler(BaseHTTPRequestHandler):
         end = query.get("end", [None])[0]
         self.send_json(self.listening_stats.summary(period, start, end))
 
+    def handle_config_api(self) -> None:
+        """! @brief Return UI config and serving mode flags."""
+        self.send_json(
+            {
+                "editable": self.editable,
+                "webShare": self.web_share,
+                "appName": self.player_config.app_name,
+                "textTabLabel": self.player_config.text_tab_label,
+                "textDir": self.player_config.text_dir,
+                "preferredCategories": self.player_config.preferred_categories,
+                "preferredVideoCategories": self.player_config.preferred_video_categories,
+            }
+        )
+
+    def handle_refresh_api(self) -> None:
+        """! @brief Rescan the library cache after manual refresh."""
+        self.library.refresh()
+        self.send_ok()
+
     def public_track(self, track: object) -> dict[str, object]:
         """! @brief Return a track record safe for the active serving mode."""
         data = asdict(track)
@@ -292,65 +334,49 @@ class Handler(BaseHTTPRequestHandler):
             data["filename"] = ""
         return data
 
+    def get_exact_routes(self, query_text: str) -> dict[str, RouteHandler]:
+        """! @brief Routes that match one full request path."""
+        return {
+            "/": lambda: self.send_file(HTML_PATH),
+            "/api/tracks": self.handle_tracks_api,
+            "/api/config": self.handle_config_api,
+            "/api/videos": self.handle_videos_api,
+            "/api/interviews": self.handle_interviews_api,
+            "/api/listening-stats": lambda: self.handle_listening_stats_api(query_text),
+            "/api/refresh": self.handle_refresh_api,
+        }
+
+    def get_prefix_routes(self, path_text: str, query_text: str) -> tuple[tuple[str, RouteHandler], ...]:
+        """! @brief Routes that use an ID or relative path after a prefix."""
+        return (
+            ("/assets/", lambda: self.handle_asset(path_text)),
+            ("/art/", lambda: self.handle_art(path_text)),
+            ("/art-thumb/", lambda: self.handle_art_thumbnail(path_text, query_text)),
+            ("/audio/", lambda: self.handle_audio(path_text)),
+            ("/lyrics/", lambda: self.handle_lyrics(path_text)),
+            ("/video/", lambda: self.handle_video(path_text)),
+            ("/video-thumb/", lambda: self.handle_video_thumbnail(path_text)),
+            ("/video-folder-cover/", lambda: self.handle_video_folder_cover(path_text)),
+        )
+
+    def get_post_routes(self) -> dict[str, RouteHandler]:
+        """! @brief Editable JSON routes that do not need a track ID in the URL."""
+        return {
+            "/api/bulk/metadata": self.handle_bulk_metadata,
+        }
+
     def do_GET(self) -> None:  # noqa: N802
-        # Read routes: app shell, cached library data, artwork, and media streams.
+        """! @brief Dispatch read-only routes: UI shell, APIs, artwork, and media streams."""
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            self.send_file(HTML_PATH)
+
+        if handler := self.get_exact_routes(parsed.query).get(parsed.path):
+            handler()
             return
-        if parsed.path.startswith("/assets/"):
-            self.handle_asset(parsed.path)
-            return
-        if parsed.path == "/api/tracks":
-            self.handle_tracks_api()
-            return
-        if parsed.path == "/api/config":
-            self.send_json(
-                {
-                    "editable": self.editable,
-                    "webShare": self.web_share,
-                    "appName": self.player_config.app_name,
-                    "textTabLabel": self.player_config.text_tab_label,
-                    "textDir": self.player_config.text_dir,
-                    "preferredCategories": self.player_config.preferred_categories,
-                    "preferredVideoCategories": self.player_config.preferred_video_categories,
-                }
-            )
-            return
-        if parsed.path == "/api/videos":
-            self.handle_videos_api()
-            return
-        if parsed.path == "/api/interviews":
-            self.handle_interviews_api()
-            return
-        if parsed.path == "/api/listening-stats":
-            self.handle_listening_stats_api(parsed.query)
-            return
-        if parsed.path == "/api/refresh":
-            self.library.refresh()
-            self.send_ok()
-            return
-        if parsed.path.startswith("/art/"):
-            self.handle_art(parsed.path)
-            return
-        if parsed.path.startswith("/art-thumb/"):
-            self.handle_art_thumbnail(parsed.path, parsed.query)
-            return
-        if parsed.path.startswith("/audio/"):
-            self.handle_audio(parsed.path)
-            return
-        if parsed.path.startswith("/lyrics/"):
-            self.handle_lyrics(parsed.path)
-            return
-        if parsed.path.startswith("/video/"):
-            self.handle_video(parsed.path)
-            return
-        if parsed.path.startswith("/video-thumb/"):
-            self.handle_video_thumbnail(parsed.path)
-            return
-        if parsed.path.startswith("/video-folder-cover/"):
-            self.handle_video_folder_cover(parsed.path)
-            return
+
+        for prefix, handler in self.get_prefix_routes(parsed.path, parsed.query):
+            if parsed.path.startswith(prefix):
+                handler()
+                return
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def handle_asset(self, path_text: str) -> None:
@@ -364,17 +390,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_file(path, cache_control="no-cache")
 
     def do_POST(self) -> None:  # noqa: N802
-        # Write routes go through one read-only/editable gate. Playback never
-        # needs POST.
+        """! @brief Dispatch write routes; playback and static APIs never need POST."""
         parsed = urlparse(self.path)
         if parsed.path == "/api/listening-stats":
             self.handle_listening_stats_record()
             return
         if not self.require_edit_access():
             return
-        if parsed.path == "/api/bulk/metadata":
-            self.handle_bulk_metadata()
+
+        if handler := self.get_post_routes().get(parsed.path):
+            handler()
             return
+
         if parsed.path.startswith("/api/track/") and parsed.path.endswith("/artwork"):
             self.handle_artwork_update(parsed.path)
             return
@@ -386,9 +413,8 @@ class Handler(BaseHTTPRequestHandler):
     def handle_listening_stats_record(self) -> None:
         """! @brief Record compact playback stats without requiring Edit Mode."""
         try:
-            payload = self.read_json_body()
-            if not isinstance(payload, dict):
-                self.send_error_json("Invalid stats payload.")
+            payload = self.read_json_object()
+            if payload is None:
                 return
             result = self.listening_stats.record(payload)
             self.send_json(result)
@@ -401,12 +427,14 @@ class Handler(BaseHTTPRequestHandler):
         if track_id is None:
             self.send_error(HTTPStatus.BAD_REQUEST)
             return
-        path = self.library.path_for_id(track_id)
+        path = self.resolve_track_path(track_id)
         if path is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         try:
-            payload = self.read_json_body()
+            payload = self.read_json_object()
+            if payload is None:
+                return
             # Single-track edits write tags to disk, then refresh the scan cache
             # so the UI immediately reflects what is embedded in the file.
             result = save_metadata(path, payload)
@@ -447,12 +475,14 @@ class Handler(BaseHTTPRequestHandler):
         if track_id is None:
             self.send_error(HTTPStatus.BAD_REQUEST)
             return
-        path = self.library.path_for_id(track_id)
+        path = self.resolve_track_path(track_id)
         if path is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         try:
-            payload = self.read_json_body()
+            payload = self.read_json_object()
+            if payload is None:
+                return
             image_data, mime = decode_image_payload(payload)
             paths, error = self.artwork_scope_paths(track_id, path, payload)
             if error:
@@ -472,7 +502,9 @@ class Handler(BaseHTTPRequestHandler):
     def handle_bulk_metadata(self) -> None:
         """! @brief Apply non-empty metadata fields to selected tracks."""
         try:
-            payload = self.read_json_body()
+            payload = self.read_json_object()
+            if payload is None:
+                return
             ids = [int(track_id) for track_id in payload.get("ids", [])]
             # Empty bulk fields are ignored, so accidentally blank text boxes do
             # not erase tags across many files.
@@ -562,11 +594,8 @@ class Handler(BaseHTTPRequestHandler):
     def handle_audio(self, path_text: str) -> None:
         """! @brief Stream audio by track ID without reading tags during playback."""
         track_id = self.parse_last_int(path_text)
-        if track_id is None:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        path = self.library.path_for_id(track_id)
-        if path is None or not path.is_file():
+        path = self.resolve_track_path(track_id)
+        if path is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         self.stream_file(path, label=f"audio track {track_id}", debug=True)
