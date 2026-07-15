@@ -18,6 +18,8 @@ class PlaylistError(ValueError):
 class PlaylistStore:
     """Store small playlist snapshots as relative music-library paths."""
 
+    MAX_TRACKS = 10_000
+
     def __init__(self, path: Path) -> None:
         self.path = path
         self.lock = threading.Lock()
@@ -164,12 +166,13 @@ class PlaylistStore:
     def _validated_track_ids(track_ids: object) -> list[int]:
         if not isinstance(track_ids, list) or not track_ids:
             raise PlaylistError("The queue is empty.")
-        try:
-            # dict preserves insertion order, giving playlists stable ordering
-            # while preventing accidental duplicate songs.
-            return list(dict.fromkeys(int(track_id) for track_id in track_ids))
-        except (TypeError, ValueError) as exc:
-            raise PlaylistError("Playlist tracks are invalid.") from exc
+        if len(track_ids) > PlaylistStore.MAX_TRACKS:
+            raise PlaylistError(f"Playlists can contain at most {PlaylistStore.MAX_TRACKS:,} tracks.")
+        if any(isinstance(track_id, bool) or not isinstance(track_id, int) for track_id in track_ids):
+            raise PlaylistError("Playlist track IDs must be integers.")
+        # dict preserves insertion order, giving playlists stable ordering
+        # while preventing accidental duplicate songs.
+        return list(dict.fromkeys(track_ids))
 
     @classmethod
     def _references_for_ids(cls, track_ids: object, library: Library) -> list[str]:

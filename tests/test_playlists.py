@@ -45,6 +45,10 @@ def test_playlist_validation_rejects_bad_names_and_track_ids(tmp_path):
         store.create("Empty", [], library)
     with pytest.raises(PlaylistError, match="no longer available"):
         store.create("Missing", [99], library)
+    with pytest.raises(PlaylistError, match="integers"):
+        store.create("Strings", ["0"], library)
+    with pytest.raises(PlaylistError, match="integers"):
+        store.create("Boolean", [True], library)
 
 
 def test_playlist_rename_resume_and_delete_round_trip(tmp_path):
@@ -60,4 +64,3 @@ def test_playlist_rename_resume_and_delete_round_trip(tmp_path):
 
     store.delete(created["id"])
     assert store.list_for_library(library) == []
-

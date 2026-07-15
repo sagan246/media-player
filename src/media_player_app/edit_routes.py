@@ -50,15 +50,20 @@ class EditRoutesMixin:
         elif scope == "album":
             paths = list(self.library.album_paths_for_track(track_id))
         elif scope == "selected":
+            raw_ids = payload.get("ids")
+            if not isinstance(raw_ids, list) or not raw_ids:
+                return [], "Select at least one track for an artwork update."
             try:
-                ids = [int(item) for item in payload.get("ids", [])]
+                if any(isinstance(item, bool) for item in raw_ids):
+                    raise ValueError
+                ids = list(dict.fromkeys(int(item) for item in raw_ids))
             except (TypeError, ValueError):
                 return [], "Selected track IDs must be integers."
-            paths = [
-                selected_path
-                for selected_id in ids
-                if (selected_path := self.library.path_for_id(selected_id)) is not None
-            ]
+            resolved = [(selected_id, self.library.path_for_id(selected_id)) for selected_id in ids]
+            missing = [selected_id for selected_id, selected_path in resolved if selected_path is None]
+            if missing:
+                return [], "One or more selected tracks are no longer available."
+            paths = [selected_path for _, selected_path in resolved if selected_path is not None]
         else:
             return [], "Scope must be song, album, or selected"
         return [candidate for candidate in paths if candidate.suffix.lower() in {".mp3", ".flac"}], None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
 from pathlib import Path
 
@@ -21,6 +22,7 @@ EDITABLE_FIELDS = (
     "genre",
 )
 MAX_METADATA_VALUE_LENGTH = 2000
+MAX_ARTWORK_BYTES = 20 * 1024 * 1024
 
 
 def validate_metadata_payload(payload: object, *, allow_empty_values: bool = True) -> dict[str, str]:
@@ -38,8 +40,10 @@ def validate_metadata_payload(payload: object, *, allow_empty_values: bool = Tru
         if field not in payload:
             continue
         raw_value = payload[field]
-        if raw_value is not None and not isinstance(raw_value, (str, int, float)):
+        if isinstance(raw_value, bool) or (raw_value is not None and not isinstance(raw_value, (str, int, float))):
             raise ValueError(f"Metadata field '{field}' must be a text value")
+        if isinstance(raw_value, float) and not math.isfinite(raw_value):
+            raise ValueError(f"Metadata field '{field}' must be finite")
         value = "" if raw_value is None else str(raw_value).strip()
         if len(value) > MAX_METADATA_VALUE_LENGTH:
             raise ValueError(f"Metadata field '{field}' is too long")
@@ -123,6 +127,8 @@ def decode_image_payload(payload: dict[str, object]) -> tuple[bytes, str]:
         raise ValueError("Artwork image could not be decoded") from exc
     if not data:
         raise ValueError("Artwork image is empty")
+    if len(data) > MAX_ARTWORK_BYTES:
+        raise ValueError("Artwork image must be 20 MB or smaller")
     return data, mime
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 JsonObject = dict[str, object]
+MAX_JSON_BODY_BYTES = 30 * 1024 * 1024
 
 
 def content_type_for(path: Path) -> str:
@@ -55,6 +56,8 @@ class HttpHelpersMixin:
 
     def read_json_body(self) -> object:
         length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > MAX_JSON_BODY_BYTES:
+            raise ValueError("JSON request body size is invalid")
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def read_json_object(self) -> JsonObject | None:

@@ -54,7 +54,9 @@ music/video persistence, stats date math, playlists, metadata payloads, and app
 startup independently testable and easier to change without cross-tab drift.
 
 - `assets/index.html` - app shell.
-- `assets/app.js` - stateful coordinator, rendering, and event wiring.
+- `assets/app.js` - stateful coordinator and cross-domain event wiring.
+- `assets/*-controller.js` - music/video queue mutations, drawers, navigation,
+  playlists, editing, stats, and themes.
 - `assets/*-domain.js` - music/video state, stats ranges, playlists, edit payloads,
   and startup boundaries.
 - `assets/components.js` - shared UI helpers.
@@ -108,6 +110,8 @@ startup independently testable and easier to change without cross-tab drift.
 Metadata write APIs are disabled in read-only and web-share modes. Playlist
 management and resume updates remain available because they are player state;
 `playlist_editable` can disable playlist changes independently when needed.
+Browser validation provides immediate feedback, but Python validates every
+playlist, metadata, and artwork request before anything is persisted or written.
 
 ## Streaming
 

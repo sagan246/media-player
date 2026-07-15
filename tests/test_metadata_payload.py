@@ -20,3 +20,8 @@ def test_metadata_payload_rejects_nested_values_and_empty_edits():
     with pytest.raises(ValueError, match="editable metadata"):
         validate_metadata_payload({"unknown": "value"})
 
+
+@pytest.mark.parametrize("value", [True, float("nan"), float("inf")])
+def test_metadata_payload_rejects_ambiguous_scalar_values(value):
+    with pytest.raises(ValueError):
+        validate_metadata_payload({"tracknumber": value})

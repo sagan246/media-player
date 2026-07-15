@@ -61,7 +61,7 @@
     .volume { display:flex; gap:8px; align-items:center; justify-content:flex-end; color:var(--muted); }
     .volume input { max-width:120px; padding:0; }
     audio { display:none; }
-    .queueDrawer { position:fixed; top:0; right:0; bottom:var(--player-bar-space); z-index:10; width:min(420px,92vw); border-left:1px solid rgba(148,163,184,.09); border-bottom:1px solid rgba(148,163,184,.08); box-shadow:-10px 0 28px rgba(0,0,0,.42); transform:translateX(105%); transition:transform .18s ease; display:grid; grid-template-rows:auto 1fr; }
+    .queueDrawer { position:fixed; top:0; right:0; bottom:calc(var(--player-bar-space) - 10px); z-index:10; width:min(420px,92vw); border-left:1px solid rgba(148,163,184,.09); border-bottom:1px solid rgba(148,163,184,.08); box-shadow:-10px 0 28px rgba(0,0,0,.42); transform:translateX(105%); transition:transform .18s ease; display:grid; grid-template-rows:auto 1fr; }
     .queuePanel { background:rgba(0,0,0,.82); backdrop-filter:blur(18px); }
     body[class*="theme-light"] .queuePanel { background:rgba(255,255,255,.90); border-color:var(--line); box-shadow:-8px 0 24px rgba(15,23,42,.10); }
     .queueDrawer.open { transform:translateX(0); }
@@ -100,7 +100,8 @@
     .queuePulse { animation:queuePulse .32s ease; }
     .queueSectionLabel { padding:10px 8px 4px; color:var(--muted); font-size:12px; font-weight:900; text-transform:uppercase; letter-spacing:.05em; }
     /* Now Playing keeps the mini-player simple and puts detailed timing here. */
-    .nowPlayingDrawer { position:fixed; inset:0; z-index:8; display:none; box-sizing:border-box; background:#000; overflow-y:auto; overflow-x:hidden; padding:28px 16px 40px; }
+    .nowPlayingDrawer { position:fixed; inset:0; z-index:12; display:none; box-sizing:border-box; background:#000; overflow-y:auto; overflow-x:hidden; padding:28px 16px 40px; }
+    body.queueAboveNowPlaying .queueDrawer.musicOnly { z-index:13; }
     body[class*="theme-light"] .nowPlayingDrawer { background:var(--bg); }
     .nowPlayingDrawer.open { display:block; }
     .nowPlayingHead { position:fixed; top:28px; left:calc(50% + 326px); z-index:2; display:flex; justify-content:flex-start; gap:12px; width:44px; height:44px; max-width:none; margin:0; padding:0; background:transparent; pointer-events:none; }
