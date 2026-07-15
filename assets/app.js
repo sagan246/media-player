@@ -43,6 +43,9 @@
     } = statsComponents;
     const themeEngine = window.MediaPlayerThemeEngine || {};
     const visualizerModule = window.MediaPlayerAudioVisualizer || {};
+    const playbackPersistenceModule = window.MediaPlayerPlaybackPersistence || {};
+    const mediaSessionModule = window.MediaPlayerMediaSession || {};
+    const listeningRecorderModule = window.MediaPlayerListeningStatsRecorder || {};
     const musicDomain = window.MediaPlayerMusicDomain || {};
     const videoDomain = window.MediaPlayerVideoDomain || {};
     const statsDomain = window.MediaPlayerStatsDomain || {};
@@ -126,13 +129,9 @@
     let playlistDialogMode = "create";
     let nowPlayingRenderedTrackId = null, nowPlayingRenderedArtSrc = "";
     let currentLrcLyrics = null;
-    let restoredMusicState = false, lastQueueSaveAt = 0;
-    let restoredVideoState = false, restoringVideoStateNow = false, lastVideoSaveAt = 0;
-    // Stats are batched to avoid recording skipped tracks as listens. A play is
-    // only counted after the threshold, while time is periodically flushed.
-    let listeningStats = null, statsSession = null, lastStatsSentAt = 0;
+    let restoringVideoStateNow = false;
+    let listeningStats = null;
     let statsTopSongTrackIds = [];
-    const STATS_MIN_SECONDS_TO_RECORD = 5;
     if((!localStorage.getItem("visualizerMode") || localStorage.getItem("visualizerMode") === "rain") && localStorage.getItem("visualizerDefault") !== "bars"){
       localStorage.setItem("visualizerMode", "bars");
       localStorage.setItem("visualizerDefault", "bars");
@@ -205,6 +204,40 @@
     const listeningStatsPanelEl = byId("listeningStatsPanel");
     const themeGridEl = byId("themeGrid");
     const audioVisualizer = visualizerModule.create({player, byId, themeEngine});
+    const musicPlaybackStore = playbackPersistenceModule.create({
+      key:"musicPlaybackState",
+      buildState:musicDomain.buildPlaybackState,
+      parseState:musicDomain.parsePlaybackState,
+    });
+    const videoPlaybackStore = playbackPersistenceModule.create({
+      key:"videoPlaybackState",
+      buildState:videoDomain.buildPlaybackState,
+      parseState:videoDomain.parsePlaybackState,
+    });
+    const mediaSessionController = mediaSessionModule.create({
+      onPlay:()=>playCurrentAudio(),
+      onPause:()=>player.pause(),
+      onPrevious:()=>queue.length?playQueueIndex(Math.max(0,queueIndex-1)):null,
+      onNext:()=>queue.length?playQueueIndex(Math.min(queue.length-1,queueIndex+1)):null,
+      artworkFor:t=>t.has_artwork?[{src:artUrl(t),sizes:"512x512",type:"image/jpeg"}]:[],
+    });
+    const listeningRecorder = listeningRecorderModule.create({
+      player,
+      getTrack:id=>tracks.find(track=>track.id===id),
+      buildPayload:t=>({
+        title:t.title||"Unknown title",
+        artist:t.artist||"Unknown artist",
+        album:t.album||"No album",
+        format:t.format||"",
+        duration:knownDurations.get(t.id)||player.duration||0,
+      }),
+      send:payload=>fetchJson("/api/listening-stats",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload),
+      }).catch(error=>console.warn("[stats] record failed", error)),
+      onFlush:()=>{if(mediaType==="statsPage")loadListeningStats();},
+    });
     // Text helpers and library grouping rules.
     function shiftDate(dateText,days){return statsDomain.shiftDate(dateText,days,localDateString);}
     function statsSteppablePeriod(){return ["week","month","year"].includes(statsPeriod);}
@@ -412,21 +445,16 @@
     }
     function playlistResumeIndex(playlist){const saved=playlist.resume_track_id; if(!Number.isInteger(saved))return 0; const index=playlist.track_ids.indexOf(saved); return index<0?0:index;}
     function saveMusicState({force=false}={}){
-      if(!force&&Date.now()-lastQueueSaveAt<3000)return;
-      lastQueueSaveAt=Date.now();
-      if(!queue.length){activePlaylistId=null; localStorage.removeItem("musicPlaybackState"); return;}
+      if(!queue.length){activePlaylistId=null; musicPlaybackStore.clear(); return;}
       syncActivePlaylistContext();
-      const state=musicDomain.buildPlaybackState({queue,queueIndex,playingId,selectedId,activePlaylistId,currentTime:player.currentTime,repeatMode});
-      localStorage.setItem("musicPlaybackState", JSON.stringify(state));
+      musicPlaybackStore.save({queue,queueIndex,playingId,selectedId,activePlaylistId,currentTime:player.currentTime,repeatMode},{force});
     }
     function restoreMusicState(){
-      if(restoredMusicState)return;
-      restoredMusicState=true;
       const validIds=new Set(tracks.map(t=>t.id));
-      const state=musicDomain.parsePlaybackState(localStorage.getItem("musicPlaybackState"),validIds);
+      const state=musicPlaybackStore.restore(validIds);
       if(!state)return;
       queue=state.queue;
-      if(!queue.length){localStorage.removeItem("musicPlaybackState"); return;}
+      if(!queue.length){musicPlaybackStore.clear(); return;}
       const localQueueIndex=Math.min(Math.max(Number(state.queueIndex)||0,0),queue.length-1);
       queueIndex=localQueueIndex;
       activePlaylistId=typeof state.activePlaylistId==="string"?state.activePlaylistId:null;
@@ -451,20 +479,15 @@
     }
     function saveVideoState({force=false}={}){
       if(restoringVideoStateNow)return;
-      if(!force&&Date.now()-lastVideoSaveAt<3000)return;
-      lastVideoSaveAt=Date.now();
-      if(!videoQueue.length){localStorage.removeItem("videoPlaybackState"); return;}
-      const state=videoDomain.buildPlaybackState({videoQueue,videoQueueIndex,selectedVideoId,currentTime:videoPlayerEl.currentTime,videoRepeatMode});
-      localStorage.setItem("videoPlaybackState", JSON.stringify(state));
+      if(!videoQueue.length){videoPlaybackStore.clear(); return;}
+      videoPlaybackStore.save({videoQueue,videoQueueIndex,selectedVideoId,currentTime:videoPlayerEl.currentTime,videoRepeatMode},{force});
     }
     function restoreVideoState(){
-      if(restoredVideoState)return;
-      restoredVideoState=true;
       const validIds=new Set(videos.map(v=>v.id));
-      const state=videoDomain.parsePlaybackState(localStorage.getItem("videoPlaybackState"),validIds);
+      const state=videoPlaybackStore.restore(validIds);
       if(!state)return;
       videoQueue=state.videoQueue;
-      if(!videoQueue.length){localStorage.removeItem("videoPlaybackState"); return;}
+      if(!videoQueue.length){videoPlaybackStore.clear(); return;}
       videoQueueIndex=Math.min(Math.max(Number(state.videoQueueIndex)||0,0),videoQueue.length-1);
       const id=validIds.has(Number(state.selectedVideoId))?Number(state.selectedVideoId):videoQueue[videoQueueIndex];
       const resumeAt=Number(state.currentTime)||0;
@@ -878,7 +901,7 @@
     function savedVideoResumeTime(){
       const current=Number(videoPlayerEl.currentTime);
       if(Number.isFinite(current)&&current>1)return current;
-      try{return Number(JSON.parse(localStorage.getItem("videoPlaybackState")||"{}").currentTime)||0;}catch{return 0;}
+      return Number(videoPlaybackStore.peek()?.currentTime)||0;
     }
     function videoResumeCardHtml(){
       if(!videoQueue.length||videoQueueIndex<0)return "";
@@ -1119,7 +1142,7 @@
     }
     function playQueueIndex(index, options={}){
       if(index<0||index>=queue.length)return;
-      flushListeningStats({force:true});
+      listeningRecorder.flush();
       queueIndex=index;
       const t=tracks.find(x=>x.id===queue[queueIndex]);
       if(!t)return;
@@ -1129,7 +1152,7 @@
       selectedId=t.id;
       resetPlaybackTimeline(t);
       musicDomain.prepareSource(player,t);
-      resetStatsSession(t.id);
+      listeningRecorder.reset(t.id);
       console.debug("[audio] audio url requested", t.audio_url);
       saveMusicState({force:true});
       playCurrentAudio().finally(()=>{
@@ -1473,10 +1496,6 @@
       on(npSeek,"input",()=>{seeking=true;});
       on(npSeek,"change",()=>{if(player.duration) player.currentTime=(Number(npSeek.value)/1000)*player.duration; seeking=false;});
     }
-    // Media Session controls the iPhone lock screen / Dynamic Island buttons.
-    // Explicitly clearing seek handlers nudges iOS toward track prev/next.
-    function setupMediaSessionActions(){if(!("mediaSession" in navigator))return; const set=(action,handler)=>{try{navigator.mediaSession.setActionHandler(action,handler);}catch{}}; set("play",()=>playCurrentAudio()); set("pause",()=>player.pause()); set("previoustrack",()=>queue.length?playQueueIndex(Math.max(0,queueIndex-1)):null); set("nexttrack",()=>queue.length?playQueueIndex(Math.min(queue.length-1,queueIndex+1)):null); set("seekbackward",null); set("seekforward",null); set("seekto",null);}
-    function updateMediaSession(t){if(!("mediaSession" in navigator)||!t)return; setupMediaSessionActions(); const artwork=t.has_artwork?[{src:artUrl(t),sizes:"512x512",type:"image/jpeg"}]:[]; try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title||"Unknown title",artist:t.artist||"Unknown artist",album:t.album||"",artwork}); navigator.mediaSession.playbackState=player.paused?"paused":"playing";}catch{}}
     function updateNow(){
       const t=tracks.find(x=>x.id===playingId);
       playPauseBtn.textContent=player.paused?"\u25b6":"\u275a\u275a";
@@ -1490,7 +1509,7 @@
         renderNowPlaying(null);
         return;
       }
-      updateMediaSession(t);
+      mediaSessionController.update(t,{paused:player.paused});
       applyAdaptiveTheme();
       nowInfoEl.innerHTML=`${t.has_artwork?`<img src="${smallArtUrl(t)}" alt="">`:`<div class="noArt">?</div>`}<div class="nowText"><div class="nowTitle">${esc(t.title)}</div><div class="nowSub">${esc(t.artist||"Unknown artist")}</div></div>`;
       renderNowPlaying(t);
@@ -1502,50 +1521,6 @@
       const norm = v => String(v || "").trim().toLowerCase();
       const duration = Math.round(Number(knownDurations.get(t.id) || t.duration || 0) || 0);
       return `${norm(t.artist)}|${norm(t.album)}|${norm(t.title)}|${duration}`;
-    }
-    function statsTrackPayload(t){
-      return {title:t.title||"Unknown title", artist:t.artist||"Unknown artist", album:t.album||"No album", format:t.format||"", duration:knownDurations.get(t.id)||player.duration||0};
-    }
-    async function postListeningStats(payload){
-      try{await fetchJson("/api/listening-stats",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});}
-      catch(err){console.warn("[stats] record failed", err);}
-    }
-    function resetStatsSession(trackId=playingId){
-      const t=tracks.find(x=>x.id===trackId);
-      statsSession=t?{trackId:t.id,lastTime:Number.isFinite(player.currentTime)?player.currentTime:0,pendingSeconds:0,listenedSeconds:0,playCounted:false}:null;
-      lastStatsSentAt=Date.now();
-    }
-    function playCountThreshold(){
-      const duration=Number(player.duration)||0;
-      return duration>0?Math.min(30,Math.max(10,duration*.5)):30;
-    }
-    function flushListeningStats({force=false,countPlay=false}={}){
-      if(!statsSession)return;
-      const t=tracks.find(x=>x.id===statsSession.trackId);
-      if(!t)return;
-      const seconds=Math.max(0,statsSession.pendingSeconds);
-      if(!countPlay && seconds<STATS_MIN_SECONDS_TO_RECORD)return;
-      statsSession.pendingSeconds=0;
-      postListeningStats({track:statsTrackPayload(t),seconds,count_play:countPlay});
-      if(mediaType==="statsPage")loadListeningStats();
-    }
-    function updateListeningStatsProgress(){
-      if(playingId===null||player.paused||player.ended)return;
-      if(!statsSession||statsSession.trackId!==playingId)resetStatsSession(playingId);
-      if(!statsSession)return;
-      const current=Number(player.currentTime)||0;
-      const delta=current-statsSession.lastTime;
-      statsSession.lastTime=current;
-      if(delta>0&&delta<8){
-        statsSession.pendingSeconds+=delta;
-        statsSession.listenedSeconds+=delta;
-      }
-      const countPlay=!statsSession.playCounted&&statsSession.listenedSeconds>=playCountThreshold();
-      if(countPlay)statsSession.playCounted=true;
-      if(countPlay||statsSession.pendingSeconds>=15||Date.now()-lastStatsSentAt>30000){
-        lastStatsSentAt=Date.now();
-        flushListeningStats({countPlay});
-      }
     }
     // Stats rendering is split: app.js owns date-range rules and playback
     // lookups, while stats-components.js owns the chart/table markup.
@@ -1909,7 +1884,7 @@
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
+    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>listeningRecorder.flush());}
     function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
     function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("stopVideo"),"click",()=>{stopVideoPlayback(); saveVideoState({force:true}); renderVideos(); renderVideoQueue();}); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("repeatVideoQueue"),"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",toggleVideoQueue); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
     function bindQueueControls(){
@@ -1956,18 +1931,18 @@
       on(byId("closeNowPlaying"),"click",()=>setOpen(nowPlayingDrawerEl,false));
       on(player,"canplay",()=>console.debug("[audio] browser canplay", {src:player.currentSrc,currentTime:player.currentTime}));
       on(player,"playing",()=>console.debug("[audio] browser playing", {src:player.currentSrc,currentTime:player.currentTime}));
-      on(player,"play",()=>{switchingAudioTrack=false; setupMediaSessionActions(); if(!statsSession||statsSession.trackId!==playingId)resetStatsSession(playingId); startVisualizer(); saveMusicState({force:true}); updateNow();});
-      on(player,"pause",()=>{setupMediaSessionActions(); saveMusicState({force:true}); flushListeningStats({force:true}); if(switchingAudioTrack)return; stopVisualizer(); updateNow();});
+      on(player,"play",()=>{switchingAudioTrack=false; mediaSessionController.setup(); listeningRecorder.ensure(playingId); startVisualizer(); saveMusicState({force:true}); updateNow();});
+      on(player,"pause",()=>{mediaSessionController.setup(); saveMusicState({force:true}); listeningRecorder.flush(); if(switchingAudioTrack)return; stopVisualizer(); updateNow();});
       on(player,"ended",()=>{
-        setupMediaSessionActions();
+        mediaSessionController.setup();
         stopVisualizer();
-        flushListeningStats({force:true});
+        listeningRecorder.flush();
         if(repeatMode==="one"){player.currentTime=0; playCurrentAudio({retry:true}); return;}
         if(queueIndex+1<queue.length) playQueueIndex(queueIndex+1);
         else if(repeatMode==="all"&&queue.length) playQueueIndex(0);
       });
       on(player,"loadedmetadata",()=>{
-        setupMediaSessionActions();
+        mediaSessionController.setup();
         seekBar.value=player.duration?Math.round((player.currentTime/player.duration)*1000):0;
         currentTimeEl.textContent=fmt(player.currentTime);
         durationEl.textContent=fmt(player.duration);
@@ -1989,7 +1964,7 @@
         if(npDuration)npDuration.textContent=nowPlayingRemainingText();
         if(npSeek)npSeek.value=seekBar.value;
         updateLrcHighlight();
-        updateListeningStatsProgress();
+        listeningRecorder.update(playingId);
         saveMusicState();
       });
       on(seekBar,"input",()=>{seeking=true;});
@@ -2020,7 +1995,7 @@
 
       setTheme();
       setDeviceClass();
-      setupMediaSessionActions();
+      mediaSessionController.setup();
       setPlayerVolume(savedVolume(), {persist:false});
       updateMusicQueueLabels();
       updateVideoQueueLabel();

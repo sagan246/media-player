@@ -66,6 +66,9 @@ startup independently testable and easier to change without cross-tab drift.
 - `assets/stats-components.js` - stats screen.
 - `assets/lyrics.js` - text and LRC lyric handling.
 - `assets/audio-visualizer.js` - Web Audio setup, animation lifecycle, and visualizer renderers.
+- `assets/playback-persistence.js` - throttled music/video playback-state storage.
+- `assets/media-session.js` - browser and lock-screen media controls.
+- `assets/listening-stats-recorder.js` - listening thresholds and batched stats writes.
 - `assets/theme-data.js` / `assets/theme-engine.js` - themes.
 
 ## Styles
