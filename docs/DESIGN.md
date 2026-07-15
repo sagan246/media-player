@@ -21,7 +21,7 @@ text archive.
 
 ## Main Screens
 
-- **Music:** albums, sections, years, queues, lyrics, and Now Playing.
+- **Music:** albums, sections, years, playlists, queues, lyrics, and Now Playing.
 - **Video:** folder-based video albums, covers, queue, and resume support.
 - **Interviews/Text:** a simple reader for local text files.
 - **Stats:** lightweight listening summaries and top songs.

@@ -23,6 +23,7 @@
       topQueueButton,
     } = components;
     const musicComponents = window.MediaPlayerMusicComponents || {};
+    const playlistComponents = window.MediaPlayerPlaylistComponents || {};
     const queueComponents = window.MediaPlayerQueueComponents || {};
     const {
       queueListHtml,
@@ -50,6 +51,7 @@
     // endpoints stream directly from disk; metadata/artwork should already be
     // available from these cached scan results before the user presses play.
     let tracks = [];
+    let playlists = [];
     let videos = [];
     let interviews = [];
     let tracksLoaded = false;
@@ -72,6 +74,7 @@
     let groupMode = "category";
     let selectedGroup = "All";
     let selectedAlbum = "All";
+    let selectedPlaylistId = null;
     let selectedVideoGroup = "All";
     let selectedVideoAsFolder = false;
 
@@ -94,6 +97,7 @@
     let adaptiveThemeSource = "";
     let appConfig = {
       editable:true,
+      playlistEditable:true,
       appName:"Local Media Player",
       textTabLabel:"Interviews",
       textDir:"Interviews",
@@ -108,9 +112,12 @@
     // without rebuilding a queue on every page load.
     let browseCollapsed = true;
     let queue = [], queueIndex = -1, seeking = false, switchingAudioTrack = false;
+    let activePlaylistId = null;
+    const playlistResumeWrites = new Map();
     const knownDurations = new Map();
     let videoQueue = [], videoQueueIndex = -1;
     let albumClickTimer = null, queueToastTimer = null;
+    let playlistDialogMode = "create";
     let nowPlayingRenderedTrackId = null, nowPlayingRenderedArtSrc = "";
     let currentLrcLyrics = null;
     let restoredMusicState = false, lastQueueSaveAt = 0;
@@ -168,6 +175,10 @@
     const currentTimeEl = byId("currentTime");
     const durationEl = byId("duration");
     const queueToastEl = byId("queueToast");
+    const playlistDialogEl = byId("playlistDialog");
+    const playlistFormEl = byId("playlistForm");
+    const playlistNameEl = byId("playlistName");
+    const playlistMessageEl = byId("playlistMessage");
     const musicTabEl = byId("musicTab");
     const videoTabEl = byId("videoTab");
     const interviewsTabEl = byId("interviewsTab");
@@ -344,7 +355,14 @@
       return value;
     }
     function editHeaders(extra={}){return extra;}
-    function categoryOf(t){if(t.folder&&t.folder!=="(root)")return String(t.folder).split("/")[0]; return t.path.includes("/") ? t.path.split("/")[0] : "(root)";}
+    function musicPathParts(t){
+      const folder=folderOf(t);
+      return folder==="(root)"?[]:String(folder).replaceAll("\\","/").split("/").filter(Boolean);
+    }
+    // Music browse categories follow the first two directory levels. This
+    // keeps an artist/collection parent and its major sections visible while
+    // leaving album directories below them as cards rather than browse rows.
+    function categoryOf(t){const parts=musicPathParts(t); return parts.length?parts.slice(0,2).join("/"):"(root)";}
     function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
     function albumOf(t){return t.album || "(No album)";}
     function artUrl(t){return t.artwork_thumb_url || t.artwork_url || "";}
@@ -352,10 +370,18 @@
     function fullArtUrl(t){return t.artwork_url || t.artwork_thumb_url || "";}
     function stableAlbumArtUrl(t){const album=albumOf(t); const art=tracks.find(x=>albumOf(x)===album&&x.has_artwork); return art ? fullArtUrl(art) : fullArtUrl(t);}
     function groupOf(t){if(groupMode==="category") return categoryOf(t); if(groupMode==="album") return albumOf(t); return folderOf(t);}
+    function musicGroupMatches(t, group=selectedGroup){
+      if(group==="All")return true;
+      const trackGroup=groupOf(t);
+      return groupMode==="category"?(trackGroup===group||trackGroup.startsWith(`${group}/`)):trackGroup===group;
+    }
     function searchQuery(){return String(searchEl.value||"").trim().toLowerCase();}
     function containsSearch(values){const q=searchQuery(); if(!q)return true; return values.some(value=>String(value||"").toLowerCase().includes(q));}
     function shortPathLabel(value){const text=String(value||"").replaceAll("\\\\","/"); if(!text||text==="All"||text==="(root)")return text||"(root)"; const parts=text.split("/").filter(Boolean); return parts.length?parts[parts.length-1]:text;}
     function groupLabel(name){return String(name||"").includes("/")?shortPathLabel(name):String(name||"");}
+    // Browse children can use a short label such as "Albums", but section
+    // headings retain their parent so repeated names remain understandable.
+    function sectionLabel(name){return String(name||"").replaceAll("\\\\","/").split("/").filter(Boolean).join(" ")||"(root)";}
     function normalizeCategoryName(value){return String(value||"").toLowerCase().replace(/[^a-z0-9]+/g,"");}
     function preferredCategoryRank(name, preferredCategories=appConfig.preferredCategories){
       const label=normalizeCategoryName(name);
@@ -393,15 +419,33 @@
     function cycleVideoRepeat(){videoRepeatMode=nextRepeatMode(videoRepeatMode); localStorage.setItem("videoRepeatMode",videoRepeatMode); saveVideoState({force:true}); updateRepeatButtons();}
     function updateRepeatButtons(){updateRepeatButton(repeatBtn, repeatMode); updateRepeatButton(byId("repeatQueue"), repeatMode); updateRepeatButton(videoRepeatBtn, videoRepeatMode, "Video repeat"); updateRepeatButton(byId("repeatVideoQueue"), videoRepeatMode, "Video repeat");}
     function isTypingTarget(target){return !!target?.closest?.("input, textarea, select, [contenteditable='true']");}
+    function queueMatchesPlaylist(playlist){return !!playlist&&queue.length===playlist.track_ids.length&&queue.every((id,index)=>id===playlist.track_ids[index]);}
+    function persistPlaylistResume(playlist, trackId){
+      const previous=playlistResumeWrites.get(playlist.id)||Promise.resolve();
+      const next=previous.catch(()=>{}).then(()=>playlistRequest(`/api/playlists/${encodeURIComponent(playlist.id)}/resume`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({track_id:trackId})})).catch(error=>console.warn("[playlist] resume save failed",error));
+      playlistResumeWrites.set(playlist.id,next);
+    }
+    function syncActivePlaylistContext(){
+      const playlist=playlistById(activePlaylistId);
+      if(!playlist){activePlaylistId=null; return;}
+      if(!queueMatchesPlaylist(playlist))return;
+      const trackId=queue[queueIndex];
+      if(!Number.isInteger(trackId)||playlist.resume_track_id===trackId)return;
+      playlist.resume_track_id=trackId;
+      persistPlaylistResume(playlist,trackId);
+    }
+    function playlistResumeIndex(playlist){const saved=playlist.resume_track_id; if(!Number.isInteger(saved))return 0; const index=playlist.track_ids.indexOf(saved); return index<0?0:index;}
     function saveMusicState({force=false}={}){
       if(!force&&Date.now()-lastQueueSaveAt<3000)return;
       lastQueueSaveAt=Date.now();
-      if(!queue.length){localStorage.removeItem("musicPlaybackState"); return;}
+      if(!queue.length){activePlaylistId=null; localStorage.removeItem("musicPlaybackState"); return;}
+      syncActivePlaylistContext();
       const state={
         queue,
         queueIndex,
         playingId,
         selectedId,
+        activePlaylistId,
         currentTime:Number.isFinite(player.currentTime)?player.currentTime:0,
         repeatMode,
         updatedAt:Date.now()
@@ -417,13 +461,17 @@
       const validIds=new Set(tracks.map(t=>t.id));
       queue=state.queue.map(Number).filter(id=>validIds.has(id));
       if(!queue.length){localStorage.removeItem("musicPlaybackState"); return;}
-      queueIndex=Math.min(Math.max(Number(state.queueIndex)||0,0),queue.length-1);
+      const localQueueIndex=Math.min(Math.max(Number(state.queueIndex)||0,0),queue.length-1);
+      queueIndex=localQueueIndex;
+      activePlaylistId=typeof state.activePlaylistId==="string"?state.activePlaylistId:null;
+      const activePlaylist=playlistById(activePlaylistId);
+      if(queueMatchesPlaylist(activePlaylist))queueIndex=playlistResumeIndex(activePlaylist);
       const restoredId=queue[queueIndex];
       const t=tracks.find(x=>x.id===restoredId);
       if(!t)return;
       playingId=t.id;
       selectedId=t.id;
-      const resumeAt=Number(state.currentTime)||0;
+      const resumeAt=queueIndex===localQueueIndex?(Number(state.currentTime)||0):0;
       const seekAfterLoad=()=>{if(resumeAt>0&&Number.isFinite(player.duration))player.currentTime=Math.min(resumeAt,Math.max(0,player.duration-.25));};
       player.addEventListener("loadedmetadata",seekAfterLoad,{once:true});
       player.src=t.audio_url;
@@ -543,14 +591,15 @@
     }
     function renderBrowseItems(items, isActive, onChoose, summaryText=""){
       if(browseSummaryEl) browseSummaryEl.textContent = summaryText;
-      groupsEl.innerHTML = browseItemsHtml(items.map(([name,count]) => ({name,label:groupLabel(name),count,active:isActive(name)})));
+      const entries=items.map(item=>Array.isArray(item)?{name:item[0],count:item[1]}:item);
+      groupsEl.innerHTML = browseItemsHtml(entries.map(item => ({...item,label:item.label||groupLabel(item.name),active:isActive(item.name)})));
       groupsEl.querySelectorAll(".groupItem").forEach(btn=>btn.addEventListener("click",()=>{
         onChoose(btn.dataset.group);
         setOpen(navEl, false);
       }));
     }
     function sectionGroupHtml(title, countText, cardsHtml, sectionClass="", gridClass="", actionHtml=""){
-      return componentSectionGroupHtml({title,label:groupLabel(title),countText,cardsHtml,sectionClass,gridClass,actionHtml});
+      return componentSectionGroupHtml({title,label:sectionLabel(title),countText,cardsHtml,sectionClass,gridClass,actionHtml});
     }
     function topControlBar(title, metricsHtml, controlsHtml){
       statsEl.innerHTML = topControlBarHtml({title,metricsHtml,controlsHtml});
@@ -601,10 +650,10 @@
         }
         on(control,"click",()=>{
           if(action==="musicBrowse")toggleBrowse();
-          else if(action==="musicQueue"){toggleOpen(queueDrawerEl); renderQueue();}
+          else if(action==="musicQueue")toggleMusicQueue();
           else if(action==="musicPlay")playList(currentPlaybackList());
           else if(action==="musicShuffle")playList(currentPlaybackList(),true);
-          else if(action==="videoQueue"){toggleOpen(videoQueueDrawerEl); renderVideoQueue();}
+          else if(action==="videoQueue")toggleVideoQueue();
           else if(action==="videoShuffle")playVideoList(videoFiltered(),true);
           else if(action==="interviewBrowse")toggleBrowse();
           else if(action==="interviewShuffle")shuffleInterview();
@@ -639,38 +688,70 @@
     function newestFirstList(list){return [...list].sort((a,b)=>{const ay=Number(String(a.date||"").slice(0,4))||0, by=Number(String(b.date||"").slice(0,4))||0; if(ay!==by)return by-ay; const ad=String(a.date||""), bd=String(b.date||""); if(ad!==bd)return bd.localeCompare(ad,undefined,{numeric:true,sensitivity:"base"}); const aa=albumOf(a), ba=albumOf(b); if(aa!==ba)return aa.localeCompare(ba,undefined,{numeric:true,sensitivity:"base"}); const at=Number(String(a.tracknumber||"").split("/")[0])||0, bt=Number(String(b.tracknumber||"").split("/")[0])||0; if(at!==bt)return at-bt; return String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"});});}
     function showQueueToast(message){if(!queueToastEl)return; clearTimeout(queueToastTimer); queueToastEl.textContent=message; queueToastEl.classList.add("show"); queueToastTimer=setTimeout(()=>queueToastEl.classList.remove("show"),1300);}
     function pulseQueueButton(button){if(!button)return; button.classList.remove("queuePulse"); void button.offsetWidth; button.classList.add("queuePulse");}
+    function clearSearchQuery(){if(searchEl)searchEl.value="";}
     // Named view transitions keep screen state changes in one place.
-    function resetMusicSelection(){selectedGroup="All"; selectedAlbum="All";}
-    function openMusicGroup(group){selectedGroup=group; selectedAlbum="All"; renderAll();}
-    function openMusicAlbum(album){selectedAlbum=album; renderAll();}
-    function closeMusicAlbum(){selectedAlbum="All"; renderAll();}
-    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); tableSortActive=false; selectedAlbum="All"; if(albumViewMode==="sections"||albumViewMode==="years"){selectedGroup="All"; searchEl.value="";} renderAll();}
-    function openVideoGroup(group){selectedVideoGroup=group; selectedVideoAsFolder=false; renderVideoAll();}
+    function resetMusicSelection(){selectedGroup="All"; selectedAlbum="All"; selectedPlaylistId=null;}
+    function openMusicGroup(group){clearSearchQuery(); selectedGroup=group; selectedAlbum="All"; selectedPlaylistId=null; renderAll();}
+    function openMusicAlbum(album){selectedAlbum=album; selectedPlaylistId=null; renderAll();}
+    function openPlaylist(id){selectedGroup="Playlists"; selectedAlbum="All"; selectedPlaylistId=id; renderAll();}
+    function closeMusicAlbum(){
+      const closingPlaylist=Boolean(selectedPlaylistId);
+      selectedAlbum="All";
+      selectedPlaylistId=null;
+      // A playlist is a detail destination, not a sticky library filter.
+      // Return to the complete album library when its detail view closes.
+      if(closingPlaylist)selectedGroup="All";
+      renderAll();
+    }
+    function setAlbumViewMode(mode){albumViewMode=mode; localStorage.setItem("albumViewMode",albumViewMode); tableSortActive=false; selectedAlbum="All"; selectedPlaylistId=null; if(albumViewMode==="sections"||albumViewMode==="years"){selectedGroup="All"; searchEl.value="";} renderAll();}
+    function openVideoGroup(group){clearSearchQuery(); selectedVideoGroup=group; selectedVideoAsFolder=false; renderVideoAll();}
     function openVideoFolder(folder){selectedVideoGroup=folder; selectedVideoAsFolder=true; renderVideoAll();}
     function closeVideoFolder(){selectedVideoGroup="All"; selectedVideoAsFolder=false; renderVideoAll();}
     // Music filtering/rendering. These functions decide what the current music page shows.
-    function baseFiltered(){const filter=musicFilterEl.value; return tracks.filter(t=>{if(selectedGroup!=="All"&&groupOf(t)!==selectedGroup)return false; if(selectedAlbum!=="All"&&albumOf(t)!==selectedAlbum)return false; if(filter==="art:with"&&!t.has_artwork)return false; if(filter==="art:missing"&&t.has_artwork)return false; if(!passesFieldFilter(t))return false; if(!containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]))return false; return true;});}
-    function filtered(){const list=baseFiltered(); if(selectedAlbum!=="All")return albumTrackList(list); return appMode==="listen"&&!tableSortActive?currentPlaybackList():sortedList(list);}
+    function playlistById(id=selectedPlaylistId){return playlists.find(playlist=>playlist.id===id)||null;}
+    function playlistTracks(playlist=playlistById()){return playlist?playlist.track_ids.map(id=>tracks.find(track=>track.id===id)).filter(Boolean):[];}
+    function baseFiltered(){if(selectedPlaylistId)return playlistTracks(); const filter=musicFilterEl.value; return tracks.filter(t=>{if(selectedGroup!=="Playlists"&&!musicGroupMatches(t))return false; if(selectedGroup==="Playlists")return false; if(selectedAlbum!=="All"&&albumOf(t)!==selectedAlbum)return false; if(filter==="art:with"&&!t.has_artwork)return false; if(filter==="art:missing"&&t.has_artwork)return false; if(!passesFieldFilter(t))return false; if(!containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]))return false; return true;});}
+    function filtered(){const list=baseFiltered(); if(selectedPlaylistId)return list; if(selectedAlbum!=="All")return albumTrackList(list); return appMode==="listen"&&!tableSortActive?currentPlaybackList():sortedList(list);}
+    function musicBrowseHierarchy(counts){
+      const parentGroups=new Map();
+      for(const [name,count] of counts){
+        const parts=String(name).split("/").filter(Boolean);
+        const parent=parts[0]||"(root)";
+        if(!parentGroups.has(parent))parentGroups.set(parent,{count:0,children:[]});
+        const group=parentGroups.get(parent);
+        group.count+=count;
+        if(parts.length>1)group.children.push([name,count]);
+      }
+      const entries=[];
+      for(const [parent,{count,children}] of [...parentGroups.entries()].sort(musicCategoryCompare)){
+        entries.push({name:parent,label:parent,count,className:children.length?"browseParent":""});
+        children.sort(musicCategoryCompare).forEach(([name,childCount])=>entries.push({name,label:groupLabel(name),count:childCount,className:"browseChild"}));
+      }
+      return entries;
+    }
     function renderGroups(){
       const counts = new Map();
-      counts.set("All", tracks.length);
       for(const t of tracks){
         const group = groupOf(t);
         counts.set(group, (counts.get(group) || 0) + 1);
       }
-      if(!counts.has(selectedGroup)) selectedGroup = "All";
-      const groups = [...counts.entries()].sort((a,b) =>
-        groupMode === "category"
-          ? musicCategoryCompare(a,b)
-          : (a[0] === "All" ? -1 : b[0] === "All" ? 1 : b[1] - a[1] || a[0].localeCompare(b[0]))
-      );
+      let groups;
+      if(groupMode==="category"){
+        groups=[{name:"All",count:tracks.length,className:"browseRoot"}];
+        if(playlists.length)groups.push({name:"Playlists",count:playlists.length,className:"browseRoot"});
+        groups.push(...musicBrowseHierarchy(counts));
+      }else{
+        groups=[["All",tracks.length],...counts.entries()].sort((a,b)=>a[0]==="All"?-1:b[0]==="All"?1:b[1]-a[1]||a[0].localeCompare(b[0]));
+        if(playlists.length)groups.splice(1,0,["Playlists",playlists.length]);
+      }
+      if(!groups.some(item=>(Array.isArray(item)?item[0]:item.name)===selectedGroup))selectedGroup="All";
       renderBrowseItems(groups, name=>name===selectedGroup, openMusicGroup, browseSummaryText(tracks.length, "track"));
     }
     function renderStats(){renderMusicTopControls();}
     function renderSortHeaders(){const showSort=appMode!=="listen"||selectedAlbum!=="All"||tableSortActive; document.querySelectorAll("th.sortable").forEach(th=>{const active=showSort&&th.dataset.sort===sortKey; th.classList.toggle("sorted",active); th.classList.toggle("asc",active&&sortDir==="asc"); th.classList.toggle("desc",active&&sortDir==="desc");});}
     function renderSelection(){selectedCountEl.textContent=`${selectedIds.size} selected`; const shown=filtered().map(t=>t.id); selectShownEl.checked=shown.length>0&&shown.every(id=>selectedIds.has(id)); const selectedArt=byId("saveSelectedArt"); if(selectedArt){selectedArt.disabled=selectedIds.size===0; selectedArt.textContent=selectedIds.size?`Replace ${selectedIds.size} Selected`:"Replace Selected Art";}}
     function badges(t){const bits=[]; if(t.missing_fields.length) bits.push(`<span class="pill missing">Missing: ${esc(t.missing_fields.join(", "))}</span>`); if(t.review_flags.length) bits.push(`<span class="pill missing">Review</span>`); return bits.join(" ");}
-    function albumSource(){return tracks.filter(t=>(selectedGroup==="All"||groupOf(t)===selectedGroup)&&containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]));}
+    function albumSource(){if(selectedGroup==="Playlists")return []; return tracks.filter(t=>musicGroupMatches(t)&&containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]));}
     function albumList(name){return albumSource().filter(t=>albumOf(t)===name);}
     function albumYears(list){return [...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort();}
     function albumFormats(list){return [...new Set(list.map(t=>String(t.format||"").toUpperCase()).filter(Boolean))].sort();}
@@ -692,29 +773,92 @@
         queueIconHtml:buttonIcon("queue"),
       });
     }
+    function scrollQueueCurrentToTop(listEl,index){
+      if(index<0){listEl.style.setProperty("--queue-scroll-runway","0px"); return;}
+      requestAnimationFrame(()=>{
+        const item=listEl.querySelector(`.queueItem[data-index="${index}"]`);
+        if(!item)return;
+        const runway=Math.max(0,listEl.clientHeight-item.offsetHeight-16);
+        listEl.style.setProperty("--queue-scroll-runway",`${runway}px`);
+        const listRect=listEl.getBoundingClientRect();
+        const itemRect=item.getBoundingClientRect();
+        listEl.scrollTop+=itemRect.top-listRect.top-8;
+      });
+    }
+    function toggleMusicQueue(){
+      const opening=!queueDrawerEl.classList.contains("open");
+      toggleOpen(queueDrawerEl);
+      renderQueue();
+      if(opening)scrollQueueCurrentToTop(queueListEl,queueIndex);
+    }
+    function toggleVideoQueue(){
+      const opening=!videoQueueDrawerEl.classList.contains("open");
+      toggleOpen(videoQueueDrawerEl);
+      renderVideoQueue();
+      if(opening)scrollQueueCurrentToTop(videoQueueListEl,videoQueueIndex);
+    }
     // Albums sort by their earliest track year, so multi-year albums stay together.
     function albumSortYear(list){const years=list.map(t=>Number(String(t.date||"").slice(0,4))).filter(y=>Number.isFinite(y)&&y>0); return years.length?Math.min(...years):-1;}
     function albumEntries(source){const albums=new Map(); for(const t of source){const name=albumOf(t); if(!albums.has(name)) albums.set(name,[]); albums.get(name).push(t);} return [...albums.entries()].sort((a,b)=>albumSortYear(b[1])-albumSortYear(a[1])||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}));}
     function albumCardHtml(name,list){const art=list.find(t=>t.has_artwork); const years=[...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort(); return musicComponents.albumCardHtml({name,artHtml:art?`<img class="albumArt" src="${artUrl(art)}" alt="" loading="lazy" decoding="async">`:"No Art",years,countText:countLabel(list.length,"track"),isPlaying:list.some(t=>t.id===playingId)});}
+    function playlistArtUrls(playlist, full=false){
+      const seenAlbums=new Set();
+      return playlistTracks(playlist).filter(track=>{
+        if(!track.has_artwork)return false;
+        const albumKey=`${String(track.albumartist||track.artist||"").toLowerCase()}\u0000${String(albumOf(track)||track.folder||track.id).toLowerCase()}`;
+        if(seenAlbums.has(albumKey))return false;
+        seenAlbums.add(albumKey);
+        return true;
+      }).map(track=>full?fullArtUrl(track):artUrl(track));
+    }
+    function playlistFormats(playlist){return albumFormats(playlistTracks(playlist));}
+    function playlistSizeMb(playlist){return albumSizeMb(playlistTracks(playlist));}
+    function playlistCardHtml(playlist){return playlistComponents.cardHtml({playlist,artUrls:playlistArtUrls(playlist),isPlaying:playlist.track_ids.includes(playingId)});}
+    function visiblePlaylists(){const query=searchQuery(); if(!query)return playlists; return playlists.filter(playlist=>playlist.name.toLowerCase().includes(query)||playlistTracks(playlist).some(t=>containsSearch([t.title,t.artist,t.album])));}
+    function renderPlaylistDetail(playlist){return playlistComponents.detailHtml({playlist,artUrls:playlistArtUrls(playlist,true),formats:playlistFormats(playlist),sizeMb:playlistSizeMb(playlist),queueCount:queue.length,queueIconHtml:buttonIcon("queue"),editable:appConfig.playlistEditable});}
+    function bindPlaylistCards(){
+      albumGridEl.querySelectorAll("button[data-playlist-action]").forEach(btn=>on(btn,"click",event=>{event.stopPropagation(); const playlist=playlistById(btn.dataset.playlistId); if(!playlist)return; const list=playlistTracks(playlist); if(btn.dataset.playlistAction==="add")addToMusicQueue(list); else playPlaylist(playlist,btn.dataset.playlistAction==="shuffle");}));
+      albumGridEl.querySelectorAll(".playlistCard[data-playlist-id]").forEach(card=>{const open=()=>openPlaylist(card.dataset.playlistId); on(card,"click",event=>{if(!event.target.closest(".cardActions"))open();}); on(card,"keydown",event=>{if(event.key==="Enter")open();});});
+    }
+    function bindPlaylistDetail(playlist){
+      const list=playlistTracks(playlist);
+      on(byId("playlistPlay"),"click",()=>playPlaylist(playlist));
+      on(byId("playlistShuffle"),"click",()=>playPlaylist(playlist,true));
+      on(byId("playlistAddQueue"),"click",()=>addToMusicQueue(list));
+      on(byId("playlistQueue"),"click",toggleMusicQueue);
+      const rename=byId("playlistRename"), remove=byId("playlistDelete");
+      if(rename)on(rename,"click",()=>openPlaylistDialog("rename",playlist));
+      if(remove)on(remove,"click",()=>deletePlaylist(playlist));
+    }
+    function renderPlaylists(){
+      const playlist=playlistById();
+      const isOpen=Boolean(playlist);
+      document.body.classList.toggle("albumSelected",isOpen);
+      const back=byId("showAllAlbums");
+      if(back)back.hidden=!isOpen;
+      albumGridEl.classList.toggle("albumFocus",isOpen);
+      albumGridEl.innerHTML=isOpen?renderPlaylistDetail(playlist):visiblePlaylists().map(playlistCardHtml).join("");
+      if(isOpen)bindPlaylistDetail(playlist); else bindPlaylistCards();
+    }
     function albumSectionName(list){const counts=new Map(); for(const t of list){const name=categoryOf(t); counts.set(name,(counts.get(name)||0)+1);} return [...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:"base"}))[0]?.[0]||"(root)";}
     function albumSections(ordered){const buckets=new Map(); for(const [name,list] of ordered){const bucket=albumSectionName(list); if(!buckets.has(bucket))buckets.set(bucket,[]); buckets.get(bucket).push([name,list]);} return [...buckets.entries()].sort(musicCategoryCompare);}
     function albumYearName(list){const year=albumSortYear(list); return year>0?String(year):"Unknown Year";}
     function albumYearSections(ordered){const buckets=new Map(); for(const [name,list] of ordered){const bucket=albumYearName(list); if(!buckets.has(bucket))buckets.set(bucket,[]); buckets.get(bucket).push([name,list]);} return [...buckets.entries()].sort((a,b)=>{const ay=Number(a[0]), by=Number(b[0]); if(Number.isFinite(ay)&&Number.isFinite(by))return by-ay; if(a[0]==="Unknown Year")return 1; if(b[0]==="Unknown Year")return -1; return a[0].localeCompare(b[0]);});}
     function albumDisplayEntries(source=albumSource()){const ordered=albumEntries(source); if(albumViewMode==="oldest")return [...ordered].reverse(); if(albumViewMode==="sections"&&!searchQuery())return albumSections(ordered).flatMap(([_title,items])=>items); if(albumViewMode==="years"&&!searchQuery())return albumYearSections(ordered).flatMap(([_title,items])=>items); return ordered;}
-    function currentPlaybackList(){if(selectedAlbum!=="All")return albumTrackList(albumList(selectedAlbum)); return albumDisplayEntries(albumSource()).flatMap(([_name,list])=>albumTrackList(list));}
+    function currentPlaybackList(){if(selectedPlaylistId)return playlistTracks(); if(selectedAlbum!=="All")return albumTrackList(albumList(selectedAlbum)); return albumDisplayEntries(albumSource()).flatMap(([_name,list])=>albumTrackList(list));}
     function musicSectionActionHtml(title){
-      return `<button class="secondary iconControl sectionPlayButton" data-music-section-play="${esc(title)}" type="button" title="Play section" aria-label="Play ${esc(groupLabel(title))}">&#9654;</button>`;
+      return `<button class="secondary iconControl sectionPlayButton" data-music-section-play="${esc(title)}" type="button" title="Play section" aria-label="Play ${esc(sectionLabel(title))}">&#9654;</button>`;
     }
     function renderAlbumSectionGroups(groups){return groups.map(([title,items])=>sectionGroupHtml(title, `${items.length} album${items.length===1?"":"s"}`, items.map(([name,list])=>albumCardHtml(name,list)).join(""), "", "", musicSectionActionHtml(title))).join("");}
     function renderAlbumSections(ordered){if(searchQuery())return ordered.map(([name,list])=>albumCardHtml(name,list)).join(""); return renderAlbumSectionGroups(albumSections(ordered));}
     function renderAlbumYearSections(ordered){if(searchQuery())return ordered.map(([name,list])=>albumCardHtml(name,list)).join(""); return renderAlbumSectionGroups(albumYearSections(ordered));}
     function sourceAlbumList(source, album){return albumTrackList(source.filter(t=>albumOf(t)===album));}
     function bindAlbumButtons(source){albumGridEl.querySelectorAll("button[data-action]").forEach(btn=>btn.addEventListener("click",(e)=>{e.stopPropagation(); btn.blur(); const album=btn.dataset.album, action=btn.dataset.action; if(action==="resume-play")return; if(action==="select"){openMusicAlbum(album); return;} const list=sourceAlbumList(source,album); if(action==="add"){addToMusicQueue(list); return;} playList(list, action==="shuffle");}));}
-    function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
+    function bindAlbumCards(source){albumGridEl.querySelectorAll(".albumCard[data-album]").forEach(card=>{card.addEventListener("click",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); albumClickTimer=setTimeout(()=>openMusicAlbum(card.dataset.album),220);}); card.addEventListener("keydown",e=>{if(e.key==="Enter")openMusicAlbum(card.dataset.album);}); card.addEventListener("dblclick",e=>{if(e.target.closest(".cardActions"))return; clearTimeout(albumClickTimer); playList(sourceAlbumList(source,card.dataset.album));});});}
     function sectionTrackList(title){const ordered=albumEntries(albumSource()); const groups=albumViewMode==="years"?albumYearSections(ordered):albumSections(ordered); const group=groups.find(([groupTitle])=>groupTitle===title); return group?group[1].flatMap(([_name,list])=>albumTrackList(list)):[];}
     function bindAlbumSectionActions(){albumGridEl.querySelectorAll("button[data-music-section-play]").forEach(btn=>btn.addEventListener("click",e=>{e.stopPropagation(); const list=sectionTrackList(btn.dataset.musicSectionPlay); if(list.length)playList(list);}));}
-    function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), queueBtn=byId("albumQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(queueBtn)on(queueBtn,"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); if(edit)on(edit,"click",()=>enterEditMode());}
-    function renderAlbums(){const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); const homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumSectionActions(); bindAlbumDetailActions();}
+    function bindAlbumDetailActions(){const play=byId("albumPlay"), shuffleBtn=byId("albumShuffle"), addBtn=byId("albumAddQueue"), queueBtn=byId("albumQueue"), edit=byId("albumEdit"); if(play)on(play,"click",()=>playList(filtered())); if(shuffleBtn)on(shuffleBtn,"click",()=>playList(filtered(),true)); if(addBtn)on(addBtn,"click",()=>addToMusicQueue(filtered())); if(queueBtn)on(queueBtn,"click",toggleMusicQueue); if(edit)on(edit,"click",()=>enterEditMode());}
+    function renderAlbums(){if(selectedGroup==="Playlists"){renderPlaylists(); return;} const source=albumSource(); const ordered=albumEntries(source); const displayOrdered=albumDisplayEntries(source); const selectedList=selectedAlbum==="All"?[]:albumList(selectedAlbum); const albumOpen=selectedAlbum!=="All"; document.body.classList.toggle("albumSelected",albumOpen); const backToAlbums=byId("showAllAlbums"); if(backToAlbums)backToAlbums.hidden=!albumOpen; if(albumViewModeEl)albumViewModeEl.value=albumViewMode; albumGridEl.classList.toggle("albumFocus",albumOpen); let homeHtml=albumViewMode==="sections"?renderAlbumSections(ordered):albumViewMode==="years"?renderAlbumYearSections(ordered):displayOrdered.map(([name,list])=>albumCardHtml(name,list)).join(""); if(albumViewMode==="sections"&&selectedGroup==="All"&&playlists.length&&!searchQuery())homeHtml=sectionGroupHtml("Playlists",countLabel(playlists.length,"playlist"),playlists.map(playlistCardHtml).join(""),"playlistHomeSection")+homeHtml; albumGridEl.innerHTML=albumOpen?renderAlbumDetail(selectedList):homeHtml; bindAlbumButtons(source); bindAlbumCards(source); bindAlbumSectionActions(); bindAlbumDetailActions(); bindPlaylistCards();}
     function trackRowHtml(track, divider=""){
       const trackNo=String(track.tracknumber||"").split("/")[0];
       const art=track.has_artwork?`<img class="coverThumb" src="${smallArtUrl(track)}" alt="" loading="lazy" decoding="async">`:`<span class="noArt">?</span>`;
@@ -749,14 +893,14 @@
     }
     function renderRows(){
       const list=filtered();
-      viewTitleEl.textContent = selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup;
+      viewTitleEl.textContent = selectedPlaylistId ? "Playlist" : selectedAlbum!=="All" ? (appMode==="listen"?"Album":selectedAlbum) : selectedGroup;
       renderStats();
       renderSortHeaders();
       rowsEl.innerHTML=trackRowsHtml(list);
       bindTrackRows();
       renderSelection();
     }
-    function updatePlayingHighlights(){const t=tracks.find(x=>x.id===playingId); rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.classList.toggle("playingNow",Number(row.dataset.id)===playingId)); albumGridEl.querySelectorAll(".albumCard").forEach(card=>card.classList.toggle("playingNow",!!t&&card.dataset.album===albumOf(t)));}
+    function updatePlayingHighlights(){const t=tracks.find(x=>x.id===playingId); rowsEl.querySelectorAll("tr[data-id]").forEach(row=>row.classList.toggle("playingNow",Number(row.dataset.id)===playingId)); albumGridEl.querySelectorAll(".albumCard[data-album]").forEach(card=>card.classList.toggle("playingNow",!!t&&card.dataset.album===albumOf(t))); albumGridEl.querySelectorAll(".playlistCard[data-playlist-id]").forEach(card=>card.classList.toggle("playingNow",Boolean(playlistById(card.dataset.playlistId)?.track_ids.includes(playingId))));}
     function renderAll(){renderGroups(); renderAlbums(); renderRows();}
     // Video browsing treats folders like albums. Cover images come from cover.jpg/png/webp.
     function yearFromText(text){const years=[...String(text||"").matchAll(/(?:19|20)\d{2}/g)].map(m=>Number(m[0])).filter(Boolean); return years.length?Math.max(...years):0;}
@@ -919,6 +1063,7 @@
         : `<div class="interviewItem"><span class="interviewItemTitle">No interviews found</span><span class="interviewItemSub">Try a different search.</span></div>`;
       interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{
         const picked=interviews.find(i=>i.id===Number(btn.dataset.id));
+        clearSearchQuery();
         saveSelectedInterview(picked);
         setOpen(interviewListEl,false);
         renderInterviews();
@@ -1010,12 +1155,20 @@
     async function bulkSave(){const values={artist:bulkArtist.value, album:bulkAlbum.value, albumartist:bulkAlbumArtist.value, date:bulkDate.value, genre:bulkGenre.value}; const result=await fetchJson("/api/bulk/metadata",{method:"POST",headers:editHeaders({"Content-Type":"application/json"}),body:JSON.stringify({ids:[...selectedIds],values})}); if(!result.ok){alert(result.error||"Bulk save failed"); return;} const changed=result.results.filter(r=>r.ok).length; selectedIds.clear(); alert(`Bulk save complete for ${changed} files. Selection cleared.`); await loadTracks(false, selectedId);}
     // Music queue and playback. The queue is just an ordered list of track IDs.
     function shuffle(list){const copy=[...list]; for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [copy[i],copy[j]]=[copy[j],copy[i]];} return copy;}
+    function uniqueTracks(list){const seen=new Set(); return list.filter(track=>track&&!seen.has(track.id)&&seen.add(track.id));}
     /** @brief Replace the music queue and start playback at the requested track. */
-    function playList(list, randomize=false, startId=null, options={}){const playable=randomize?shuffle(list):[...list]; if(!playable.length)return; queue=playable.map(t=>t.id); queueIndex=startId===null?0:Math.max(0,queue.indexOf(startId)); saveMusicState({force:true}); playQueueIndex(queueIndex, options);}
+    function playList(list, randomize=false, startId=null, options={}){const unique=uniqueTracks(list); const playable=randomize?shuffle(unique):unique; if(!playable.length)return; activePlaylistId=options.playlistId||null; queue=playable.map(t=>t.id); const savedIndex=Number(options.startIndex); queueIndex=Number.isInteger(savedIndex)?Math.min(Math.max(savedIndex,0),queue.length-1):startId===null?0:Math.max(0,queue.indexOf(startId)); saveMusicState({force:true}); playQueueIndex(queueIndex, options);}
+    function playPlaylist(playlist, randomize=false, startId=null){
+      const list=playlistTracks(playlist);
+      if(!list.length)return;
+      if(!randomize&&startId===null&&activePlaylistId===playlist.id&&queueMatchesPlaylist(playlist)&&playingId===queue[queueIndex]){playCurrentAudio(); return;}
+      const startIndex=startId===null?playlistResumeIndex(playlist):Math.max(0,playlist.track_ids.indexOf(startId));
+      playList(list,randomize,startId,{playlistId:randomize?null:playlist.id,startIndex:randomize?0:startIndex});
+    }
     // When a track is opened from an album page, Next should continue through
     // the album and then later albums in the current browse order.
     function albumPlaybackContext(startId){const current=tracks.find(t=>t.id===startId); if(!current||selectedAlbum==="All")return [current].filter(Boolean); const ordered=albumDisplayEntries(albumSource()); const albumIndex=ordered.findIndex(([name])=>name===selectedAlbum); if(albumIndex<0)return albumTrackList(albumList(selectedAlbum)); const list=[]; for(const [_name,tracksForAlbum] of ordered.slice(albumIndex)){list.push(...albumTrackList(tracksForAlbum));} return list.length?list:[current];}
-    function playSingleTrack(id, options={}){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id, options); return;} playList([t], false, id, options);}
+    function playSingleTrack(id, options={}){const t=tracks.find(x=>x.id===id); if(!t)return; if(appMode==="listen"&&selectedPlaylistId){const playlist=playlistById(); if(playlist)playPlaylist(playlist,false,id); return;} if(appMode==="listen"&&selectedAlbum!=="All"){playList(albumPlaybackContext(id), false, id, options); return;} playList([t], false, id, options);}
     // If the queue was empty, adding songs starts playback immediately. If
     // something is already playing, additions are non-disruptive.
     function addToMusicQueue(list){
@@ -1045,6 +1198,7 @@
       switchingAudioTrack=!player.paused;
       playingId=t.id;
       selectedId=t.id;
+      resetPlaybackTimeline(t);
       player.src=t.audio_url;
       player.load();
       resetStatsSession(t.id);
@@ -1131,6 +1285,97 @@
         : "";
       bindQueueList(queueListEl, playQueueIndex, removeQueueIndex);
       bindQueueDrag(queueListEl, moveQueueItem);
+      updatePlaylistSaveAction();
+    }
+    async function playlistRequest(url, options={}){
+      const response=await fetch(url,{cache:"no-store",...options});
+      let result={};
+      try{result=await response.json();}catch{}
+      if(!response.ok||result.ok===false)throw new Error(result.error||"Playlist request failed.");
+      return result;
+    }
+    async function loadPlaylists(render=true){
+      const data=await fetchJson("/api/playlists");
+      playlists=data.playlists||[];
+      if(selectedPlaylistId&&!playlistById()){
+        selectedPlaylistId=null;
+        if(!playlists.length)selectedGroup="All";
+      }
+      if(render&&mediaType==="music")renderAll();
+    }
+    function updatePlaylistSaveAction(){
+      const button=byId("saveQueuePlaylist");
+      if(!button)return;
+      const playlist=playlistById(activePlaylistId);
+      const label=playlist?`Update ${playlist.name} from queue`:"Save queue as playlist";
+      button.title=label;
+      button.setAttribute("aria-label",label);
+      button.dataset.playlistId=playlist?.id||"";
+    }
+    async function updatePlaylistFromQueue(playlist){
+      if(!appConfig.playlistEditable)return;
+      const trackIds=[...new Set(queue)].filter(id=>tracks.some(track=>track.id===id));
+      if(!trackIds.length){showQueueToast("Queue is empty"); return;}
+      try{
+        await playlistRequest(`/api/playlists/${encodeURIComponent(playlist.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({track_ids:trackIds})});
+        await loadPlaylists(false);
+        syncActivePlaylistContext();
+        showQueueToast("Playlist updated");
+        renderAll();
+        renderQueue();
+      }catch(error){showQueueToast(error.message);}
+    }
+    function saveOrUpdateQueuePlaylist(){
+      const playlist=playlistById(activePlaylistId);
+      if(playlist){updatePlaylistFromQueue(playlist); return;}
+      openPlaylistDialog("create");
+    }
+    function openPlaylistDialog(mode, playlist=null){
+      if(!appConfig.playlistEditable)return;
+      if(mode==="create"&&!queue.length){showQueueToast("Queue is empty"); return;}
+      playlistDialogMode=mode;
+      playlistDialogEl.dataset.playlistId=playlist?.id||"";
+      byId("playlistDialogTitle").textContent=mode==="rename"?"Rename Playlist":"Save Playlist";
+      byId("confirmPlaylist").textContent=mode==="rename"?"Rename":"Save";
+      playlistNameEl.value=playlist?.name||"";
+      playlistMessageEl.textContent="";
+      playlistMessageEl.className="message";
+      playlistDialogEl.showModal();
+      requestAnimationFrame(()=>playlistNameEl.focus());
+    }
+    async function submitPlaylistDialog(event){
+      event.preventDefault();
+      const name=playlistNameEl.value.trim();
+      playlistMessageEl.textContent=playlistDialogMode==="rename"?"Renaming...":"Saving...";
+      try{
+        if(playlistDialogMode==="rename"){
+          const id=playlistDialogEl.dataset.playlistId;
+          await playlistRequest(`/api/playlists/${encodeURIComponent(id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+        }else{
+          const trackIds=[...new Set(queue)].filter(id=>tracks.some(track=>track.id===id));
+          const result=await playlistRequest("/api/playlists",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,track_ids:trackIds})});
+          activePlaylistId=result.id;
+        }
+        await loadPlaylists(false);
+        syncActivePlaylistContext();
+        playlistDialogEl.close();
+        showQueueToast(playlistDialogMode==="rename"?"Playlist renamed":"Playlist saved");
+        renderAll();
+      }catch(error){
+        playlistMessageEl.className="message error";
+        playlistMessageEl.textContent=error.message;
+      }
+    }
+    async function deletePlaylist(playlist){
+      if(!appConfig.playlistEditable||!confirm(`Delete playlist "${playlist.name}"?`))return;
+      try{
+        await playlistRequest(`/api/playlists/${encodeURIComponent(playlist.id)}`,{method:"DELETE"});
+        if(activePlaylistId===playlist.id)activePlaylistId=null;
+        selectedPlaylistId=null;
+        await loadPlaylists(false);
+        showQueueToast("Playlist deleted");
+        renderAll();
+      }catch(error){showQueueToast(error.message);}
     }
     function updateMusicQueueLabels(){
       topQueueLabelEl.innerHTML=`${buttonIcon("queue")}<span>${queue.length}</span>`;
@@ -1154,6 +1399,18 @@
       return Number.isFinite(player.duration)
         ? `-${fmt(Math.max(0, player.duration - player.currentTime))}`
         : durationEl.textContent;
+    }
+    /** Keep both seek controls stable while the shared audio element changes files. */
+    function resetPlaybackTimeline(t){
+      seeking=false;
+      const knownDuration=Number(knownDurations.get(t?.id)||t?.duration||0);
+      currentTimeEl.textContent="0:00";
+      durationEl.textContent=knownDuration>0?fmt(knownDuration):"0:00";
+      seekBar.value="0";
+      const npCurrent=byId("npCurrentTime"), npDuration=byId("npDuration"), npSeek=byId("npSeekBar");
+      if(npCurrent)npCurrent.textContent="0:00";
+      if(npDuration)npDuration.textContent=knownDuration>0?`-${fmt(knownDuration)}`:"0:00";
+      if(npSeek)npSeek.value="0";
     }
     function nowPlayingArtSrc(t){return t?.has_artwork?stableAlbumArtUrl(t):"";}
     function renderLrcLyrics(box, trackId, text){
@@ -1290,7 +1547,7 @@
       on(byId("npPrev"),"click",()=>playQueueIndex(queueIndex-1));
       on(byId("npNext"),"click",()=>playQueueIndex(queueIndex+1));
       on(byId("npPlayPause"),"click",toggleAudioPlayback);
-      on(byId("npQueue"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();});
+      on(byId("npQueue"),"click",toggleMusicQueue);
       on(npSeek,"input",()=>{seeking=true;});
       on(npSeek,"change",()=>{if(player.duration) player.currentTime=(Number(npSeek.value)/1000)*player.duration; seeking=false;});
     }
@@ -1515,13 +1772,28 @@
     }
     // Theme customization. Fixed themes are simple CSS classes; adaptive themes
     // sample the current artwork so the accent can follow the album/song.
+    function currentThemeChoice(){
+      return THEME_CHOICES.find(theme=>theme.id===activeTheme)||THEME_CHOICES[0];
+    }
+    function setThemeMode(mode){
+      const current=currentThemeChoice();
+      const matching=THEME_CHOICES.find(theme=>theme.mode===mode&&theme.family===current.family)
+        ||THEME_CHOICES.find(theme=>theme.mode===mode&&theme.family==="adaptive");
+      if(matching)setAccentTheme(matching.id);
+    }
     function renderCustomize(){
       if(!themeGridEl) return;
-      statsEl.innerHTML = `<div class="topTabControls"><strong>Customize</strong><div class="topTabMetrics"><span class="stat">Pick a color theme.</span></div></div>`;
-      themeGridEl.innerHTML = THEME_CHOICES.map(theme => {
+      const current=currentThemeChoice();
+      const mode=current.mode||"dark";
+      const visibleThemes=THEME_CHOICES.filter(theme=>theme.mode===mode);
+      statsEl.innerHTML = `<div class="topTabControls"><strong>Customize</strong></div>`;
+      themeGridEl.innerHTML = `<div class="themeModeToggle" role="group" aria-label="Appearance"><button type="button" data-theme-mode="light" class="${mode==="light"?"active":""}" aria-pressed="${mode==="light"}">Light</button><button type="button" data-theme-mode="dark" class="${mode==="dark"?"active":""}" aria-pressed="${mode==="dark"}">Dark</button></div><div class="themeChoiceGrid">${visibleThemes.map(theme => {
         const active = theme.id === activeTheme ? " active" : "";
-        return `<button class="themeChoice${active}" data-theme="${esc(theme.id)}" type="button" style="--swatch-a:${esc(theme.swatchA)};--swatch-b:${esc(theme.swatchB)};--swatch-rgb:${esc(theme.swatchRgb)}"><span class="themeSwatch"></span><span><strong>${esc(theme.label)}</strong><span>${esc(theme.note)}</span></span></button>`;
-      }).join("");
+        return `<button class="themeChoice${active}" data-theme="${esc(theme.id)}" type="button" style="--swatch-a:${esc(theme.swatchA)};--swatch-b:${esc(theme.swatchB)};--swatch-rgb:${esc(theme.swatchRgb)}"><span class="themeSwatch"></span><strong>${esc(theme.label)}</strong></button>`;
+      }).join("")}</div>`;
+      themeGridEl.querySelectorAll("[data-theme-mode]").forEach(button => {
+        on(button, "click", () => setThemeMode(button.dataset.themeMode));
+      });
       themeGridEl.querySelectorAll(".themeChoice").forEach(button => {
         on(button, "click", () => setAccentTheme(button.dataset.theme));
       });
@@ -1572,6 +1844,8 @@
       document.querySelectorAll("[data-text-label]").forEach(el=>{el.textContent=textLabel;});
       const emptyText=document.querySelector("[data-text-empty]");
       if(emptyText)emptyText.textContent=`Text files are loaded locally from media\\${appConfig.textDir||"Interviews"}.`;
+      const savePlaylist=byId("saveQueuePlaylist");
+      if(savePlaylist)savePlaylist.hidden=!appConfig.playlistEditable;
     }
     async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true};} applyDisplayConfig(); document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
     function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")renderListeningStats(); else if(mediaType==="customize")renderCustomize(); else renderAll();}
@@ -1580,6 +1854,7 @@
       const trackData = await fetchJson("/api/tracks");
       tracks = trackData.tracks;
       tracksLoaded = true;
+      await loadPlaylists(false);
       if(refresh && videosLoaded) await loadVideos();
       if(refresh && interviewsLoaded) await loadInterviews();
       if(refresh && listeningStats) await loadListeningStats();
@@ -1671,6 +1946,7 @@
     // not keep decoding in the background while the user is browsing music or stats.
     function setMediaType(type){
       if(!appConfig.editable && type === "health") type = "music";
+      if(mediaType!==type)clearSearchQuery();
       mediaType = type;
       // Phones/tablets are playback-first. Editing remains desktop-only so the
       // small layout does not expose destructive metadata controls.
@@ -1709,15 +1985,16 @@
     // Event binding lives at the end so startup is easy to follow. These
     // functions mostly connect stable DOM controls to the stateful functions above.
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
-    function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",()=>{toggleOpen(queueDrawerEl); renderQueue();}); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
+    function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
     function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"beforeunload",()=>flushListeningStats({force:true}));}
     function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
-    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("stopVideo"),"click",()=>{stopVideoPlayback(); saveVideoState({force:true}); renderVideos(); renderVideoQueue();}); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("repeatVideoQueue"),"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",()=>{toggleOpen(videoQueueDrawerEl); renderVideoQueue();}); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
+    function bindVideoControls(){on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();}); on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1)); on(byId("nextVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex+1)); on(byId("stopVideo"),"click",()=>{stopVideoPlayback(); saveVideoState({force:true}); renderVideos(); renderVideoQueue();}); on(byId("shuffleShownVideo"),"click",()=>playVideoList(videoFiltered(),true)); on(videoRepeatBtn,"click",cycleVideoRepeat); on(byId("repeatVideoQueue"),"click",cycleVideoRepeat); on(byId("videoQueueToggle"),"click",toggleVideoQueue); on(byId("toggleVideoQueueTitle"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("closeVideoQueue"),"click",()=>setOpen(videoQueueDrawerEl,false)); on(byId("clearVideoQueue"),"click",()=>{videoQueue=[]; videoQueueIndex=-1; stopVideoPlayback(); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideos(); renderVideoQueue();}); on(byId("shuffleVideoQueue"),"click",()=>{const current=videoQueue[videoQueueIndex]; videoQueue=shuffle(videoQueue.map(id=>videos.find(v=>v.id===id)).filter(Boolean)).map(v=>v.id); videoQueueIndex=current===undefined?-1:videoQueue.indexOf(current); saveVideoState({force:true}); updateVideoQueueLabel(); renderVideoQueue();}); on(videoPlayerEl,"play",()=>saveVideoState({force:true})); on(videoPlayerEl,"pause",()=>saveVideoState({force:true})); on(videoPlayerEl,"timeupdate",()=>saveVideoState()); on(videoPlayerEl,"seeked",()=>saveVideoState({force:true})); on(videoPlayerEl,"ended",()=>{saveVideoState({force:true}); if(videoRepeatMode==="one"){videoPlayerEl.currentTime=0; videoPlayerEl.play(); return;} if(videoQueueIndex+1<videoQueue.length) playVideoQueueIndex(videoQueueIndex+1); else if(videoRepeatMode==="all"&&videoQueue.length) playVideoQueueIndex(0);});}
     function bindQueueControls(){
       on(byId("toggleQueueTitle"),"click",()=>setOpen(queueDrawerEl,false));
       on(byId("closeQueue"),"click",()=>setOpen(queueDrawerEl,false));
       on(byId("repeatQueue"),"click",cycleMusicRepeat);
+      on(byId("saveQueuePlaylist"),"click",saveOrUpdateQueuePlaylist);
       on(byId("clearQueue"),"click",()=>{
         queue=[];
         queueIndex=-1;
@@ -1735,6 +2012,12 @@
         updateNow();
         renderQueue();
       });
+    }
+    function bindPlaylistDialog(){
+      on(playlistFormEl,"submit",submitPlaylistDialog);
+      on(byId("closePlaylistDialog"),"click",()=>playlistDialogEl.close());
+      on(byId("cancelPlaylistDialog"),"click",()=>playlistDialogEl.close());
+      on(playlistDialogEl,"click",event=>{if(event.target===playlistDialogEl)playlistDialogEl.close();});
     }
     /** @brief Wire mini-player, audio element events, and Now Playing sync. */
     function bindAudioPlayer(){
@@ -1763,7 +2046,13 @@
       });
       on(player,"loadedmetadata",()=>{
         setupMediaSessionActions();
+        seekBar.value=player.duration?Math.round((player.currentTime/player.duration)*1000):0;
+        currentTimeEl.textContent=fmt(player.currentTime);
         durationEl.textContent=fmt(player.duration);
+        const npCurrent=byId("npCurrentTime"), npDuration=byId("npDuration"), npSeek=byId("npSeekBar");
+        if(npCurrent)npCurrent.textContent=currentTimeEl.textContent;
+        if(npDuration)npDuration.textContent=nowPlayingRemainingText();
+        if(npSeek)npSeek.value=seekBar.value;
         if(playingId!==null&&Number.isFinite(player.duration))knownDurations.set(playingId,player.duration);
         updateNow();
         renderQueue();
@@ -1799,6 +2088,7 @@
       bindKeyboardShortcuts();
       bindVideoControls();
       bindQueueControls();
+      bindPlaylistDialog();
       bindAudioPlayer();
 
       videoSortEl.value = videoSort;

@@ -136,6 +136,7 @@
       .groupItem { width:100%; max-width:none; margin:0; }
       body.music .browseList, body.video .browseList { gap:0; padding:6px; }
       body.music .groupItem, body.video .groupItem { min-height:31px; height:auto; padding:5px 8px; font-size:13px; align-items:center; }
+      body.music .groupItem.browseChild { padding-left:24px; }
       body.music .groupCount, body.video .groupCount { font-size:11px; padding-top:0; }
       body.interviews .interviewList { display:grid; grid-template-rows:auto minmax(0,1fr); }
       body.interviews .interviewsPanel { grid-template-columns:1fr; }
@@ -241,6 +242,7 @@
       .browseHead { padding:10px; }
       .groupItem { min-height:34px; }
       body.music .groupItem, body.video .groupItem { min-height:30px; padding:5px 8px; }
+      body.music .groupItem.browseChild { padding-left:24px; }
       .bulkPanel { display:none; }
       .controls { gap:6px; }
       .viewTitle { width:100%; font-size:20px; }

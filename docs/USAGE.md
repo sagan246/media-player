@@ -34,6 +34,7 @@ Common settings:
 {
   "app_name": "Local Media Player",
   "editable": true,
+  "playlist_editable": true,
   "web_share": false,
   "music_dir": "Music",
   "video_dir": "Video",
@@ -48,6 +49,7 @@ Useful fields:
 
 - `app_name` - name shown in the browser.
 - `editable` - enables or disables metadata editing.
+- `playlist_editable` - allows playlist create, rename, update, and delete independently of metadata editing.
 - `web_share` - enables read-only web-share behavior.
 - `music_dir` - music folder inside the selected media folder.
 - `video_dir` - video folder inside the selected media folder.
@@ -147,5 +149,6 @@ Use this for temporary sharing through a public tunnel.
 python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8767 --web-share
 ```
 
-Port `8767` is intended for read-only sharing. Keep port `8766` for local
-editable use.
+Port `8767` is intended for media read-only sharing. Playlists remain manageable
+unless `playlist_editable` is set to `false`; metadata and embedded artwork stay
+read-only. Keep port `8766` for local metadata editing.

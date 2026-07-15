@@ -73,8 +73,9 @@
     return `<button class="secondary queueCountButton" data-top-action="${esc(action)}" type="button" title="${esc(label)}" aria-label="${esc(label)}">${buttonIcon("queue")}<span>${esc(count)}</span></button>`;
   }
 
-  function browseItemHtml({name, label, count, active=false}){
-    return `<button class="groupItem ${active ? "active" : ""}" data-group="${esc(name)}" title="${esc(name)}"><span class="groupName">${esc(label || name)}</span><span class="groupCount">${esc(count)}</span></button>`;
+  function browseItemHtml({name, label, count, active=false, className=""}){
+    const classes = `groupItem ${className} ${active ? "active" : ""}`.trim();
+    return `<button class="${classes}" data-group="${esc(name)}" title="${esc(name)}"><span class="groupName">${esc(label || name)}</span><span class="groupCount">${esc(count)}</span></button>`;
   }
 
   function browseItemsHtml(items){

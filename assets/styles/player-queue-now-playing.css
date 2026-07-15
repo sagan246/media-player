@@ -73,7 +73,9 @@
     .queueSummary { color:var(--muted); font-weight:800; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .queuePanelActions { display:flex; gap:8px; flex-wrap:wrap; }
     .queuePanelActions .iconControl { width:36px; height:34px; padding:0; flex:0 0 36px; }
+    .queuePanelActions .queueClearAction { margin-left:auto; }
     .queuePanelList { overflow:auto; padding:8px; }
+    .queuePanelList::after { content:""; display:block; height:var(--queue-scroll-runway,0px); }
     .mediaRow { display:grid; gap:10px; align-items:center; border:1px solid transparent; }
     .mediaRowText { min-width:0; }
     .mediaRowTitle { min-width:0; overflow:hidden; text-overflow:ellipsis; }

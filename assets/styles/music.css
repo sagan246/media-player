@@ -25,6 +25,21 @@
     .albumCard.playingNow::after { content:""; position:absolute; inset:0; z-index:1; pointer-events:none; background:linear-gradient(110deg, transparent 0%, rgba(var(--accent-sheen-rgb),.13) 46%, transparent 62%); transform:translateX(-125%); animation:cardLightSweep 4.2s ease-in-out infinite; }
     .artButton { width:100%; height:auto; aspect-ratio:1/1; padding:0; overflow:hidden; border:0; border-radius:0; background:var(--media-empty-bg); color:var(--muted); display:grid; place-items:center; }
     .albumArt { width:100%; height:100%; border-radius:0; object-fit:cover; display:block; background:var(--media-empty-bg); }
+    .playlistMosaic { width:100%; aspect-ratio:1/1; display:grid; grid-template-columns:repeat(2,1fr); grid-template-rows:repeat(2,1fr); overflow:hidden; background:var(--media-empty-bg); }
+    .playlistMosaic.playlistTiles1 { grid-template-columns:1fr; grid-template-rows:1fr; }
+    .playlistMosaic img { width:100%; height:100%; min-width:0; min-height:0; object-fit:cover; display:block; }
+    .playlistNoArt { width:100%; aspect-ratio:1/1; display:grid; place-items:center; background:var(--media-empty-bg); color:var(--muted); font-weight:800; }
+    .playlistDialog { width:min(420px,calc(100vw - 32px)); padding:0; border:1px solid var(--card-border); border-radius:8px; background:var(--panel); color:var(--text); box-shadow:0 22px 60px rgba(0,0,0,.42); }
+    .playlistDialog::backdrop { background:rgba(0,0,0,.62); backdrop-filter:blur(4px); }
+    .playlistDialog form { padding:18px; gap:12px; }
+    .dialogHead { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .dialogHead h2 { margin:0; font-size:20px; }
+    .dialogHead .iconControl { width:34px; height:34px; padding:0; background:transparent; border-color:transparent; }
+    .dialogHead .iconControl:hover { background:var(--accent-soft); border-color:var(--accent-subtle-border); }
+    .playlistDialog input { width:100%; }
+    .dialogActions { display:flex; justify-content:flex-end; gap:8px; }
+    .dialogActions .secondary { background:var(--soft); }
+    body[class*="theme-light"] .playlistDialog { background:var(--panel); }
     .albumName { min-height:36px; line-height:1.22; font-size:13px; font-weight:var(--card-title-weight); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
     .albumMeta { color:var(--muted); font-size:12px; font-weight:var(--card-meta-weight); }
     .cardActions { position:absolute; left:8px; right:8px; top:8px; z-index:2; display:flex; gap:6px; justify-content:flex-end; opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .15s ease, transform .15s ease; }

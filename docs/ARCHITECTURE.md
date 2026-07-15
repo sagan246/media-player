@@ -14,6 +14,9 @@ Browser UI -> media_player.py -> src/media_player_app/metadata_tag_tools.py -> M
 
 Stats:
 Browser UI -> media_player.py -> src/media_player_app/listening_stats.py -> SQLite
+
+Playlists:
+Browser UI -> media_player.py -> src/media_player_app/playlist_store.py -> runtime/playlists.json
 ```
 
 ## Repository Layout
@@ -34,6 +37,7 @@ Browser UI -> media_player.py -> src/media_player_app/listening_stats.py -> SQLi
 - `src/media_player_app/metadata_tag_tools.py` - MP3/FLAC metadata and artwork writes.
 - `src/media_player_app/metadata_browser.py` - audio metadata/artwork reading helpers.
 - `src/media_player_app/listening_stats.py` - playback stats stored in SQLite.
+- `src/media_player_app/playlist_store.py` - named playlists and shared resume tracks stored as relative track references.
 - `src/media_player_app/launcher_gui.py` - optional launcher for access modes.
 
 ## Frontend
@@ -42,6 +46,7 @@ Browser UI -> media_player.py -> src/media_player_app/listening_stats.py -> SQLi
 - `assets/app.js` - main state, playback, routing, and event wiring.
 - `assets/components.js` - shared UI helpers.
 - `assets/music-components.js` - music rendering.
+- `assets/playlist-components.js` - playlist cards and detail views.
 - `assets/video-components.js` - video rendering.
 - `assets/queue-components.js` - music/video queues.
 - `assets/now-playing-components.js` - Now Playing screen.
@@ -70,15 +75,22 @@ Browser UI -> media_player.py -> src/media_player_app/listening_stats.py -> SQLi
 - `GET /api/videos`
 - `GET /api/interviews`
 - `GET /api/listening-stats`
+- `GET /api/playlists`
 - `GET /audio/<track-id>`
 - `GET /video/<video-id>`
 - `GET /lyrics/<track-id>`
 - `POST /api/listening-stats`
+- `POST /api/playlists`
+- `POST /api/playlists/<playlist-id>/resume`
+- `PATCH /api/playlists/<playlist-id>`
+- `DELETE /api/playlists/<playlist-id>`
 - `POST /api/track/<track-id>/metadata`
 - `POST /api/track/<track-id>/artwork`
 - `POST /api/bulk/metadata`
 
-Metadata write APIs are disabled in read-only and web-share modes.
+Metadata write APIs are disabled in read-only and web-share modes. Playlist
+management and resume updates remain available because they are player state;
+`playlist_editable` can disable playlist changes independently when needed.
 
 ## Streaming
 

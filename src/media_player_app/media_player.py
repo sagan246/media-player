@@ -44,6 +44,7 @@ RouteHandler = Callable[[], None]
 from .media_library import Library, LibraryConfig  # noqa: E402
 from .listening_stats import ListeningStats  # noqa: E402
 from .metadata_tag_tools import EDITABLE_FIELDS, decode_image_payload, save_artwork_for_paths, save_metadata  # noqa: E402
+from .playlist_store import PlaylistError, PlaylistStore  # noqa: E402
 try:  # noqa: E402
     from PIL import Image
 except ImportError:  # noqa: E402
@@ -139,8 +140,10 @@ class Handler(BaseHTTPRequestHandler):
 
     library: Library
     listening_stats: ListeningStats
+    playlist_store: PlaylistStore
     player_config = PlayerConfig()
     editable = True
+    playlist_editable = True
     web_share = False
     log_lock = threading.Lock()
 
@@ -229,6 +232,13 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def require_playlist_access(self) -> bool:
+        """Allow playlist changes independently from media metadata editing."""
+        if not self.playlist_editable:
+            self.send_error_json("Playlist changes are disabled for this server.", status=HTTPStatus.FORBIDDEN)
+            return False
+        return True
+
     def send_file(self, path: Path, cache_control: str = "no-store") -> None:
         """! @brief Send a small static file or cached image.
 
@@ -268,6 +278,11 @@ class Handler(BaseHTTPRequestHandler):
             interviews = [self.public_interview(interview) for interview in self.library.interviews]
         self.send_json({"interviews": interviews, "total": len(interviews)})
 
+    def handle_playlists_api(self) -> None:
+        """! @brief Return playlists resolved against the current music scan."""
+        playlists = self.playlist_store.list_for_library(self.library)
+        self.send_json({"playlists": playlists, "total": len(playlists)})
+
     def handle_listening_stats_api(self, query_text: str) -> None:
         """! @brief Return summary-only listening stats for the Stats tab."""
         query = parse_qs(query_text)
@@ -281,6 +296,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(
             {
                 "editable": self.editable,
+                "playlistEditable": self.playlist_editable,
                 "webShare": self.web_share,
                 "appName": self.player_config.app_name,
                 "textTabLabel": self.player_config.text_tab_label,
@@ -343,6 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/config": self.handle_config_api,
             "/api/videos": self.handle_videos_api,
             "/api/interviews": self.handle_interviews_api,
+            "/api/playlists": self.handle_playlists_api,
             "/api/listening-stats": lambda: self.handle_listening_stats_api(query_text),
             "/api/refresh": self.handle_refresh_api,
         }
@@ -396,6 +413,17 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/listening-stats":
             self.handle_listening_stats_record()
             return
+        # Resume position is playback state, not metadata editing. Keeping this
+        # route available in read-only mode lets a phone and desktop stay in sync.
+        if parsed.path.startswith("/api/playlists/") and parsed.path.endswith("/resume"):
+            self.handle_playlist_resume(parsed.path)
+            return
+        # Playlists are player state, so listen/read-only mode may manage them
+        # without gaining access to metadata or embedded-artwork writes.
+        if parsed.path == "/api/playlists":
+            if self.require_playlist_access():
+                self.handle_playlist_create()
+            return
         if not self.require_edit_access():
             return
 
@@ -410,6 +438,70 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_track_metadata(parsed.path)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_PATCH(self) -> None:  # noqa: N802
+        """! @brief Update a playlist when the server allows writes."""
+        parsed = urlparse(self.path)
+        if not self.require_playlist_access():
+            return
+        if parsed.path.startswith("/api/playlists/"):
+            self.handle_playlist_update(parsed.path)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_DELETE(self) -> None:  # noqa: N802
+        """! @brief Delete a playlist definition when the server allows writes."""
+        parsed = urlparse(self.path)
+        if not self.require_playlist_access():
+            return
+        if parsed.path.startswith("/api/playlists/"):
+            self.handle_playlist_delete(parsed.path)
+            return
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def handle_playlist_create(self) -> None:
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        try:
+            record = self.playlist_store.create(payload.get("name"), payload.get("track_ids"), self.library)
+            self.send_ok(id=record["id"], name=record["name"])
+        except PlaylistError as exc:
+            self.send_error_json(str(exc))
+
+    def handle_playlist_update(self, path_text: str) -> None:
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        try:
+            playlist_id = unquote(path_text.rsplit("/", 1)[-1])
+            if "track_ids" in payload:
+                record = self.playlist_store.replace_tracks(playlist_id, payload.get("track_ids"), self.library)
+            elif "name" in payload:
+                record = self.playlist_store.rename(playlist_id, payload.get("name"))
+            else:
+                raise PlaylistError("No playlist changes were provided.")
+            self.send_ok(id=record["id"], name=record["name"])
+        except PlaylistError as exc:
+            self.send_error_json(str(exc))
+
+    def handle_playlist_resume(self, path_text: str) -> None:
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        try:
+            playlist_id = unquote(path_text.removesuffix("/resume").rsplit("/", 1)[-1])
+            self.playlist_store.set_resume(playlist_id, payload.get("track_id"), self.library)
+            self.send_ok()
+        except PlaylistError as exc:
+            self.send_error_json(str(exc))
+
+    def handle_playlist_delete(self, path_text: str) -> None:
+        try:
+            self.playlist_store.delete(unquote(path_text.rsplit("/", 1)[-1]))
+            self.send_ok()
+        except PlaylistError as exc:
+            self.send_error_json(str(exc), status=HTTPStatus.NOT_FOUND)
 
     def handle_listening_stats_record(self) -> None:
         """! @brief Record compact playback stats without requiring Edit Mode."""
@@ -760,9 +852,11 @@ def main() -> int:
     Handler.player_config = player_config
     Handler.web_share = web_share
     Handler.editable = bool(config.get("editable", True)) and not args.read_only and not web_share
+    Handler.playlist_editable = bool(config.get("playlist_editable", True))
     Handler.library = Library(media_dir, player_config.library_config())
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     Handler.listening_stats = ListeningStats(STATS_DB)
+    Handler.playlist_store = PlaylistStore(RUNTIME_DIR / "playlists.json")
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")

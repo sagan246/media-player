@@ -15,7 +15,7 @@ private network, or create a temporary read-only web link.
 - Read local text archives
 - Display plain text and timed `.lrc` lyrics
 - Music and video queues with resume support
-- Preload the next music track for faster track changes
+- Save or update music queues as named playlists with cross-device resume
 - Now Playing screen with artwork, lyrics, controls, and visualizers
 - Listening stats by day, week, month, year, and all time
 - Optional MP3/FLAC metadata and artwork editing

@@ -17,7 +17,14 @@ Use this as a quick manual pass after UI, playback, or server changes.
 - Open an album page and play a specific track.
 - Confirm Next moves through the album or queue correctly.
 - Open and close Music Queue.
+- Confirm opening a long queue places the current track at the top of the list.
 - Reorder queue items.
+- Save the music queue as a playlist, then open it from Browse.
+- Reorder or remove queue items, use the save icon again, and confirm the source playlist updates without duplicates.
+- Advance within a playlist, play something else, then confirm the playlist Play button resumes at the saved song in the original order.
+- Open that playlist in another browser/device and confirm it resumes at the same song.
+- Rename and delete the playlist in both editable and read-only modes.
+- Confirm read-only mode can manage playlists but cannot edit media metadata or artwork.
 - Test repeat off, repeat queue, and repeat one.
 - Refresh the page and confirm queue/current song resume.
 - Open Now Playing and confirm artwork, lyrics, visualizer, volume, and controls work.
@@ -29,6 +36,7 @@ Use this as a quick manual pass after UI, playback, or server changes.
 - Play a video.
 - Switch to another tab and back, confirming the paused video returns.
 - Open and close Video Queue.
+- Confirm opening a long video queue places the current video at the top of the list.
 - Reorder video queue items.
 - Confirm mobile playback still works for browser-friendly MP4 files.
 

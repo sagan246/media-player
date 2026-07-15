@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#000000">
   <title>Local Media Player</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=lyrics-close1">
+  <link rel="stylesheet" href="/assets/styles.css?v=mobile-browse-tree1">
 </head>
 <body class="listen music">
   <header>
@@ -159,7 +159,8 @@
       <div class="queueActions queuePanelActions">
         <button id="repeatQueue" class="secondary iconControl repeatButton" title="Repeat off" aria-label="Repeat off">&#8635;</button>
         <button id="shuffleQueue" class="secondary iconControl" title="Shuffle queue" aria-label="Shuffle queue">&#8644;</button>
-        <button id="clearQueue" class="secondary iconControl" title="Clear queue" aria-label="Clear queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
+        <button id="saveQueuePlaylist" class="secondary iconControl" title="Save queue as playlist" aria-label="Save queue as playlist"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5z"/><path d="M8 3v6h8V3"/><path d="M8 14h8v7H8z"/></svg></button>
+        <button id="clearQueue" class="secondary iconControl queueClearAction" title="Clear queue" aria-label="Clear queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
       </div>
     </div>
     <div id="queueList" class="queueList queuePanelList"></div>
@@ -181,21 +182,31 @@
       <div class="queueActions queuePanelActions">
         <button id="repeatVideoQueue" class="secondary iconControl repeatButton" title="Video repeat off" aria-label="Video repeat off">&#8635;</button>
         <button id="shuffleVideoQueue" class="secondary iconControl" title="Shuffle video queue" aria-label="Shuffle video queue">&#8644;</button>
-        <button id="clearVideoQueue" class="secondary iconControl" title="Clear video queue" aria-label="Clear video queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
+        <button id="clearVideoQueue" class="secondary iconControl queueClearAction" title="Clear video queue" aria-label="Clear video queue"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 15h10l1-15"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
       </div>
     </div>
     <div id="videoQueueList" class="queueList queuePanelList"></div>
   </section>
-  <script src="/assets/theme-data.js?v=theme-data1"></script>
+  <dialog id="playlistDialog" class="playlistDialog">
+    <form id="playlistForm" method="dialog">
+      <div class="dialogHead"><h2 id="playlistDialogTitle">Save Playlist</h2><button id="closePlaylistDialog" class="secondary iconControl" type="button" title="Close" aria-label="Close">&#10005;</button></div>
+      <label for="playlistName">Name</label>
+      <input id="playlistName" name="playlistName" maxlength="80" autocomplete="off" required>
+      <div id="playlistMessage" class="message" role="status"></div>
+      <div class="dialogActions"><button id="confirmPlaylist" type="submit">Save</button><button id="cancelPlaylistDialog" class="secondary" type="button">Cancel</button></div>
+    </form>
+  </dialog>
+  <script src="/assets/theme-data.js?v=theme-mode-toggle1"></script>
   <script src="/assets/theme-engine.js?v=theme-engine1"></script>
   <script src="/assets/ui-helpers.js?v=ui-helpers1"></script>
-  <script src="/assets/components.js?v=components1"></script>
+  <script src="/assets/components.js?v=music-browse-tree1"></script>
   <script src="/assets/music-components.js?v=music-components1"></script>
+  <script src="/assets/playlist-components.js?v=playlist-components1"></script>
   <script src="/assets/queue-components.js?v=queue-components1"></script>
   <script src="/assets/video-components.js?v=video-components1"></script>
   <script src="/assets/stats-components.js?v=stats-components1"></script>
   <script src="/assets/lyrics.js?v=lyrics2"></script>
   <script src="/assets/now-playing-components.js?v=now-playing-components1"></script>
-  <script src="/assets/app.js?v=cleanup-ui3"></script>
+  <script src="/assets/app.js?v=customize-heading1"></script>
 </body>
 </html>

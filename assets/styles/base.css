@@ -65,13 +65,16 @@
     .customizeCard { padding:16px; border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); box-shadow:var(--card-shadow); }
     .customizeCard h2 { margin:0 0 6px; font-size:24px; line-height:1.15; }
     .customizeCard p { margin:0; color:var(--muted); }
-    .themeGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:14px; }
+    .themeGrid { display:grid; gap:14px; margin-top:14px; }
+    .themeModeToggle { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; width:min(280px,100%); padding:4px; border:1px solid var(--line); border-radius:8px; background:var(--soft); }
+    .themeModeToggle button { min-height:38px; border:0; border-radius:6px; background:transparent; color:var(--muted); box-shadow:none; }
+    .themeModeToggle button.active { background:var(--accent-soft); color:var(--text); }
+    .themeChoiceGrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
     .themeChoice { display:grid; grid-template-columns:34px minmax(0,1fr); gap:10px; align-items:center; height:auto; min-height:56px; padding:10px; background:rgba(255,255,255,.025); border:1px solid var(--line); border-radius:8px; color:var(--text); text-align:left; box-shadow:none; }
     .themeChoice:hover { background:var(--accent-soft); border-color:var(--accent-subtle-border); }
     .themeChoice.active { background:var(--accent-soft); border-color:var(--accent-border); }
     .themeSwatch { width:34px; height:34px; border-radius:999px; background:linear-gradient(135deg,var(--swatch-a),var(--swatch-b)); box-shadow:0 0 12px rgba(var(--swatch-rgb),.16); }
     .themeChoice strong { display:block; font-size:14px; line-height:1.2; }
-    .themeChoice span span { display:block; margin-top:2px; color:var(--muted); font-size:12px; line-height:1.25; }
     body[class*="theme-light"] .themeChoice { background:rgba(255,255,255,.72); }
     main { display:grid; grid-template-columns:270px minmax(0,1fr) 360px; gap:18px; padding:18px 20px; align-items:start; }
     body.listen.music main { grid-template-columns:270px minmax(0,1fr); }
