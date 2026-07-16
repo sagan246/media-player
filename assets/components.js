@@ -11,6 +11,8 @@
     const icons = {
       browse: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 3h10v9H3z"/><path d="M3 7v12"/></svg>`,
       queue: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>`,
+      volume: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h4l5-4v12l-5-4H4z"/><path d="M16 9c1 1 1 5 0 6"/><path d="M19 6c3 3 3 9 0 12"/></svg>`,
+      volumeMuted: `<svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h4l5-4v12l-5-4H4z"/><path d="m17 10 4 4"/><path d="m21 10-4 4"/></svg>`,
     };
     return icons[name] || "";
   }

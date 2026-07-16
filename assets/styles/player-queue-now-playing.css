@@ -60,6 +60,9 @@
     .playback input[type=range] { padding:0; height:24px; }
     .volume { display:flex; gap:8px; align-items:center; justify-content:flex-end; color:var(--muted); }
     .volume input { max-width:120px; padding:0; }
+    .volumeMuteButton { width:30px !important; height:30px; min-width:30px; padding:5px !important; border:0; border-radius:50%; background:transparent; color:inherit; box-shadow:none; }
+    .volumeMuteButton:hover { background:rgba(var(--accent-rgb),.10); border-color:transparent; box-shadow:none; }
+    .volumeMuteButton .buttonIcon { width:18px; height:18px; }
     audio { display:none; }
     .queueDrawer { position:fixed; top:0; right:0; bottom:calc(var(--player-bar-space) - 10px); z-index:10; width:min(420px,92vw); border-left:1px solid rgba(148,163,184,.09); border-bottom:1px solid rgba(148,163,184,.08); box-shadow:-10px 0 28px rgba(0,0,0,.42); transform:translateX(105%); transition:transform .18s ease; display:grid; grid-template-rows:auto 1fr; }
     .queuePanel { background:rgba(0,0,0,.82); backdrop-filter:blur(18px); }
@@ -125,7 +128,7 @@
     .nowPlayingControls .playButton { width:64px; height:46px; font-size:24px; }
     body[class*="theme-light"] .nowPlayingTransport button { background:transparent; border-color:transparent; box-shadow:none; }
     body[class*="theme-light"] .nowPlayingTransport button:hover { background:rgba(var(--accent-rgb),.08); }
-    .nowPlayingVolume { grid-column:3; justify-self:end; width:min(180px,100%); display:grid; grid-template-columns:auto minmax(90px,1fr); gap:10px; align-items:center; color:var(--muted); font-size:12px; font-weight:800; }
+    .nowPlayingVolume { grid-column:3; justify-self:end; width:min(180px,100%); display:grid; grid-template-columns:auto minmax(90px,1fr); gap:8px; align-items:center; color:var(--muted); }
     .nowPlayingVolume input { padding:0; }
     .lyricsBox { grid-area:lyrics; min-height:clamp(280px, 42vh, 620px); padding:12px 2px; border-radius:8px; background:transparent; color:var(--muted); }
     .lyricsText { white-space:pre-wrap; color:var(--text); font-size:18px; line-height:1.65; }

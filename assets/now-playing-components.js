@@ -30,9 +30,11 @@
     return `<div class="nowPlayingSeek"><input id="npSeekBar" type="range" min="0" max="1000" value="${esc(seekValue)}"><span id="npCurrentTime">${esc(currentTime)}</span><span id="npDuration">${esc(remainingTime)}</span></div>`;
   }
 
-  function controlsHtml({paused, queueCount, volume}){
+  function controlsHtml({paused, queueCount, volume, muted}){
     const playIcon = paused ? "&#9654;" : "&#10074;&#10074;";
-    return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${esc(queueCount)}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button></div><label class="nowPlayingVolume"><span>Vol</span><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(volume)}"></label></div>`;
+    const muteLabel = muted ? "Unmute" : "Mute";
+    const volumeIcon = buttonIcon(muted ? "volumeMuted" : "volume");
+    return `<div class="nowPlayingControls"><button id="npQueue" class="secondary nowPlayingQueueButton" title="Open queue" aria-label="Open queue">${buttonIcon("queue")}<span>${esc(queueCount)}</span></button><div class="nowPlayingTransport"><button id="npPrev" class="secondary iconControl" title="Previous" aria-label="Previous">&#9664;&#9664;</button><button id="npPlayPause" class="playButton iconControl" title="Play/Pause" aria-label="Play/Pause">${playIcon}</button><button id="npNext" class="secondary iconControl" title="Next" aria-label="Next">&#9654;&#9654;</button></div><div class="nowPlayingVolume"><button id="npVolumeMute" class="volumeMuteButton iconControl" type="button" title="${muteLabel}" aria-label="${muteLabel}">${volumeIcon}</button><input id="npVolumeBar" type="range" min="0" max="1" step="0.01" value="${esc(volume)}" title="Volume"></div></div>`;
   }
 
   function lyricsHtml(track){
@@ -44,13 +46,13 @@
     return `<div class="nowPlayingArt">No Song</div><div><div class="nowPlayingTitle">Nothing playing</div><div class="nowPlayingMeta">Choose a song, album, or category.</div></div>`;
   }
 
-  function fullHtml({track, artSrc, visualizerEnabled, visualizerMode, seekValue, currentTime, remainingTime, paused, queueCount, volume}){
+  function fullHtml({track, artSrc, visualizerEnabled, visualizerMode, seekValue, currentTime, remainingTime, paused, queueCount, volume, muted}){
     return [
       artworkHtml(artSrc),
       metaHtml(track),
       visualizerHtml({enabled:visualizerEnabled, visualizerMode}),
       seekHtml({seekValue, currentTime, remainingTime}),
-      controlsHtml({paused, queueCount, volume}),
+      controlsHtml({paused, queueCount, volume, muted}),
       lyricsHtml(track),
     ].join("");
   }

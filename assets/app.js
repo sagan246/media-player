@@ -1150,13 +1150,51 @@
       updateQueuePlaybackButtons();
     }
     function savedVolume(){const value=Number(localStorage.getItem("playerVolume")); return Number.isFinite(value)?Math.min(1,Math.max(0,value)):Number(volumeBar.value);}
+    function savedMuted(){return localStorage.getItem("playerMuted")==="true";}
+    function savedAudibleVolume(){const value=Number(localStorage.getItem("playerLastAudibleVolume")); return Number.isFinite(value)&&value>0?Math.min(1,value):0.85;}
+    function updateVolumeControls(){
+      const muted=player.muted||player.volume===0;
+      const label=muted?"Unmute":"Mute";
+      [byId("volumeMute"),byId("npVolumeMute")].forEach(button=>{
+        if(!button)return;
+        button.innerHTML=buttonIcon(muted?"volumeMuted":"volume");
+        button.title=label;
+        button.setAttribute("aria-label",label);
+      });
+    }
+    function setPlayerMuted(muted,{persist=true}={}){
+      player.muted=Boolean(muted);
+      updateVolumeControls();
+      if(persist)localStorage.setItem("playerMuted",String(player.muted));
+    }
     function setPlayerVolume(value,{persist=true}={}){
       const volume=Math.min(1,Math.max(0,Number(value)));
       player.volume=volume;
+      if(volume>0){
+        player.muted=false;
+        localStorage.setItem("playerLastAudibleVolume",String(volume));
+        if(persist)localStorage.setItem("playerMuted","false");
+      }
       volumeBar.value=String(volume);
       const npVolume=byId("npVolumeBar");
       if(npVolume)npVolume.value=String(volume);
       if(persist)localStorage.setItem("playerVolume",String(volume));
+      updateVolumeControls();
+    }
+    function togglePlayerMute(){
+      if(player.muted||player.volume===0){
+        if(player.volume===0)setPlayerVolume(savedAudibleVolume());
+        setPlayerMuted(false);
+      }else setPlayerMuted(true);
+    }
+    function bindVolumeWheel(slider){
+      if(!slider||slider.dataset.volumeWheelBound)return;
+      slider.dataset.volumeWheelBound="true";
+      slider.addEventListener("wheel",event=>{
+        event.preventDefault();
+        const direction=(event.deltaY||event.deltaX)<0?1:-1;
+        setPlayerVolume(player.volume+direction*.05);
+      },{passive:false});
     }
     /** @brief Remaining-time label for the full Now Playing screen. */
     function nowPlayingRemainingText(){
@@ -1299,6 +1337,7 @@
         paused:player.paused,
         queueCount:queue.length,
         volume:player.volume,
+        muted:player.muted||player.volume===0,
       }) : "";
       bindNowPlayingControls();
       loadNowPlayingLyrics(t);
@@ -1308,6 +1347,8 @@
       const npSeek=byId("npSeekBar"), npVolume=byId("npVolumeBar"), canvas=byId("nowPlayingVisualizer");
       if(canvas)on(canvas,"click",cycleVisualizerMode);
       if(npVolume)on(npVolume,"input",()=>setPlayerVolume(npVolume.value));
+      bindVolumeWheel(npVolume);
+      on(byId("npVolumeMute"),"click",togglePlayerMute);
       on(byId("npPrev"),"click",()=>playQueueIndex(queueIndex-1));
       on(byId("npNext"),"click",()=>playQueueIndex(queueIndex+1));
       on(byId("npPlayPause"),"click",toggleAudioPlayback);
@@ -1481,7 +1522,22 @@
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
     function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin===location.origin&&event.data?.type==="media-player-game-ready")syncGameArtwork();}); on(window,"beforeunload",()=>listeningRecorder.flush());}
-    function bindKeyboardShortcuts(){on(document,"keydown",e=>{if(e.code!=="Space"||isTypingTarget(e.target)||mediaType!=="music"||appMode!=="listen")return; e.preventDefault(); toggleAudioPlayback();});}
+    function bindKeyboardShortcuts(){
+      on(document,"keydown",event=>{
+        if(isTypingTarget(event.target)||appMode!=="listen")return;
+        const mediaKey=["MediaPlayPause","MediaTrackPrevious","MediaTrackNext"].includes(event.code);
+        if(!mediaKey&&mediaType!=="music")return;
+        let action="";
+        if(event.code==="Space"||event.code==="MediaPlayPause")action="toggle";
+        else if(event.code==="MediaTrackPrevious"||((event.ctrlKey||event.metaKey)&&event.code==="ArrowLeft"))action="previous";
+        else if(event.code==="MediaTrackNext"||((event.ctrlKey||event.metaKey)&&event.code==="ArrowRight"))action="next";
+        if(!action)return;
+        event.preventDefault();
+        if(action==="toggle")toggleAudioPlayback();
+        else if(action==="previous"&&queue.length)playQueueIndex(Math.max(0,queueIndex-1));
+        else if(action==="next"&&queue.length)playQueueIndex(Math.min(queue.length-1,queueIndex+1));
+      });
+    }
     function bindVideoControls(){
       on(videoSortEl,"change",()=>{videoSort=videoSortEl.value; localStorage.setItem("videoSort",videoSort); renderVideoAll();});
       on(byId("prevVideo"),"click",()=>playVideoQueueIndex(videoQueueIndex-1));
@@ -1534,6 +1590,8 @@
       on(byId("nextBtn"),"click",()=>playQueueIndex(queueIndex+1));
       on(playPauseBtn,"click",toggleAudioPlayback);
       on(repeatBtn,"click",cycleMusicRepeat);
+      on(byId("volumeMute"),"click",togglePlayerMute);
+      bindVolumeWheel(volumeBar);
       on(nowInfoEl,"click",()=>{
         if(playingId!==null){
           document.body.classList.remove("queueAboveNowPlaying");
@@ -1573,6 +1631,7 @@
       setDeviceClass();
       mediaSessionController.setup();
       setPlayerVolume(savedVolume(), {persist:false});
+      setPlayerMuted(savedMuted(), {persist:false});
       updateMusicQueueLabels();
       updateVideoQueueLabel();
       updateRepeatButtons();

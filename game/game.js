@@ -30,8 +30,6 @@
   const pointers = new Map();
   let score = 0;
   let bestScore = 0;
-  let lastGoodNumber = null;
-  let samePieceStreak = 0;
   let running = false;
   let paused = false;
   let lastTime = 0;
@@ -63,7 +61,7 @@
 
   function applyPiecesMode(mode, remember = false) {
     const modes = ["photos", "clean", "album"];
-    const current = modes.includes(mode) ? mode : "photos";
+    const current = modes.includes(mode) ? mode : "clean";
     const next = modes[(modes.indexOf(current) + 1) % modes.length];
     const labels = { photos: "photo", clean: "plain green", album: "album artwork" };
     const icons = {
@@ -120,12 +118,36 @@
     piece.turnIn = random(CONFIG.directionMin, CONFIG.directionMax);
   }
 
-  function place(piece, avoidPointers = true) {
+  function pointerCenter() {
+    if (!pointers.size) return null;
+    const activePointers = [...pointers.values()];
+    return {
+      x: activePointers.reduce((sum, pointer) => sum + pointer.x, 0) / activePointers.length,
+      y: activePointers.reduce((sum, pointer) => sum + pointer.y, 0) / activePointers.length
+    };
+  }
+
+  function oppositeHalfRange(position, size, padding) {
+    const midpoint = size / 2;
+    const range = position < midpoint
+      ? [midpoint + padding, size - padding]
+      : [padding, midpoint - padding];
+    return range[1] > range[0] ? range : [padding, Math.max(padding, size - padding)];
+  }
+
+  function place(piece, avoidPointers = true, oppositePointers = false) {
     const pieceRadius = radius();
+    const pointer = oppositePointers ? pointerCenter() : null;
+    const xRange = pointer
+      ? oppositeHalfRange(pointer.x, bounds.width, pieceRadius)
+      : [pieceRadius, Math.max(pieceRadius, bounds.width - pieceRadius)];
+    const yRange = pointer
+      ? oppositeHalfRange(pointer.y, bounds.height, pieceRadius)
+      : [pieceRadius, Math.max(pieceRadius, bounds.height - pieceRadius)];
     let x, y, safe, attempts = 0;
     do {
-      x = random(pieceRadius, Math.max(pieceRadius, bounds.width - pieceRadius));
-      y = random(pieceRadius, Math.max(pieceRadius, bounds.height - pieceRadius));
+      x = random(xRange[0], xRange[1]);
+      y = random(yRange[0], yRange[1]);
       const clearOfPointers = !avoidPointers || [...pointers.values()].every(
         p => Math.hypot(p.x - x, p.y - y) > 90 * gameScale
       );
@@ -162,7 +184,9 @@
       active: true, retired: false, respawnAt: 0
     };
     pieces.push(piece);
-    place(piece, false);
+    // A score-triggered hazard can be created while the pointer is still on
+    // the field. Put hazards in the opposite quadrant to prevent unfair hits.
+    place(piece, type === "bad", type === "bad");
   }
 
   function draw(piece) {
@@ -229,16 +253,11 @@
   function hit(piece) {
     if (!piece.active || piece.armedIn > 0) return;
     const isGood = piece.type === "good";
-    let amount = null;
+    const amount = isGood ? 1 : null;
     if (isGood) {
-      samePieceStreak = piece.number === lastGoodNumber ? Math.min(samePieceStreak + 1, 5) : 1;
-      lastGoodNumber = piece.number;
-      amount = samePieceStreak;
-      score += amount;
+      score += 1;
     } else {
       score = 0;
-      lastGoodNumber = null;
-      samePieceStreak = 0;
     }
     if (score > bestScore) {
       bestScore = score;
@@ -380,8 +399,6 @@
 
   function start() {
     score = 0; scoreNode.textContent = "0";
-    lastGoodNumber = null;
-    samePieceStreak = 0;
     if (!pieces.length) {
       for (let i = 0; i < CONFIG.goodPieces; i++) createPiece("good", i + 1);
       for (let i = 0; i < CONFIG.initialBadPieces; i++) createPiece("bad", null, 1);
@@ -427,7 +444,7 @@
 
   bestScore = loadBestScore();
   bestNode.textContent = bestScore;
-  applyPiecesMode(savedPiecesMode() || "photos");
+  applyPiecesMode(savedPiecesMode() || "clean");
   measure();
   start();
   requestAnimationFrame(update);
