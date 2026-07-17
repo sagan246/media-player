@@ -27,6 +27,27 @@ body.game {
   overflow:hidden;
   background:#02030a;
 }
+/* Let the real header determine its own height, then give every remaining
+   pixel above the fixed mini-player to the game. This avoids decorative gaps
+   even when the desktop header wraps at narrower widths. */
+body.game:not(.guestMode):not(.gameCatMode) {
+  display:grid;
+  grid-template-rows:auto minmax(0,1fr);
+  padding-bottom:76px;
+}
+body.game:not(.guestMode):not(.gameCatMode) main {
+  height:100%;
+  padding:0;
+}
+body.game:not(.guestMode):not(.gameCatMode) .workspace {
+  height:100%;
+  min-height:0;
+}
+body.game:not(.guestMode):not(.gameCatMode) .gamePanel {
+  height:100%;
+  min-height:0;
+  border-radius:0;
+}
 body.game header { background:rgba(2,3,10,.91); }
 body.game[class*="theme-light"] header .iconLink {
   background:rgba(255,255,255,.025);
@@ -99,7 +120,7 @@ body.game .gamePanel {
   overflow:hidden;
   border:1px solid var(--line);
   border-radius:8px;
-  background:#090a0f;
+  background:transparent;
 }
 body.game.gameVisualizerOnly .gamePanel {
   background:transparent;
@@ -155,9 +176,30 @@ body.game .queueDrawer.musicOnly.open { display:grid !important; }
 /* Guest Mode is a focused Game + player surface. The regular app header is
    absent, leaving Now Playing and the queue accessible through the mini player. */
 body.guestMode header { display:none !important; }
-body.guestMode.game .gamePanel { height:calc(100dvh - 100px); }
+body.guestMode.game main { padding:0 0 76px; }
+body.guestMode.game .gamePanel {
+  height:calc(100dvh - 76px);
+  min-height:0;
+  border-radius:0;
+}
+
+/* Cat Mode locks the parent shell so a paw cannot leave the game, open Now
+   Playing, or change playback accidentally. The in-game paw control remains
+   available and restores the normal shell as soon as Cat Mode is disabled. */
+body.game.gameCatMode > header,
+body.game.gameCatMode .playerBar,
+body.game.gameCatMode .queueDrawer,
+body.game.gameCatMode .nowPlayingDrawer { display:none !important; }
+body.game.gameCatMode main { padding:0; }
+body.game.gameCatMode .gamePanel {
+  height:100dvh;
+  min-height:0;
+  border:0;
+  border-radius:0;
+}
 
 @media (max-width:860px) {
+  body.game:not(.guestMode):not(.gameCatMode) { padding-bottom:75px; }
   body.game main { padding:3px 2px 72px; }
   body.game .gamePanel {
     height:calc(100dvh - 59px - 75px);
@@ -165,7 +207,9 @@ body.guestMode.game .gamePanel { height:calc(100dvh - 100px); }
     border:0;
     border-radius:0;
   }
+  body.guestMode.game main { padding:0 0 75px; }
   body.guestMode.game .gamePanel { height:calc(100dvh - 75px); }
+  body.game.gameCatMode .gamePanel { height:100dvh; }
   .gameVisualizer,
   body.game .gamePanel::before { display:none; }
   body.guestMode.game .gameVisualizer,

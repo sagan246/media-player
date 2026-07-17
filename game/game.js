@@ -6,11 +6,14 @@
   const floaters = document.querySelector("#floaters");
   const scoreNode = document.querySelector("#score");
   const bestNode = document.querySelector("#best");
+  const scoreLabelNode = document.querySelector("#score-label");
   const pauseButton = document.querySelector("#pause");
   const piecesModeButton = document.querySelector("#pieces-mode");
+  const catModeButton = document.querySelector("#cat-mode");
 
   const CONFIG = {
     goodPieces: 9,
+    catGoodPieces: 1,
     initialBadPieces: 1,
     badScoreInterval: 100,
     speed: 76,
@@ -36,6 +39,7 @@
   let gameScale = 1;
   let audioSignalTimer = null;
   let guestPiecesInitialized = false;
+  let catMode = false;
 
   const random = (min, max) => min + Math.random() * (max - min);
 
@@ -48,6 +52,11 @@
 
   function saveBestScore() {
     try { localStorage.setItem("drift-touch-best", String(bestScore)); } catch {}
+  }
+
+  function savedCatMode() {
+    try { return localStorage.getItem("drift-touch-cat-mode") === "true"; }
+    catch { return false; }
   }
 
   function savedPiecesMode(storageKey = "drift-touch-pieces") {
@@ -141,6 +150,28 @@
     piece.turnIn = random(CONFIG.directionMin, CONFIG.directionMax);
   }
 
+  // Cat Mode uses short behavioral phases instead of fixed straight travel.
+  // Pauses, creeping, curved paths, and bursts make the targets feel more like
+  // prey while remaining predictable enough for a paw to catch.
+  function setCatBehavior(piece, initial = false) {
+    const angle = initial ? random(0, Math.PI * 2) : Math.atan2(piece.dy, piece.dx) + random(-1.15, 1.15);
+    const roll = Math.random();
+    piece.dx = Math.cos(angle);
+    piece.dy = Math.sin(angle);
+    piece.catCurve = random(-1.05, 1.05);
+    if (roll < .26) {
+      piece.catSpeed = 0;
+      piece.catBehaviorIn = random(.45, 1.25);
+    } else if (roll < .48) {
+      piece.catSpeed = random(1.5, 2.2);
+      piece.catBehaviorIn = random(.28, .72);
+    } else {
+      piece.catSpeed = random(.42, .92);
+      piece.catBehaviorIn = random(.75, 2.1);
+    }
+    updateTravelAngle(piece);
+  }
+
   function pointerCenter() {
     if (!pointers.size) return null;
     const activePointers = [...pointers.values()];
@@ -159,6 +190,7 @@
   }
 
   function place(piece, avoidPointers = true, oppositePointers = false) {
+    if (piece.retired || piece.modeHidden) return;
     const pieceRadius = radius();
     const pointer = oppositePointers ? pointerCenter() : null;
     const xRange = pointer
@@ -184,7 +216,8 @@
     piece.active = true; piece.armedIn = .22;
     piece.el.classList.remove("hit");
     piece.el.hidden = false;
-    setDirection(piece);
+    if (catMode && piece.type === "good") setCatBehavior(piece, true);
+    else setDirection(piece);
     draw(piece);
   }
 
@@ -204,7 +237,8 @@
     const piece = {
       type, number, variant, el, x: 0, y: 0, dx: 0, dy: 0,
       directionIndex: -1, turnIn: 0, armedIn: 0,
-      active: true, retired: false, respawnAt: 0
+      active: true, retired: false, modeHidden: false, respawnAt: 0,
+      catBehaviorIn: 0, catSpeed: 1, catCurve: 0
     };
     pieces.push(piece);
     // A score-triggered hazard can be created while the pointer is still on
@@ -265,6 +299,7 @@
   }
 
   function addBadPiecesForScore() {
+    if (catMode) return;
     const desiredCount = 1 + Math.floor(score / CONFIG.badScoreInterval);
     let currentCount = pieces.filter(piece => piece.type === "bad" && !piece.retired).length;
     while (currentCount < desiredCount) {
@@ -282,14 +317,14 @@
     } else {
       score = 0;
     }
-    if (score > bestScore) {
+    if (!catMode && score > bestScore) {
       bestScore = score;
       bestNode.textContent = bestScore;
       saveBestScore();
     }
-    if (isGood) addBadPiecesForScore();
+    if (isGood && !catMode) addBadPiecesForScore();
     scoreNode.textContent = score;
-    showPop(piece, amount);
+    if (!catMode) showPop(piece, amount);
     showCatchEffect(piece);
     if (!isGood) {
       game.classList.remove("danger-flash");
@@ -298,15 +333,16 @@
     }
     piece.active = false;
     piece.el.classList.add("hit");
-    piece.respawnAt = performance.now() + random(CONFIG.respawnMin, CONFIG.respawnMax) * 1000;
+    piece.respawnAt = performance.now() + (catMode ? random(.35, .95) : random(CONFIG.respawnMin, CONFIG.respawnMax)) * 1000;
     if (!isGood) resetBadProgress();
     setTimeout(() => { if (!piece.active) piece.el.hidden = true; }, 250);
-    if (navigator.vibrate) navigator.vibrate(piece.type === "good" ? 12 : [30, 25, 30]);
+    if (navigator.vibrate) navigator.vibrate(catMode ? 8 : piece.type === "good" ? 12 : [30, 25, 30]);
   }
 
   function checkPointer(pointer) {
+    const pawPadding = catMode ? 22 * gameScale : 4 * gameScale;
     for (const piece of pieces) {
-      if (piece.active && piece.armedIn <= 0 && Math.hypot(pointer.x - piece.x, pointer.y - piece.y) <= radius() + 4 * gameScale) hit(piece);
+      if (piece.active && piece.armedIn <= 0 && Math.hypot(pointer.x - piece.x, pointer.y - piece.y) <= radius() + pawPadding) hit(piece);
     }
   }
 
@@ -401,17 +437,39 @@
       for (const piece of pieces) {
         if (piece.retired) continue;
         if (!piece.active) {
-          if (time >= piece.respawnAt) place(piece);
+          if (time >= piece.respawnAt) place(piece, true, catMode);
           continue;
         }
-        piece.armedIn -= dt; piece.turnIn -= dt;
-        if (piece.turnIn <= 0) setDirection(piece);
-        piece.x += piece.dx * scaledSpeed * dt;
-        piece.y += piece.dy * scaledSpeed * dt;
-        if (piece.x < -pieceRadius) piece.x = bounds.width + pieceRadius;
-        if (piece.x > bounds.width + pieceRadius) piece.x = -pieceRadius;
-        if (piece.y < -pieceRadius) piece.y = bounds.height + pieceRadius;
-        if (piece.y > bounds.height + pieceRadius) piece.y = -pieceRadius;
+        piece.armedIn -= dt;
+        if (catMode && piece.type === "good") {
+          piece.catBehaviorIn -= dt;
+          if (piece.catBehaviorIn <= 0) setCatBehavior(piece);
+          if (piece.catSpeed > 0) {
+            const turn = piece.catCurve * dt;
+            const cosine = Math.cos(turn), sine = Math.sin(turn);
+            const nextX = piece.dx * cosine - piece.dy * sine;
+            piece.dy = piece.dx * sine + piece.dy * cosine;
+            piece.dx = nextX;
+            piece.x += piece.dx * scaledSpeed * piece.catSpeed * dt;
+            piece.y += piece.dy * scaledSpeed * piece.catSpeed * dt;
+            updateTravelAngle(piece);
+          }
+          // Let prey partly disappear at an edge, then turn back into view.
+          const edge = pieceRadius * .36;
+          if (piece.x < -edge) { piece.x = -edge; piece.dx = Math.abs(piece.dx); piece.catBehaviorIn = Math.min(piece.catBehaviorIn, .18); }
+          if (piece.x > bounds.width + edge) { piece.x = bounds.width + edge; piece.dx = -Math.abs(piece.dx); piece.catBehaviorIn = Math.min(piece.catBehaviorIn, .18); }
+          if (piece.y < -edge) { piece.y = -edge; piece.dy = Math.abs(piece.dy); piece.catBehaviorIn = Math.min(piece.catBehaviorIn, .18); }
+          if (piece.y > bounds.height + edge) { piece.y = bounds.height + edge; piece.dy = -Math.abs(piece.dy); piece.catBehaviorIn = Math.min(piece.catBehaviorIn, .18); }
+        } else {
+          piece.turnIn -= dt;
+          if (piece.turnIn <= 0) setDirection(piece);
+          piece.x += piece.dx * scaledSpeed * dt;
+          piece.y += piece.dy * scaledSpeed * dt;
+          if (piece.x < -pieceRadius) piece.x = bounds.width + pieceRadius;
+          if (piece.x > bounds.width + pieceRadius) piece.x = -pieceRadius;
+          if (piece.y < -pieceRadius) piece.y = bounds.height + pieceRadius;
+          if (piece.y > bounds.height + pieceRadius) piece.y = -pieceRadius;
+        }
         draw(piece);
       }
       resolvePieceCollisions();
@@ -425,12 +483,53 @@
     if (!pieces.length) {
       for (let i = 0; i < CONFIG.goodPieces; i++) createPiece("good", i + 1);
       for (let i = 0; i < CONFIG.initialBadPieces; i++) createPiece("bad", null, 1);
-    } else pieces.forEach(piece => place(piece, false));
+    }
+    syncPiecesForMode();
     running = true; paused = false;
     setVisualizerOnly(false);
     pauseButton.textContent = "\u2161";
     pauseButton.setAttribute("aria-label", "Pause game");
     pauseButton.title = "Pause game";
+  }
+
+  function setModeVisibility(piece, visible) {
+    piece.modeHidden = !visible;
+    piece.active = false;
+    piece.el.hidden = !visible;
+    piece.el.classList.remove("hit");
+    if (visible) place(piece, false);
+  }
+
+  function syncPiecesForMode() {
+    const goodPieces = pieces.filter(piece => piece.type === "good" && !piece.retired);
+    const badPieces = pieces.filter(piece => piece.type === "bad" && !piece.retired);
+    goodPieces.forEach((piece, index) => setModeVisibility(piece, !catMode || index < CONFIG.catGoodPieces));
+    badPieces.forEach(piece => setModeVisibility(piece, !catMode && piece.variant === 1));
+  }
+
+  function applyCatMode(enabled, remember = false) {
+    catMode = Boolean(enabled);
+    document.documentElement.dataset.catMode = catMode ? "true" : "false";
+    catModeButton.classList.toggle("active", catMode);
+    catModeButton.setAttribute("aria-pressed", catMode ? "true" : "false");
+    catModeButton.setAttribute("aria-label", catMode ? "Disable Cat Mode" : "Enable Cat Mode");
+    catModeButton.title = catMode ? "Cat Mode on" : "Cat Mode off";
+    scoreLabelNode.textContent = catMode ? "CATCHES" : "SCORE";
+    score = 0;
+    scoreNode.textContent = "0";
+    if (catMode) resetBadProgress();
+    if (pieces.length) syncPiecesForMode();
+    if (remember) {
+      try { localStorage.setItem("drift-touch-cat-mode", catMode ? "true" : "false"); } catch {}
+    }
+    window.parent.postMessage(
+      { type: "media-player-game-cat-mode", enabled: catMode },
+      location.origin
+    );
+  }
+
+  function toggleCatMode() {
+    applyCatMode(!catMode, true);
   }
 
   function setVisualizerOnly(enabled) {
@@ -457,6 +556,7 @@
   field.addEventListener("pointerleave", event => { if (event.pointerType === "mouse") release(event); });
   pauseButton.addEventListener("click", togglePause);
   piecesModeButton.addEventListener("click", togglePiecesMode);
+  catModeButton.addEventListener("click", toggleCatMode);
   window.addEventListener("resize", measure);
   document.addEventListener("visibilitychange", () => { if (document.hidden && running && !paused) togglePause(); });
   window.addEventListener("message", event => {
@@ -492,8 +592,9 @@
   bestScore = loadBestScore();
   bestNode.textContent = bestScore;
   applyPiecesMode(savedPiecesMode() || "clean");
+  applyCatMode(savedCatMode());
   measure();
   start();
   requestAnimationFrame(update);
-  window.parent.postMessage({ type: "media-player-game-ready" }, location.origin);
+  window.parent.postMessage({ type: "media-player-game-ready", catMode }, location.origin);
 })();

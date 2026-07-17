@@ -379,6 +379,15 @@
         location.origin
       );
     }
+    function setGameCatMode(enabled){
+      const active=Boolean(enabled);
+      document.body.classList.toggle("gameCatMode",active);
+      if(!active)return;
+      setOpen(queueDrawerEl,false);
+      setOpen(videoQueueDrawerEl,false);
+      setOpen(nowPlayingDrawerEl,false);
+      document.body.classList.remove("queueAboveNowPlaying");
+    }
     function stableAlbumArtUrl(t){const album=albumOf(t); const art=tracks.find(x=>albumOf(x)===album&&x.has_artwork); return art ? fullArtUrl(art) : fullArtUrl(t);}
     function groupOf(t){if(groupMode==="category") return categoryOf(t); if(groupMode==="album") return albumOf(t); return folderOf(t);}
     function musicGroupMatches(t, group=selectedGroup){
@@ -1445,10 +1454,11 @@
     function applyAdaptiveTheme(){return themeController.applyAdaptive();}
     function applyDisplayConfig(){
       const appName=appConfig.appName||"Local Media Player";
+      const displayTitle=appConfig.guestMode ? "Music Game" : appName;
       const textLabel=appConfig.textTabLabel||"Interviews";
-      document.title=appName;
+      document.title=displayTitle;
       const titleEl=document.querySelector("header h1");
-      if(titleEl)titleEl.textContent=appName;
+      if(titleEl)titleEl.textContent=displayTitle;
       interviewsTabEl.title=textLabel;
       interviewsTabEl.setAttribute("aria-label", textLabel);
       document.querySelectorAll("[data-text-label]").forEach(el=>{el.textContent=textLabel;});
@@ -1598,7 +1608,7 @@
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin!==location.origin)return; if(event.data?.type==="media-player-game-ready")syncGameArtwork(); if(event.data?.type==="media-player-game-mode")document.body.classList.toggle("gameVisualizerOnly",Boolean(event.data.visualizerOnly));}); on(window,"beforeunload",()=>listeningRecorder.flush());}
+    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin!==location.origin)return; if(event.data?.type==="media-player-game-ready"){syncGameArtwork(); setGameCatMode(event.data.catMode);} if(event.data?.type==="media-player-game-mode")document.body.classList.toggle("gameVisualizerOnly",Boolean(event.data.visualizerOnly)); if(event.data?.type==="media-player-game-cat-mode")setGameCatMode(event.data.enabled);}); on(window,"beforeunload",()=>listeningRecorder.flush());}
     function bindCustomizeControls(){
       on(mobileVisualizerToggleEl,"change",()=>{
         mobileVisualizerEnabled=mobileVisualizerToggleEl.checked;
@@ -1682,6 +1692,7 @@
       on(byId("volumeMute"),"click",togglePlayerMute);
       bindVolumeWheel(volumeBar);
       on(nowInfoEl,"click",()=>{
+        if(document.body.classList.contains("gameCatMode"))return;
         if(playingId!==null){
           document.body.classList.remove("queueAboveNowPlaying");
           setOpen(nowPlayingDrawerEl,true);
