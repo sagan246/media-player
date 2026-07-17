@@ -1,5 +1,82 @@
 /* Optional embedded game ------------------------------------------------ */
 .gameOnly { display:none; }
+html[class*="theme-light"]:has(body.game) { background:#02030a; }
+html:has(body.game) { height:100dvh; overflow:hidden; }
+body.game {
+  color-scheme:dark;
+  --bg:#02030a;
+  --panel:#060914;
+  --soft:#0a1020;
+  --text:#f7fbff;
+  --muted:#8d9bb3;
+  --line:rgba(150,174,220,.14);
+  --accent:#4c7eff;
+  --accent-rgb:76,126,255;
+  --accent-strong:#315ddd;
+  --accent-strong-rgb:49,93,221;
+  --accent-deep:#b4c9ff;
+  --accent-soft:rgba(76,126,255,.14);
+  --accent-border:rgba(112,151,255,.42);
+  --accent-link:#a9c2ff;
+  --accent-sheen-rgb:169,194,255;
+  --card-bg:rgba(5,8,18,.76);
+  --card-bg-strong:rgba(5,8,18,.92);
+  --card-border:rgba(150,174,220,.12);
+  height:100dvh;
+  padding-bottom:0;
+  overflow:hidden;
+  background:#02030a;
+}
+body.game header { background:rgba(2,3,10,.91); }
+body.game[class*="theme-light"] header .iconLink {
+  background:rgba(255,255,255,.025);
+  border-color:rgba(150,174,220,.14);
+  color:var(--text);
+}
+body.game[class*="theme-light"] header .iconLink:hover {
+  background:var(--accent-soft);
+}
+body.game[class*="theme-light"] .playerBar {
+  background:rgba(3,5,12,.94);
+  border-color:rgba(150,174,220,.14);
+  color:var(--text);
+  box-shadow:none;
+}
+body.game[class*="theme-light"] .transport button.secondary,
+body.game[class*="theme-light"] .transport button.ghost,
+body.game[class*="theme-light"] .nowPlayingTransport button {
+  background:transparent;
+  border-color:transparent;
+  color:var(--text);
+}
+/* Full-screen playback surfaces follow the selected light theme even though
+   the embedded game and its mini player deliberately stay dark. */
+body.game[class*="theme-light"] .queueDrawer,
+body.game[class*="theme-light"] .nowPlayingDrawer {
+  color-scheme:light;
+  --bg:#f7f8fb;
+  --panel:#fff;
+  --soft:#eef2f8;
+  --text:#0f172a;
+  --muted:#64748b;
+  --line:rgba(15,23,42,.13);
+  --shadow:rgba(15,23,42,.10);
+  --card-bg:rgba(255,255,255,.86);
+  --card-bg-strong:rgba(255,255,255,.96);
+  --card-border:rgba(15,23,42,.10);
+  --overlay-close-bg:rgba(255,255,255,.018);
+  --overlay-close-hover-bg:rgba(255,255,255,.075);
+  --overlay-close-border:rgba(15,23,42,.012);
+  color:var(--text);
+}
+body.game[class*="theme-light"] .nowPlayingDrawer {
+  background:var(--bg);
+}
+body.game[class*="theme-light"] .queuePanel {
+  background:rgba(255,255,255,.90);
+  border-color:var(--line);
+  box-shadow:-8px 0 24px rgba(15,23,42,.10);
+}
 body.game main {
   grid-template-columns:minmax(0,1fr);
   min-height:0;
@@ -15,6 +92,8 @@ body.game .stats { display:none !important; }
 body.game .workspace { min-width:0; }
 body.game .gameOnly { display:block !important; }
 body.game .gamePanel {
+  position:relative;
+  isolation:isolate;
   height:calc(100dvh - 76px - 100px);
   min-height:480px;
   overflow:hidden;
@@ -22,17 +101,88 @@ body.game .gamePanel {
   border-radius:8px;
   background:#090a0f;
 }
-.gameFrame { display:block; width:100%; height:100%; border:0; background:#090a0f; }
+body.game.gameVisualizerOnly .gamePanel {
+  background:transparent;
+  border-color:transparent;
+  box-shadow:none;
+  overflow:visible;
+}
+/* Keep a quiet filled bloom visible before audio playback starts. */
+body.game .gamePanel::before {
+  content:"";
+  position:absolute;
+  z-index:0;
+  left:50%;
+  top:50%;
+  height:100%;
+  aspect-ratio:1;
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 43% 40%, rgba(76,126,255,.25), transparent 32%),
+    radial-gradient(circle at 58% 60%, rgba(152,92,255,.20), transparent 39%),
+    radial-gradient(circle, rgba(76,126,255,.17), rgba(88,91,230,.11) 44%, rgba(152,92,255,.05) 70%, transparent 84%);
+  filter:blur(8px) saturate(118%);
+  box-shadow:0 0 90px rgba(76,126,255,.13), 0 0 130px rgba(152,92,255,.08);
+  pointer-events:none;
+}
+.gameFrame {
+  position:relative;
+  z-index:1;
+  display:block;
+  width:100%;
+  height:100%;
+  border:0;
+  outline:0;
+  box-shadow:none;
+  background:transparent;
+}
+.gameVisualizer {
+  position:absolute;
+  z-index:0;
+  inset:0;
+  display:block;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+  opacity:1;
+  background:transparent;
+}
 body.game .playerBar.musicOnly { display:grid !important; }
-body.game .nowPlayingDrawer.musicOnly.open,
-body.game .queueDrawer.musicOnly.open { display:block !important; }
+body.game .nowPlayingDrawer.musicOnly.open { display:block !important; }
+body.game .queueDrawer.musicOnly.open { display:grid !important; }
+
+/* Guest Mode is a focused Game + player surface. The regular app header is
+   absent, leaving Now Playing and the queue accessible through the mini player. */
+body.guestMode header { display:none !important; }
+body.guestMode.game .gamePanel { height:calc(100dvh - 100px); }
 
 @media (max-width:860px) {
   body.game main { padding:3px 2px 72px; }
   body.game .gamePanel {
-    height:calc(100dvh - 59px - 72px);
+    height:calc(100dvh - 59px - 75px);
     min-height:360px;
     border:0;
     border-radius:0;
   }
+  body.guestMode.game .gamePanel { height:calc(100dvh - 75px); }
+  .gameVisualizer,
+  body.game .gamePanel::before { display:none; }
+  body.guestMode.game .gameVisualizer,
+  body.guestMode.game .gamePanel::before,
+  body.mobileGameVisualizerEnabled.game .gameVisualizer,
+  body.mobileGameVisualizerEnabled.game .gamePanel::before { display:block; }
+}
+
+@media (hover:none) and (pointer:coarse) {
+  .gameVisualizer,
+  body.game .gamePanel::before { display:none; }
+  body.guestMode.game .gameVisualizer,
+  body.guestMode.game .gamePanel::before,
+  body.mobileGameVisualizerEnabled.game .gameVisualizer,
+  body.mobileGameVisualizerEnabled.game .gamePanel::before { display:block; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .gameVisualizer { opacity:.45; }
 }

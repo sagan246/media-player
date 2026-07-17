@@ -15,8 +15,9 @@
     return `<div class="queueItem mediaRow"><div class="noArt mediaRowArt">?</div><div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${esc(title)}</div>${subtitleHtml}</div></div>`;
   }
 
-  function queueItemHtml({index, displayIndex=index, active, artworkHtml, title, subtitle, draggable=false}){
-    return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${displayIndex+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${removeQueueButtonHtml(index)}</div>`;
+  function queueItemHtml({index, displayIndex=index, active, artworkHtml, title, subtitle, draggable=false, removable=true}){
+    const removeHtml = removable ? removeQueueButtonHtml(index) : "";
+    return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${displayIndex+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${removeHtml}</div>`;
   }
 
   function sectionLabelHtml(index, activeIndex){
@@ -25,7 +26,7 @@
     return "";
   }
 
-  function queueListHtml({items, activeIndex, emptyTitle, draggable=true}){
+  function queueListHtml({items, activeIndex, emptyTitle, draggable=true, removable=true}){
     if(!items.length) return emptyQueueHtml(emptyTitle);
     return items.map((item, displayIndex) => {
       const index = Number.isFinite(Number(item.index)) ? Number(item.index) : displayIndex;
@@ -34,6 +35,7 @@
       displayIndex,
       active: index === activeIndex,
       draggable,
+      removable,
       artworkHtml: item.artworkHtml,
       title: item.title,
       subtitle: item.subtitle,

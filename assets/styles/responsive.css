@@ -21,29 +21,37 @@
         column-gap:72px;
       }
       .nowPlayingBody.hasLyrics .lyricsBox {
-        align-self:stretch;
+        align-self:start;
         min-height:0;
-        height:min(76vh, 760px);
+        height:min(560px, calc(100vh - 56px));
+        box-sizing:border-box;
         display:flex;
         align-items:flex-start;
-        padding-top:clamp(18px, 5vh, 64px);
+        padding:0;
       }
       .nowPlayingBody.hasLyrics .syncedLyrics {
         height:100%;
         width:100%;
-        padding:28% 4px 52%;
+        box-sizing:border-box;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        overflow:hidden;
+        padding:0 4px;
+        transform:translateY(-20px);
       }
       .nowPlayingBody.hasLyrics .lrcLine {
         max-width:720px;
         margin-left:auto;
         margin-right:auto;
       }
+      .nowPlayingBody.hasLyrics .lrcLine:not(.lrcWindowLine) { display:none; }
       .nowPlayingBody.hasLyrics .lrcLine.active {
         max-width:780px;
         font-size:clamp(25px, 2.1vw, 34px);
         line-height:1.26;
-        margin-top:28px;
-        margin-bottom:46px;
+        margin-top:18px;
+        margin-bottom:28px;
       }
     }
     @media (max-width:980px) { .bar,main { grid-template-columns:1fr; } .playerBar { grid-template-columns:minmax(220px,1fr) auto minmax(220px,1.2fr); gap:10px; padding:9px 14px; } .playerBar .volume { display:none; } body.listen.music main, body.readOnly main, body.browseCollapsed.music main, body.readOnly.browseCollapsed.music main, body.browseCollapsed.video main { grid-template-columns:1fr; } aside,nav { position:static; } nav { max-height:none; } th { top:0; } .transport { justify-content:center; } .videoGrid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); } .videoCard { height:238px; } .albumDetail { grid-template-columns:1fr; } }
@@ -146,11 +154,19 @@
       .mobileAlbumRow { display:table-row; }
       .mobileAlbumRow td { padding:8px 10px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
       .rowBadges { display:none; }
-      .nowPlayingDrawer { padding-top:28px; }
+      .nowPlayingDrawer { padding-top:0; }
       .nowPlayingHead { top:12px; right:max(4px, env(safe-area-inset-right)); left:auto; width:44px; }
       body.music.albumSelected #showAllAlbums { top:12px; right:12px; left:auto; }
       .nowPlayingBody { grid-template-columns:1fr; grid-template-areas:"art" "text" "viz" "seek" "controls" "lyrics"; max-width:560px; column-gap:0; }
       .nowPlayingBody .nowPlayingArt { width:100vw; max-width:none; margin-left:calc(50% - 50vw); }
+      /* The optional mobile visualizer needs a little breathing room. Reclaim
+         it from the artwork and repeated gaps without changing normal mode. */
+      .nowPlayingBody:has(.nowPlayingVisualizer) { gap:10px; }
+      .nowPlayingBody:has(.nowPlayingVisualizer) .nowPlayingArt {
+        width:94vw;
+        margin-left:calc(50% - 47vw);
+      }
+      .nowPlayingBody:has(.nowPlayingVisualizer) .nowPlayingVisualizer { height:76px; }
       .nowPlayingMeta { min-height:2.35em; }
       .nowPlayingVisualizer + .nowPlayingSeek { margin-top:-14px; }
       .nowPlayingSeek { margin-bottom:-4px; }
@@ -159,8 +175,27 @@
       body.music.albumSelected .albumActions #albumQueue { display:none; }
       .nowPlayingTransport { grid-column:auto; display:grid; grid-template-columns:48px 64px 48px 48px; justify-content:center; align-items:center; gap:8px; transform:translateX(28px); }
       .nowPlayingVolume { display:none; }
-      .lyricsBox { position:relative; z-index:1; height:auto; min-height:clamp(280px, 47vh, 570px); max-height:none; margin-top:10px; overflow:hidden; }
-      .syncedLyrics { height:clamp(320px, 51vh, 590px); padding:12% 4px 76%; -webkit-mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); }
+      /* Keep the post-art mobile view compact: title, transport, then a
+         bounded lyric viewport. The page itself still scrolls the artwork
+         away, while lyrics retain their own synchronized movement. */
+      .lyricsBox { position:relative; z-index:1; height:auto; min-height:clamp(270px, 42vh, 470px); max-height:none; margin-top:8px; overflow:hidden; }
+      .syncedLyrics { height:clamp(290px, 45vh, 500px); padding:12% 4px 72%; -webkit-mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); mask-image:linear-gradient(transparent, #000 6%, #000 88%, transparent); }
+      /* Mobile Now Playing has one intentional outer-page scroll: move exactly
+         one artwork height, then stop with metadata and controls at the top. */
+      .nowPlayingBody.hasLyrics {
+        grid-template-areas:"art" "text" "seek" "controls" "lyrics";
+        grid-template-rows:100vw auto auto auto minmax(0, 1fr);
+        height:calc(100vw + 100dvh - 40px);
+        max-height:calc(100vw + 100dvh - 40px);
+      }
+      .nowPlayingBody.hasLyrics:has(.nowPlayingVisualizer) {
+        grid-template-areas:"art" "text" "viz" "seek" "controls" "lyrics";
+        grid-template-rows:94vw auto 76px auto auto minmax(0, 1fr);
+        height:calc(94vw + 100dvh - 40px);
+        max-height:calc(94vw + 100dvh - 40px);
+      }
+      .nowPlayingBody.hasLyrics .lyricsBox { height:100%; min-height:0; margin-top:0; }
+      .nowPlayingBody.hasLyrics .syncedLyrics { height:100%; min-height:0; padding:8% 4px 48%; }
       .lrcLine.active { min-height:3.9em; margin-top:18px; margin-bottom:46px; line-height:1.28; }
       body.music:not(.albumSelected) .tableWrap { display:none; }
       body.music.albumSelected .albumGrid { display:block; max-height:none; overflow:visible; }
@@ -309,3 +344,6 @@
       body.interviews .interviewReader { min-height:calc(100vh - 118px); min-width:0; max-width:none; resize:none; }
       .interviewText { max-width:none; }
     }
+@media (min-width:861px) {
+  .mobileOnlyPreference { display:none !important; }
+}

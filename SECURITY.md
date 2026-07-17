@@ -10,8 +10,13 @@ This app is designed to run local-first.
 - Web-share API responses hide local file paths.
 - Playlist files are separate application state. They remain mutable when
   `playlist_editable` is `true`, including in web-share mode.
+- Guest Mode disables metadata and playlist writes and applies its configured
+  album restriction to track APIs, audio streams, artwork, and lyrics.
 - `--media-dir` is restricted to the expected media root or a descendant; it
   cannot be used to browse arbitrary directories through the server.
+- `guest_album_dir` is an explicit trusted-config exception for Guest Mode. It
+  can point outside the main media root, but only its matching configured album
+  is exposed and local paths remain hidden in web-share mode.
 
 ## Recommendations
 
@@ -19,6 +24,8 @@ This app is designed to run local-first.
 - Set `playlist_editable` to `false` when a shared link should not be able to
   create, rename, update, or delete playlists.
 - Treat Cloudflare tunnel links like private links.
+- Guest Mode is a focused sharing surface, not user authentication. Protect
+  the server or tunnel link as you would any other private media link.
 - Stop the server or tunnel when you are done sharing.
 - Keep your media library backed up before using Edit Mode.
 

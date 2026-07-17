@@ -43,6 +43,16 @@
     return activeIndex;
   }
 
+  // Desktop uses a compact lyric window instead of exposing the entire LRC.
+  // Mobile ignores this class and retains its continuous scrolling experience.
+  function updateVisibleWindow(container, activeIndex, radius=3){
+    if(!container) return;
+    const focusIndex = Math.max(0, Number(activeIndex) || 0);
+    container.querySelectorAll(".lrcLine").forEach((line, index) => {
+      line.classList.toggle("lrcWindowLine", Math.abs(index - focusIndex) <= radius);
+    });
+  }
+
   function scrollLyricIntoFocus(activeLine, forceScroll=false){
     const scroller = activeLine.closest(".syncedLyrics");
     if(!scroller){
@@ -51,16 +61,19 @@
     }
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const desktopLyrics = window.matchMedia("(min-width: 1100px)").matches;
-    const activeCenter = activeLine.offsetTop + activeLine.offsetHeight / 2;
+    if(desktopLyrics){
+      // Desktop renders a fixed seven-line window, so scrolling would clip
+      // previous lines after the hidden LRC rows reflow.
+      scroller.scrollTo({top:0, behavior:"auto"});
+      return;
+    }
     // On mobile, anchor the top edge so wrapped lyrics do not climb into the
-    // faded mask. Desktop keeps its centered reading position.
+    // faded mask.
     const targetTop = Math.max(28, scroller.clientHeight * .09);
-    const scrollTop = desktopLyrics
-      ? activeCenter - scroller.clientHeight * .42
-      : activeLine.offsetTop - targetTop;
+    const scrollTop = activeLine.offsetTop - targetTop;
     scroller.scrollTo({
       top: Math.max(0, scrollTop),
-      behavior: forceScroll || reduceMotion || !desktopLyrics ? "auto" : "smooth",
+      behavior: forceScroll || reduceMotion ? "auto" : "smooth",
     });
   }
 
@@ -71,5 +84,6 @@
     parseLrcTimestamp,
     scrollLyricIntoFocus,
     syncedLyricsHtml,
+    updateVisibleWindow,
   };
 })();

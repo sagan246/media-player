@@ -15,7 +15,12 @@ mac_commands/start_player.command
 ```
 
 Use `start_launcher` for the menu-style launcher. Use `start_player` for a
-plain local editable start on port `8766`.
+plain local editable start on port `8766`. The Windows graphical launcher also
+offers **Normal + Demo Cloudflare**, which starts two temporary public links:
+
+- Normal read-only share on local port `8767`
+- Guest/demo share on local port `8769`
+- Local editable server on port `8766`
 
 ## Configuration
 
@@ -36,6 +41,9 @@ Common settings:
   "editable": true,
   "playlist_editable": true,
   "web_share": false,
+  "guest_mode": false,
+  "guest_album": "",
+  "guest_album_dir": "",
   "music_dir": "Music",
   "video_dir": "Video",
   "text_dir": "Interviews",
@@ -51,12 +59,44 @@ Useful fields:
 - `editable` - enables or disables metadata editing.
 - `playlist_editable` - allows playlist create, rename, update, and delete independently of metadata editing.
 - `web_share` - enables read-only web-share behavior.
+- `guest_mode` - opens directly to the Game and limits playback to one album.
+- `guest_album` - exact album metadata value made available in Guest Mode.
+- `guest_album_dir` - optional Guest-only music folder. It may be outside the
+  main media library and is resolved relative to the config file when it is not
+  an absolute path.
 - `music_dir` - music folder inside the selected media folder.
 - `video_dir` - video folder inside the selected media folder.
 - `text_dir` - text archive folder inside the selected media folder.
 - `text_tab_label` - label used for the text archive tab.
 - `preferred_categories` - music category order.
 - `preferred_video_categories` - video category order.
+
+### Guest Mode
+
+Guest Mode is a focused Game and music-player surface. It hides the main
+navigation, disables metadata and playlist writes, and only exposes tracks
+whose album metadata exactly matches `guest_album` (ignoring capitalization
+and repeated spaces). Guests can still play music, read lyrics, open and
+reorder the queue, and move between the Game and Now Playing. Its piece-style
+selector offers preset photos, plain pieces, and current album artwork.
+
+```json
+{
+  "guest_mode": true,
+  "guest_album": "Album Name",
+  "guest_album_dir": "D:/Guest Music/Album Name"
+}
+```
+
+The graphical launcher can enable or disable Guest Mode, save its album, and
+optionally select a separate folder containing Guest music. Leaving the folder
+blank uses the normal music library. Its combined Cloudflare mode can expose a
+normal share and a Guest/demo share at the same time without changing the
+saved Guest toggle.
+
+The configured album and game directory must exist or the server will stop
+with a clear startup error. On mobile, Guest Mode enables the Game bloom while
+Now Playing keeps the normal mobile layout.
 
 ## Media Library
 

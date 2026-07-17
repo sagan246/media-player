@@ -8,8 +8,15 @@
   --control: #1a1d26;
   --text: #f6f7fb;
   --muted: #747b8f;
-  --field-glow: rgba(78,255,195,.08);
-  --grid-line: rgba(74,255,195,.1);
+  --good: #4deeea;
+  --good-rgb: 77,238,234;
+  --bad: #ff745f;
+  --bad-rgb: 255,116,95;
+  --field-glow: rgba(var(--good-rgb),.075);
+  --grid-line: rgba(104,143,255,.11);
+  --music-piece-scale: 1;
+  --music-piece-brightness: 1;
+  --music-piece-glow: 14px;
   font-family: Inter, ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
   background: var(--page);
   color: var(--text);
@@ -49,7 +56,14 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
 .eyebrow { display: block; color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .18em; }
 .scores { display: flex; align-items: end; gap: 16px; }
 .scores strong { display: block; margin-top: -1px; font-size: 27px; line-height: 1; font-variant-numeric: tabular-nums; }
+.rule-legend { display:flex; align-items:center; gap:10px; margin-left:18px; margin-right:auto; color:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; opacity:.76; }
+.rule-legend span { display:inline-flex; align-items:center; gap:5px; }
+.rule-legend b { color:var(--text); font-size:12px; line-height:1; }
+.legend-dot { width:10px; height:10px; border-radius:50%; }
+.good-dot { background:var(--good); box-shadow:0 0 8px rgba(var(--good-rgb),.52); }
+.bad-dot { background:var(--bad); box-shadow:0 0 8px rgba(var(--bad-rgb),.46); }
 .hud-actions { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
+.mode-label { font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 #pause {
   width: 34px; height: 34px; border: 1px solid #343946; border-radius: 50%;
   background: var(--control); color: var(--text); cursor: pointer;
@@ -61,6 +75,33 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
     radial-gradient(circle at 50% 42%, var(--field-glow), transparent 38%),
     linear-gradient(180deg, var(--panel), var(--panel-deep));
   cursor: crosshair;
+}
+
+/* Pause doubles as a visualizer-only mode. Gameplay remains frozen in memory,
+   while every game surface except the Run control becomes transparent. */
+:root[data-visualizer-only="true"] #game {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+:root[data-visualizer-only="true"] .hud {
+  justify-content: flex-end;
+  background: transparent !important;
+  border-color: transparent !important;
+}
+:root[data-visualizer-only="true"] .scores,
+:root[data-visualizer-only="true"] .rule-legend,
+:root[data-visualizer-only="true"] .mode-label,
+:root[data-visualizer-only="true"] #pieces-mode,
+:root[data-visualizer-only="true"] #field > * {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+:root[data-visualizer-only="true"] #field {
+  background: transparent !important;
+  cursor: default;
+  pointer-events: none;
 }
 
 .grid-glow {
@@ -75,7 +116,7 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
   --size: clamp(44px, 13.85vmin, 78px); position: absolute; width: var(--size); height: var(--size);
   margin: calc(var(--size) / -2); border-radius: 50%; pointer-events: none;
   display: grid; place-items: center; will-change: transform; transform: translate3d(0,0,0);
-  color: #5effc9;
+  color: var(--good);
 }
 .piece::after {
   content: ""; position: absolute; z-index: -1; left: 50%; top: 50%;
@@ -83,51 +124,54 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
   transform-origin: 0 50%;
   transform: translateY(-50%) rotate(calc(var(--travel-angle, 0deg) + 180deg));
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(94,255,201,.3), transparent 88%);
+  background: linear-gradient(90deg, rgba(var(--good-rgb),.30), transparent 88%);
   filter: blur(calc(var(--size) * .12)); opacity: .72;
 }
 .piece::before { content: ""; position: absolute; inset: clamp(6.5px, 2.05vmin, 11.6px); border-radius: inherit; }
-.piece.good { border: 1px solid rgba(96,255,204,.5); background: rgba(72,234,181,.1); box-shadow: 0 0 18px rgba(72,234,181,.12); }
+.piece.good { border: 1px solid rgba(var(--good-rgb),.54); background: rgba(var(--good-rgb),.09); box-shadow: 0 0 18px rgba(var(--good-rgb),.14); }
 .piece.good::before {
   content: attr(data-label); display: grid; place-items: center;
-  color: #073b2b; background: #5effc9;
+  color: #032f3a; background: var(--good);
   font-size: calc(var(--size) * .31); font-weight: 950; font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 0 rgba(255,255,255,.38);
-  box-shadow: 0 0 13px #5effc9, inset 0 0 0 5px rgba(255,255,255,.19);
-  animation: breathe 1.15s ease-in-out infinite alternate;
+  box-shadow: 0 0 var(--music-piece-glow) rgba(var(--good-rgb),.92), inset 0 0 0 5px rgba(255,255,255,.19);
+  animation: none;
+  scale: var(--music-piece-scale);
+  filter: brightness(var(--music-piece-brightness));
+  transition: scale .09s linear, filter .09s linear, box-shadow .09s linear;
 }
 :root[data-pieces="photos"] .piece.good::before {
   content: "";
-  background-color: #5effc9;
+  background-color: var(--good);
   background-image: url("assets/photo-grid.png");
   background-repeat: no-repeat;
   background-size: 300% auto;
   background-position: var(--photo-x, 0%) var(--photo-y, 5.6%);
-  box-shadow: 0 0 13px #5effc9, inset 0 0 0 3px rgba(255,255,255,.56);
+  box-shadow: 0 0 var(--music-piece-glow) rgba(var(--good-rgb),.92), inset 0 0 0 3px rgba(255,255,255,.56);
 }
 :root[data-pieces="clean"] .piece.good::before,
 :root[data-pieces="album"] .piece.good::before {
   content: "";
 }
 :root[data-pieces="album"] .piece.good::before {
-  background-color: #5effc9;
+  background-color: var(--good);
   background-image: var(--album-art-image, none);
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-  box-shadow: 0 0 13px #5effc9, inset 0 0 0 3px rgba(255,255,255,.46);
+  box-shadow: 0 0 var(--music-piece-glow) rgba(var(--good-rgb),.92), inset 0 0 0 3px rgba(255,255,255,.46);
 }
-.piece.bad { color: #ff536f; border: 1px solid rgba(255,83,112,.55); background: rgba(255,73,104,.1); box-shadow: 0 0 20px rgba(255,73,104,.15); }
-.piece.bad::after { background: linear-gradient(90deg, rgba(255,83,111,.3), transparent 88%); }
+.piece.bad { color: var(--bad); border: 1px solid rgba(var(--bad-rgb),.58); background: rgba(var(--bad-rgb),.10); box-shadow: 0 0 20px rgba(var(--bad-rgb),.16); }
+.piece.bad::after { background: linear-gradient(90deg, rgba(var(--bad-rgb),.32), transparent 88%); }
 .piece.bad::before {
-  background-color: #ff536f;
-  box-shadow: 0 0 16px #ff365a;
+  background-color: var(--bad);
+  box-shadow: 0 0 16px rgba(var(--bad-rgb),.92);
   clip-path: polygon(50% 0, 61% 31%, 100% 50%, 61% 69%, 50% 100%, 39% 69%, 0 50%, 39% 31%);
 }
 :root[data-pieces="photos"] .piece.bad::before {
   background-image: url("assets/hazard.png");
   background-position: center 24%; background-repeat: no-repeat; background-size: 235%;
-  box-shadow: 0 0 16px #ff365a, inset 0 0 0 3px rgba(255,255,255,.38);
+  box-shadow: 0 0 16px rgba(var(--bad-rgb),.92), inset 0 0 0 3px rgba(255,255,255,.38);
   clip-path: none;
 }
 .piece.hit { animation: collect-pop .24s ease-out forwards; }
@@ -135,10 +179,8 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
   45% { opacity: 1; scale: 1.18; }
   100% { opacity: 0; scale: 1.55; }
 }
-@keyframes breathe { to { scale: 1.13; filter: brightness(1.12); } }
-
 .score-pop { position: absolute; z-index: 5; font-weight: 950; font-size: clamp(15px, 4.6vmin, 26px); pointer-events: none; animation: score-pop .65s ease-out forwards; }
-.score-pop.good { color: #62ffcc; } .score-pop.bad { color: #ff647c; }
+.score-pop.good { color: var(--good); } .score-pop.bad { color: var(--bad); }
 @keyframes score-pop { to { translate: 0 -42px; opacity: 0; } }
 
 .catch-burst {
@@ -150,6 +192,7 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
   font-size: 24px; line-height: 1; text-shadow: 0 0 10px rgba(255,121,162,.7);
   animation: heart-pop .48s cubic-bezier(.2,.85,.3,1) forwards;
 }
+:root:not([data-pieces="photos"]) .catch-burst .heart { display:none; }
 .catch-burst .spark {
   --angle: 0deg; --distance: 38px;
   position: absolute; left: -3px; top: -3px; width: 6px; height: 6px;
@@ -174,8 +217,8 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
 }
 .impact-ring {
   position: absolute; z-index: 6; width: 20px; height: 20px; margin: -10px;
-  border: 3px solid #ff536f; border-radius: 50%; pointer-events: none;
-  box-shadow: 0 0 12px rgba(255,83,111,.65), inset 0 0 12px rgba(255,83,111,.35);
+  border: 3px solid var(--bad); border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 12px rgba(var(--bad-rgb),.65), inset 0 0 12px rgba(var(--bad-rgb),.35);
   animation: impact-ring .42s ease-out forwards;
 }
 @keyframes impact-ring { to { opacity: 0; scale: 4.2; border-width: 1px; } }
@@ -183,13 +226,13 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
 .pointer-trail {
   position: absolute; z-index: 4; width: 9px; height: 9px; margin: -4.5px;
   border-radius: 50%; pointer-events: none;
-  background: radial-gradient(circle, #ffffff 0 18%, #66ffd0 42%, rgba(102,255,208,0) 72%);
-  box-shadow: 0 0 8px #5effc9, 0 0 18px rgba(94,255,201,.58);
+  background: radial-gradient(circle, #ffffff 0 18%, #8ffcff 42%, rgba(143,252,255,0) 72%);
+  box-shadow: 0 0 8px #8ffcff, 0 0 18px rgba(var(--good-rgb),.58);
   animation: pointer-glow-out .52s ease-out forwards;
 }
 .pointer-trail.touch {
   width: 13px; height: 13px; margin: -6.5px;
-  box-shadow: 0 0 10px #5effc9, 0 0 22px rgba(94,255,201,.68);
+  box-shadow: 0 0 10px #8ffcff, 0 0 22px rgba(var(--good-rgb),.68);
 }
 @keyframes pointer-glow-out {
   0% { opacity: .95; scale: 1; }
@@ -210,7 +253,55 @@ button:focus-visible { outline: 3px solid #f1bd2b; outline-offset: 2px; }
   mask: url("assets/preset-icon.png") center / contain no-repeat;
 }
 
+/* On desktop the parent player draws its audio visualizer behind this
+   document. Translucent surfaces make it part of the field wallpaper while
+   preserving the game's contrast. Phones retain the original opaque field. */
+@media (min-width: 861px) {
+  :root, html, body { background:transparent; }
+  #game {
+    background:rgba(4,6,14,.26);
+    border-inline:0;
+    box-shadow:0 0 34px rgba(76,126,255,.055);
+  }
+  .hud {
+    background:rgba(5,7,16,.42);
+    border:1px solid rgba(150,174,220,.10);
+    border-top:0;
+    backdrop-filter:blur(10px);
+  }
+  #field {
+    background:
+      radial-gradient(circle at 50% 46%, rgba(var(--good-rgb),.035), transparent 44%),
+      linear-gradient(180deg, rgba(7,9,20,.10), rgba(3,5,12,.17));
+  }
+}
+
+@media (max-width: 860px) {
+  :root { --music-piece-scale:1; --music-piece-brightness:1; --music-piece-glow:14px; }
+  :root[data-guest-mode="true"],
+  :root[data-guest-mode="true"] body,
+  :root[data-mobile-visualizer="true"],
+  :root[data-mobile-visualizer="true"] body { background:transparent; }
+  :root[data-guest-mode="true"] #game,
+  :root[data-mobile-visualizer="true"] #game {
+    background:rgba(4,6,14,.055);
+    border-inline:0;
+  }
+  :root[data-guest-mode="true"] .hud,
+  :root[data-mobile-visualizer="true"] .hud {
+    background:rgba(5,7,16,.22);
+    backdrop-filter:blur(3px);
+  }
+  :root[data-guest-mode="true"] #field,
+  :root[data-mobile-visualizer="true"] #field {
+    background:
+      radial-gradient(circle at 50% 46%, rgba(var(--good-rgb),.01), transparent 44%),
+      linear-gradient(180deg, rgba(7,9,20,.012), rgba(3,5,12,.028));
+  }
+}
+
 @media (max-height: 560px) { .hud { min-height: 58px; } }
 @media (prefers-reduced-motion: reduce) {
   #game.danger-flash, .piece.hit, .score-pop, .piece::before, .catch-burst *, .impact-ring, .pointer-trail { animation-duration: .01ms; }
+  :root[data-audio-reactive="true"] .piece.good::before { scale:1; filter:none; }
 }

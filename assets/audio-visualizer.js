@@ -2,23 +2,33 @@
   "use strict";
 
   const MODES = ["bars", "wave", "dots", "mirror", "ring", "mountain", "orbit", "rain"];
+  const CANVAS_IDS = ["nowPlayingVisualizer", "gameVisualizer"];
+  const GAME_SIGNAL_INTERVAL = 1000 / 30;
 
-  function isIOSDevice(){
-    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+  function isMobileDevice(){
+    return Boolean(navigator.userAgentData?.mobile)
+      || /Android|Mobile|iPad|iPhone|iPod/.test(navigator.userAgent)
       || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   }
 
-  function create({player, byId, themeEngine}){
+  function create({player, byId, themeEngine, allowMobileNowPlaying=()=>false, allowMobileGame=()=>false}){
+    const mobileDevice = isMobileDevice();
     let audioContext = null;
     let analyser = null;
     let source = null;
     let frequencyData = null;
     let frame = null;
+    let lastFrameAt = 0;
+    let lastGameSignalAt = 0;
     let mode = localStorage.getItem("visualizerMode") || "bars";
 
     if(!MODES.includes(mode)) mode = "bars";
 
-    function allowed(){return !isIOSDevice();}
+    function mobileGameVisualizerEnabled(){return Boolean(allowMobileGame());}
+    // Mobile Web Audio can interrupt native lock-screen controls, so Now
+    // Playing only opts into it through an explicit saved device preference.
+    function allowed(){return !mobileDevice || Boolean(allowMobileNowPlaying());}
+    function analyserAllowed(){return allowed() || mobileGameVisualizerEnabled();}
     function currentMode(){return mode;}
 
     function setMode(value){
@@ -34,8 +44,23 @@
       if(context) context.clearRect(0, 0, canvas.width, canvas.height);
     }
 
+    function clearAll(){CANVAS_IDS.forEach(clear);}
+
+    function sendGameEnergy(levels, active=true){
+      const gameFrame = byId("gameFrame");
+      gameFrame?.contentWindow?.postMessage({
+        type:"media-player-game-audio",
+        active,
+        mobileEnabled:mobileGameVisualizerEnabled(),
+        energy:levels?.energy || 0,
+        bass:levels?.bass || 0,
+        mids:levels?.mids || 0,
+        highs:levels?.highs || 0
+      }, location.origin);
+    }
+
     function initialize(){
-      if(!allowed()) return false;
+      if(!analyserAllowed()) return false;
       if(analyser) return true;
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       if(!AudioContext) return false;
@@ -76,12 +101,13 @@
         cancelAnimationFrame(frame);
         frame = null;
       }
-      clear();
+      clearAll();
+      sendGameEnergy(null, false);
     }
 
     function cycle(){
       setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
-      clear();
+      clearAll();
       if(!player.paused && !player.ended) requestAnimationFrame(start);
     }
 
@@ -99,14 +125,20 @@
       const context = canvas.getContext("2d");
       if(!context || !analyser || !frequencyData) return null;
       const rect = canvas.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
+      if(rect.width < 2 || rect.height < 2) return null;
+      const nativeDpr = window.devicePixelRatio || 1;
+      // A full-screen Retina canvas is unnecessarily expensive on phones.
+      // Capping its backing resolution keeps playback controls responsive
+      // without changing the visualizer's on-screen size.
+      const dpr = mobileDevice
+        ? Math.min(nativeDpr, canvas.id === "gameVisualizer" ? 1.35 : 2)
+        : nativeDpr;
       const width = Math.max(1, Math.round(rect.width * dpr));
       const height = Math.max(1, Math.round(rect.height * dpr));
       if(canvas.width !== width || canvas.height !== height){
         canvas.width = width;
         canvas.height = height;
       }
-      analyser.getByteFrequencyData(frequencyData);
       context.clearRect(0, 0, width, height);
       return {context, dpr, width, height};
     }
@@ -175,11 +207,21 @@
       const state = prepare(canvas);
       if(!state) return;
       const {context, dpr, width, height} = state;
-      const rows=4, gap=width/(count+1);
+      const rows=4, gap=width/(count+1), light=lightTheme();
+      // Pale adaptive accents could make this mode nearly disappear on light
+      // backgrounds. Use the stronger accent there and retain the brighter
+      // sheen on dark themes, preserving the original four-row dot meter.
+      const colorName=light ? "--accent-rgb" : "--accent-sheen-rgb";
+      const fallback=light ? "63,111,216" : "141,183,255";
       for(let index=0; index<count; index++){
         const value=bandValue(index,count), lit=Math.max(1,Math.round(value*rows));
         for(let row=0; row<rows; row++){
-          context.fillStyle=themeRgba("--accent-sheen-rgb","141,183,255",row<lit?.35+value*.65:.08);
+          const active=row<lit;
+          context.fillStyle=themeRgba(
+            colorName,
+            fallback,
+            active ? .42+value*.54 : (light ? .14 : .09)
+          );
           context.beginPath();
           context.arc((index+1)*gap,height-(row+1)*(height/(rows+1)),Math.max(2.5*dpr,4*dpr*value),0,Math.PI*2);
           context.fill();
@@ -227,6 +269,95 @@
       context.beginPath();
       context.arc(centerX,centerY,base+average*height*.12,0,Math.PI*2);
       context.stroke();
+    }
+
+    // The game has its own filled audio bloom. It stays visually independent
+    // from the selectable Now Playing visualizers and leaves no hollow center.
+    function drawGameBloom(canvas){
+      if(!canvas)return null;
+      const state=prepare(canvas);
+      if(!state)return null;
+      const {context,dpr,width,height}=state;
+      const reduced=window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+      const bass=valueBetween(0,Math.min(8,frequencyData.length));
+      const mids=valueBetween(Math.min(8,frequencyData.length-1),Math.min(26,frequencyData.length));
+      const highs=valueBetween(Math.min(26,frequencyData.length-1),frequencyData.length);
+      const energy=Math.min(1,bass*.52+mids*.34+highs*.14);
+      const motion=reduced ? .12 : energy;
+      const centerX=width/2;
+      const centerY=height*.5;
+      const baseRadius=Math.min(width,height)*(.47+bass*.035);
+      const time=reduced ? 0 : performance.now()/6500;
+      const cobalt="76,126,255";
+      const violet="152,92,255";
+
+      context.save();
+      context.globalCompositeOperation="screen";
+      context.lineCap="round";
+
+      const bloom=context.createRadialGradient(centerX,centerY,0,centerX,centerY,baseRadius);
+      bloom.addColorStop(0,`rgba(${cobalt},${.15+motion*.17})`);
+      bloom.addColorStop(.28,`rgba(${violet},${.12+motion*.14})`);
+      bloom.addColorStop(.56,`rgba(${cobalt},${.085+motion*.11})`);
+      bloom.addColorStop(.82,`rgba(${violet},${.035+motion*.06})`);
+      bloom.addColorStop(1,"rgba(20,28,60,0)");
+      context.fillStyle=bloom;
+      context.shadowColor=`rgba(${cobalt},${.12+motion*.18})`;
+      context.shadowBlur=(20+motion*34)*dpr;
+      context.beginPath();
+      context.arc(centerX,centerY,baseRadius,0,Math.PI*2);
+      context.fill();
+      context.shadowBlur=0;
+
+      // Slow offset light fields keep the filled center alive without
+      // competing with the pieces the player needs to track.
+      for(let fieldIndex=0;fieldIndex<3;fieldIndex++){
+        const angle=time*(fieldIndex%2 ? -1.5 : 1.2)+fieldIndex*Math.PI*2/3;
+        const offset=baseRadius*(.16+mids*.08);
+        const fieldX=centerX+Math.cos(angle)*offset;
+        const fieldY=centerY+Math.sin(angle)*offset;
+        const fieldRadius=baseRadius*(.38+fieldIndex*.055);
+        const fieldColor=fieldIndex%2 ? violet : cobalt;
+        const field=context.createRadialGradient(fieldX,fieldY,0,fieldX,fieldY,fieldRadius);
+        field.addColorStop(0,`rgba(${fieldColor},${.065+motion*.105})`);
+        field.addColorStop(1,`rgba(${fieldColor},0)`);
+        context.fillStyle=field;
+        context.beginPath();
+        context.arc(fieldX,fieldY,fieldRadius,0,Math.PI*2);
+        context.fill();
+      }
+
+      // Two faint travelling waves register bass hits without leaving a
+      // permanent target pattern in the middle of the playfield.
+      const rippleClock=reduced ? .55 : (performance.now()/2600)%1;
+      for(let ripple=0;ripple<2;ripple++){
+        const phase=(rippleClock+ripple*.5)%1;
+        const rippleRadius=baseRadius*(.18+phase*.72);
+        const color=ripple%2 ? violet : cobalt;
+        context.strokeStyle=`rgba(${color},${(1-phase)*(.012+bass*.055)})`;
+        context.lineWidth=(2+(1-phase)*8+bass*4)*dpr;
+        context.beginPath();
+        context.arc(centerX,centerY,rippleRadius,0,Math.PI*2);
+        context.stroke();
+      }
+
+      const count=72;
+      for(let index=0;index<count;index++){
+        const value=reduced ? .1 : bandValue(index,count);
+        const angle=(index/count)*Math.PI*2+time;
+        const wave=Math.sin(index*.47+time*3)*mids;
+        const inner=baseRadius*(.77+wave*.025);
+        const outer=inner+height*(.008+value*.048);
+        const color=index%3===0 ? violet : cobalt;
+        context.strokeStyle=`rgba(${color},${.035+value*.23})`;
+        context.lineWidth=Math.max(dpr,(1+highs*1.8)*dpr);
+        context.beginPath();
+        context.moveTo(centerX+Math.cos(angle)*inner,centerY+Math.sin(angle)*inner);
+        context.lineTo(centerX+Math.cos(angle)*outer,centerY+Math.sin(angle)*outer);
+        context.stroke();
+      }
+      context.restore();
+      return {energy,bass,mids,highs};
     }
 
     function drawMountain(canvas, count){
@@ -286,11 +417,23 @@
     function drawFrame(){
       frame=null;
       if(player.paused||player.ended){stop(); return;}
-      const canvas=byId("nowPlayingVisualizer");
-      if(canvas){
-        const renderers={wave:[drawWave,44],dots:[drawDots,32],mirror:[drawMirror,32],ring:[drawRing,48],mountain:[drawMountain,48],orbit:[drawOrbit,28],rain:[drawRain,40],bars:[drawBars,32]};
-        const [renderer,count]=renderers[mode]||renderers.bars;
-        renderer(canvas,count);
+      const frameNow=performance.now();
+      if(mobileDevice&&frameNow-lastFrameAt<1000/30){
+        frame=requestAnimationFrame(drawFrame);
+        return;
+      }
+      lastFrameAt=frameNow;
+      analyser.getByteFrequencyData(frequencyData);
+      const renderers={wave:[drawWave,44],dots:[drawDots,32],mirror:[drawMirror,32],ring:[drawRing,48],mountain:[drawMountain,48],orbit:[drawOrbit,28],rain:[drawRain,40],bars:[drawBars,32]};
+      const [renderer,count]=renderers[mode]||renderers.bars;
+      const nowPlayingCanvas=byId("nowPlayingVisualizer");
+      if(nowPlayingCanvas)renderer(nowPlayingCanvas,count);
+
+      const gameLevels=drawGameBloom(byId("gameVisualizer"));
+      const now=frameNow;
+      if(gameLevels&&now-lastGameSignalAt>=GAME_SIGNAL_INTERVAL){
+        lastGameSignalAt=now;
+        sendGameEnergy(gameLevels, true);
       }
       frame=requestAnimationFrame(drawFrame);
     }

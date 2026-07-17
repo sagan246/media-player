@@ -99,7 +99,7 @@
       setAccent(activeId, {persist:false});
     }
 
-    return {applyAdaptive, initialize, render};
+    return {applyAdaptive, initialize, render, setAccent};
   }
 
   window.MediaPlayerThemeController = {create};

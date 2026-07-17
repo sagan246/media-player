@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#11131a">
   <title>Drift & Touch</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=mobile-visualizer6">
 </head>
 <body>
   <main id="game" aria-label="Drift and Touch game">
@@ -20,9 +20,13 @@
           <strong id="best">0</strong>
         </div>
       </div>
+      <div class="rule-legend" aria-label="Teal pieces add one point; red pieces add zero points">
+        <span><i class="legend-dot good-dot"></i><b>+1</b></span>
+        <span><i class="legend-dot bad-dot"></i><b>0</b></span>
+      </div>
       <div class="hud-actions">
-        <span id="status">Ready</span>
-        <button id="pieces-mode" type="button" aria-label="Switch to album artwork pieces" title="Plain green pieces">
+        <span class="mode-label">Mode</span>
+        <button id="pieces-mode" type="button" aria-label="Switch to photo pieces" title="Plain aqua pieces">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/></svg>
         </button>
         <button id="pause" type="button" aria-label="Pause game">&#8545;</button>
@@ -35,6 +39,6 @@
     </section>
 
   </main>
-  <script src="game.js"></script>
+  <script src="game.js?v=mobile-visualizer2"></script>
 </body>
 </html>

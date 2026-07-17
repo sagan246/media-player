@@ -54,11 +54,30 @@ class Library:
     The HTTP server reads from this object while scans happen under a lock.
     """
 
-    def __init__(self, media_dir: Path, config: LibraryConfig | None = None) -> None:
+    def __init__(
+        self,
+        media_dir: Path,
+        config: LibraryConfig | None = None,
+        *,
+        music_dir_override: Path | None = None,
+    ) -> None:
         config = config or LibraryConfig()
         self.media_dir = media_dir
         configured_music_dir = media_dir / config.music_dir
-        self.music_dir = configured_music_dir if configured_music_dir.is_dir() else media_dir
+        self.music_dir = (
+            music_dir_override.expanduser().resolve()
+            if music_dir_override is not None
+            else (configured_music_dir if configured_music_dir.is_dir() else media_dir)
+        )
+        # An external Guest source gets its own cache file and artwork namespace
+        # so it cannot overwrite normal-library cache entries with matching names.
+        if music_dir_override is None:
+            self.scan_cache_path = SCAN_CACHE_PATH
+            self.cache_namespace = ""
+        else:
+            source_hash = hashlib.sha256(str(self.music_dir).encode("utf-8")).hexdigest()[:12]
+            self.scan_cache_path = SCAN_CACHE_PATH.with_name(f"{SCAN_CACHE_PATH.stem}-guest-{source_hash}.json")
+            self.cache_namespace = f"guest-{source_hash}"
         self.video_dir = media_dir / config.video_dir
         self.text_dir = media_dir / config.text_dir
         self.tracks: list[Track] = []
@@ -77,7 +96,13 @@ class Library:
     def refresh(self) -> None:
         # Build fresh snapshots outside the lock, then swap them in quickly so
         # browser requests do not wait on a full media scan.
-        snapshot = build_library_snapshot(self.music_dir, self.video_dir, self.text_dir)
+        snapshot = build_library_snapshot(
+            self.music_dir,
+            self.video_dir,
+            self.text_dir,
+            scan_cache_path=self.scan_cache_path,
+            cache_namespace=self.cache_namespace,
+        )
 
         with self.lock:
             self.tracks = snapshot.tracks
@@ -125,15 +150,26 @@ class Library:
             return self.video_folder_covers.get(folder)
 
 
-def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Path) -> LibrarySnapshot:
+def build_library_snapshot(
+    music_dir: Path,
+    video_dir: Path,
+    interviews_dir: Path,
+    *,
+    scan_cache_path: Path = SCAN_CACHE_PATH,
+    cache_namespace: str = "",
+) -> LibrarySnapshot:
     """Scan each media source independently, then return one swappable snapshot."""
     # Music uses a metadata/artwork cache because tag reads are the expensive
     # part. Video and interview scans are lightweight path/text scans.
-    cache = load_scan_cache()
-    tracks, paths, artwork, lyrics, lyrics_formats, next_cache = scan_music(music_dir, cache)
+    cache = load_scan_cache(scan_cache_path)
+    tracks, paths, artwork, lyrics, lyrics_formats, next_cache = scan_music(
+        music_dir,
+        cache,
+        cache_namespace=cache_namespace,
+    )
     videos, video_paths, video_thumbnails, video_folder_covers = scan_videos(video_dir)
     interviews = scan_interviews(interviews_dir)
-    save_scan_cache(next_cache)
+    save_scan_cache(next_cache, scan_cache_path)
     return LibrarySnapshot(
         tracks=tracks,
         paths=paths,
@@ -148,12 +184,12 @@ def build_library_snapshot(music_dir: Path, video_dir: Path, interviews_dir: Pat
     )
 
 
-def load_scan_cache() -> dict[str, dict[str, object]]:
+def load_scan_cache(path: Path = SCAN_CACHE_PATH) -> dict[str, dict[str, object]]:
     """! @brief Load cached audio metadata/artwork records from disk."""
-    if not SCAN_CACHE_PATH.exists():
+    if not path.exists():
         return {}
     try:
-        data = json.loads(SCAN_CACHE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     if data.get("version") != SCAN_CACHE_VERSION or not isinstance(data.get("files"), dict):
@@ -161,10 +197,10 @@ def load_scan_cache() -> dict[str, dict[str, object]]:
     return data["files"]
 
 
-def save_scan_cache(files: dict[str, dict[str, object]]) -> None:
+def save_scan_cache(files: dict[str, dict[str, object]], path: Path = SCAN_CACHE_PATH) -> None:
     """! @brief Persist scan cache records after a successful music scan."""
-    SCAN_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    SCAN_CACHE_PATH.write_text(
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         json.dumps({"version": SCAN_CACHE_VERSION, "files": files}, ensure_ascii=False),
         encoding="utf-8",
     )
@@ -173,6 +209,8 @@ def save_scan_cache(files: dict[str, dict[str, object]]) -> None:
 def scan_music(
     music_dir: Path,
     cache: dict[str, dict[str, object]],
+    *,
+    cache_namespace: str = "",
 ) -> tuple[list[Track], list[Path], dict[int, Artwork], dict[int, str], dict[int, str], dict[str, dict[str, object]]]:
     """! @brief Scan audio files and reuse cached metadata when possible."""
     # Metadata/artwork reads are the slow part. The scan cache lets playback and
@@ -188,7 +226,8 @@ def scan_music(
     for track_id, path in enumerate(audio_paths):
         stat = path.stat()
         relative_path = path.relative_to(music_dir).as_posix()
-        file_cache = cached_audio_entry(cache.get(relative_path), stat)
+        cache_key = f"{cache_namespace}/{relative_path}" if cache_namespace else relative_path
+        file_cache = cached_audio_entry(cache.get(cache_key), stat)
         if file_cache is None:
             metadata = read_metadata(path)
             art = read_artwork(path)
@@ -197,13 +236,13 @@ def scan_music(
                 "mtime_ns": stat.st_mtime_ns,
                 "metadata": metadata,
                 "artwork_mime": art.mime if art else "",
-                "artwork_file": cache_artwork_data(relative_path, art.data) if art else "",
+                "artwork_file": cache_artwork_data(cache_key, art.data) if art else "",
             }
         else:
-            file_cache = normalize_audio_cache(relative_path, file_cache)
+            file_cache = normalize_audio_cache(cache_key, file_cache)
         metadata = dict(file_cache.get("metadata", {}))
         art = artwork_from_cache(file_cache)
-        next_cache[relative_path] = file_cache
+        next_cache[cache_key] = file_cache
 
         title = str(metadata.get("title", "") or path.stem)
         artist = str(metadata.get("artist", ""))

@@ -15,7 +15,11 @@ class ApiRoutesMixin:
 
     def handle_tracks_api(self) -> None:
         with self.library.lock:
-            tracks = [self.public_track(track) for track in self.library.tracks]
+            tracks = [
+                self.public_track(track)
+                for track in self.library.tracks
+                if self.player_config.allows_album(track.album)
+            ]
         self.send_json(
             {
                 "tracks": tracks,
@@ -27,7 +31,11 @@ class ApiRoutesMixin:
 
     def handle_videos_api(self) -> None:
         with self.library.lock:
-            videos = [self.public_video(video) for video in self.library.videos]
+            videos = (
+                []
+                if self.player_config.guest_mode
+                else [self.public_video(video) for video in self.library.videos]
+            )
         self.send_json(
             {
                 "videos": videos,
@@ -38,11 +46,15 @@ class ApiRoutesMixin:
 
     def handle_interviews_api(self) -> None:
         with self.library.lock:
-            interviews = [self.public_interview(interview) for interview in self.library.interviews]
+            interviews = (
+                []
+                if self.player_config.guest_mode
+                else [self.public_interview(interview) for interview in self.library.interviews]
+            )
         self.send_json({"interviews": interviews, "total": len(interviews)})
 
     def handle_playlists_api(self) -> None:
-        playlists = self.playlist_store.list_for_library(self.library)
+        playlists = [] if self.player_config.guest_mode else self.playlist_store.list_for_library(self.library)
         self.send_json({"playlists": playlists, "total": len(playlists)})
 
     def handle_listening_stats_api(self, query_text: str) -> None:
@@ -64,11 +76,19 @@ class ApiRoutesMixin:
                 "preferredCategories": self.player_config.preferred_categories,
                 "preferredVideoCategories": self.player_config.preferred_video_categories,
                 "gameAvailable": self.game_dir is not None,
+                "guestMode": self.player_config.guest_mode,
+                "guestAlbum": self.player_config.guest_album if self.player_config.guest_mode else "",
             }
         )
 
     def handle_refresh_api(self) -> None:
         self.library.refresh()
+        if self.player_config.guest_mode:
+            with self.library.lock:
+                available = any(self.player_config.allows_album(track.album) for track in self.library.tracks)
+            if not available:
+                self.send_error_json("The configured Guest Mode album is no longer available.", status=HTTPStatus.CONFLICT)
+                return
         self.send_ok()
 
     def public_track(self, track: object) -> dict[str, object]:
@@ -162,6 +182,11 @@ class ApiRoutesMixin:
         try:
             payload = self.read_json_object()
             if payload is None:
+                return
+            # Guest sessions are intentionally disposable and must never alter
+            # the owner's listening history, even from an older cached client.
+            if self.player_config.guest_mode:
+                self.send_json({"ok": True, "ignored": True, "reason": "guest_mode"})
                 return
             self.send_json(self.listening_stats.record(payload))
         except Exception as exc:  # noqa: BLE001 - stats failures should be visible to the client.

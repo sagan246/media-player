@@ -32,6 +32,7 @@ private network, or create a temporary read-only web link.
 - Optional MP3/FLAC metadata and artwork editing
 - Desktop and mobile browser UI
 - Built-in touch game that can use current album artwork
+- Configurable Guest Mode for a game-first, single-album listening session
 
 Media files and optional personal game photos are **not included** in this repository.
 
@@ -71,6 +72,8 @@ chmod +x mac_commands/start_launcher.command mac_commands/start_player.command
 ```
 
 Editable mode uses port `8766`. Read-only web-share mode uses port `8767`.
+The Windows launcher can also start normal and Guest/demo Cloudflare links
+together; the demo server uses local port `8769`.
 
 For a simple local editable start without the launcher, use:
 

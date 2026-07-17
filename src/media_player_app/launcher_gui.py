@@ -17,13 +17,15 @@ import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import END, DISABLED, NORMAL, StringVar, Tk
-from tkinter import scrolledtext, ttk
+from tkinter import END, DISABLED, NORMAL, BooleanVar, StringVar, Tk
+from tkinter import filedialog, scrolledtext, ttk
 
 
 APP_DIR = Path(__file__).resolve().parents[2]
 DEFAULT_MEDIA_DIR = APP_DIR.parent.parent / "media"
 APP_SCRIPT = APP_DIR / "media_player.py"
+CONFIG_PATH = APP_DIR / "media_player_config.json"
+EXAMPLE_CONFIG_PATH = APP_DIR / "media_player_config.example.json"
 CODEX_PYTHON = Path.home() / ".cache" / "codex-runtimes" / "codex-primary-runtime" / "dependencies" / "python" / "python.exe"
 CLOUDFLARED = APP_DIR.parent / "codex" / "tools" / "cloudflared.exe"
 
@@ -39,6 +41,7 @@ class LaunchMode:
     url_kind: str
     description: str
     cloudflare: bool = False
+    dual_cloudflare: bool = False
 
 
 MODES = {
@@ -75,6 +78,16 @@ MODES = {
         description="Read-only public temporary link through Cloudflare Tunnel.",
         cloudflare=True,
     ),
+    "Normal + Demo Cloudflare": LaunchMode(
+        name="Normal + Demo Cloudflare",
+        host="0.0.0.0",
+        port=8767,
+        flags=("--web-share", "--no-guest-mode"),
+        url_kind="cloudflare",
+        description="Start separate normal and Guest/demo public links, plus local edit mode.",
+        cloudflare=True,
+        dual_cloudflare=True,
+    ),
     "Web share local only": LaunchMode(
         name="Web share local only",
         host="0.0.0.0",
@@ -92,15 +105,22 @@ class LauncherApp:
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("Media Player Launcher")
-        self.root.geometry("720x500")
-        self.root.minsize(620, 420)
+        self.root.geometry("720x600")
+        self.root.minsize(620, 480)
         self.process: subprocess.Popen[str] | None = None
+        self.demo_process: subprocess.Popen[str] | None = None
         self.local_edit_process: subprocess.Popen[str] | None = None
         self.cloudflare_process: subprocess.Popen[str] | None = None
+        self.demo_cloudflare_process: subprocess.Popen[str] | None = None
         self.mode_name = StringVar(value="Local edit")
         self.status = StringVar(value="Stopped")
         self.url = StringVar(value="")
         self.public_url = ""
+        self.demo_public_url = ""
+        config = load_launcher_config()
+        self.guest_enabled = BooleanVar(value=bool(config.get("guest_mode", False)))
+        self.guest_album = StringVar(value=str(config.get("guest_album", "")).strip())
+        self.guest_album_dir = StringVar(value=str(config.get("guest_album_dir", "")).strip())
 
         self.apply_native_theme()
         self.build_ui()
@@ -136,33 +156,95 @@ class LauncherApp:
         self.description_label = ttk.Label(frame, text="", wraplength=660)
         self.description_label.grid(row=2, column=0, columnspan=4, sticky="we", pady=(0, 14))
 
-        ttk.Button(frame, text="Start", command=self.start, style="Primary.TButton").grid(row=3, column=0, sticky="we", padx=(0, 6))
-        ttk.Button(frame, text="Stop", command=self.stop).grid(row=3, column=1, sticky="we", padx=6)
-        ttk.Button(frame, text="Restart", command=self.restart).grid(row=3, column=2, sticky="we", padx=6)
-        ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=3, column=3, sticky="we", padx=(6, 0))
+        guest_frame = ttk.LabelFrame(frame, text="Guest Mode", padding=(10, 8))
+        guest_frame.grid(row=3, column=0, columnspan=4, sticky="we", pady=(0, 12))
+        ttk.Checkbutton(
+            guest_frame,
+            text="Enable",
+            variable=self.guest_enabled,
+            command=self.update_guest_controls,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(guest_frame, text="Album").grid(row=0, column=1, sticky="e", padx=(14, 6))
+        self.guest_album_entry = ttk.Entry(guest_frame, textvariable=self.guest_album)
+        self.guest_album_entry.grid(row=0, column=2, sticky="we")
+        ttk.Button(guest_frame, text="Save", command=self.save_guest_settings).grid(row=0, column=3, padx=(8, 0))
+        ttk.Label(guest_frame, text="Folder").grid(row=1, column=1, sticky="e", padx=(14, 6), pady=(8, 0))
+        self.guest_album_dir_entry = ttk.Entry(guest_frame, textvariable=self.guest_album_dir)
+        self.guest_album_dir_entry.grid(row=1, column=2, sticky="we", pady=(8, 0))
+        self.guest_folder_button = ttk.Button(guest_frame, text="Browse", command=self.choose_guest_album_dir)
+        self.guest_folder_button.grid(row=1, column=3, padx=(8, 0), pady=(8, 0))
+        guest_frame.columnconfigure(2, weight=1)
 
-        ttk.Button(frame, text="Open Current", command=self.open_url).grid(row=4, column=0, sticky="we", pady=(10, 2), padx=(0, 6))
-        ttk.Button(frame, text="Open Edit", command=self.open_local_edit).grid(row=4, column=1, sticky="we", pady=(10, 2), padx=6)
-        ttk.Button(frame, text="Open Local", command=self.open_local_current).grid(row=4, column=2, sticky="we", pady=(10, 2), padx=6)
-        ttk.Button(frame, text="Open LAN", command=self.open_lan_current).grid(row=4, column=3, sticky="we", pady=(10, 2), padx=(6, 0))
+        ttk.Button(frame, text="Start", command=self.start, style="Primary.TButton").grid(row=4, column=0, sticky="we", padx=(0, 6))
+        ttk.Button(frame, text="Stop", command=self.stop).grid(row=4, column=1, sticky="we", padx=6)
+        ttk.Button(frame, text="Restart", command=self.restart).grid(row=4, column=2, sticky="we", padx=6)
+        ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=4, column=3, sticky="we", padx=(6, 0))
 
-        ttk.Label(frame, textvariable=self.url, wraplength=660, style="Status.TLabel").grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 10))
+        ttk.Button(frame, text="Open Current", command=self.open_url).grid(row=5, column=0, sticky="we", pady=(10, 2), padx=(0, 6))
+        ttk.Button(frame, text="Open Edit", command=self.open_local_edit).grid(row=5, column=1, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open Local", command=self.open_local_current).grid(row=5, column=2, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open LAN", command=self.open_lan_current).grid(row=5, column=3, sticky="we", pady=(10, 2), padx=(6, 0))
 
-        ttk.Label(frame, text="Log").grid(row=6, column=0, columnspan=4, sticky="w", pady=(4, 4))
+        self.open_demo_button = ttk.Button(frame, text="Open Demo Share", command=self.open_demo_url)
+        self.open_demo_button.grid(row=6, column=0, columnspan=4, sticky="we", pady=(6, 2))
+
+        ttk.Label(frame, textvariable=self.url, wraplength=660, style="Status.TLabel").grid(row=7, column=0, columnspan=4, sticky="w", pady=(8, 10))
+
+        ttk.Label(frame, text="Log").grid(row=8, column=0, columnspan=4, sticky="w", pady=(4, 4))
 
         self.log = scrolledtext.ScrolledText(frame, height=14, state=DISABLED, font=("Consolas", 10), borderwidth=1, relief="solid")
-        self.log.grid(row=7, column=0, columnspan=4, sticky="nsew")
+        self.log.grid(row=9, column=0, columnspan=4, sticky="nsew")
 
         for column in range(4):
             frame.columnconfigure(column, weight=1)
-        frame.rowconfigure(7, weight=1)
+        frame.rowconfigure(9, weight=1)
+        self.update_guest_controls()
+
+    def update_guest_controls(self) -> None:
+        """Enable the album field only while Guest Mode is selected."""
+        mode = MODES[self.mode_name.get()]
+        state = NORMAL if self.guest_enabled.get() or mode.dual_cloudflare else DISABLED
+        self.guest_album_entry.configure(state=state)
+        self.guest_album_dir_entry.configure(state=state)
+        self.guest_folder_button.configure(state=state)
+
+    def choose_guest_album_dir(self) -> None:
+        """Select an optional Guest-only music folder."""
+        initial = Path(self.guest_album_dir.get().strip() or DEFAULT_MEDIA_DIR).expanduser()
+        if not initial.is_dir():
+            initial = DEFAULT_MEDIA_DIR
+        selected = filedialog.askdirectory(title="Choose Guest music folder", initialdir=str(initial))
+        if selected:
+            self.guest_album_dir.set(selected)
+
+    def save_guest_settings(self, *, quiet: bool = False) -> bool:
+        """Persist Guest Mode without replacing unrelated configuration keys."""
+        album = self.guest_album.get().strip()
+        album_dir = self.guest_album_dir.get().strip()
+        mode = MODES[self.mode_name.get()]
+        if (self.guest_enabled.get() or mode.dual_cloudflare) and not album:
+            self.write_log("Guest Mode needs an album name.\n")
+            return False
+        try:
+            save_launcher_guest_config(self.guest_enabled.get(), album, album_dir)
+        except (OSError, ValueError) as exc:
+            self.write_log(f"Could not save Guest Mode settings: {exc}\n")
+            return False
+        if not quiet:
+            state = "enabled" if self.guest_enabled.get() else "disabled"
+            source = album_dir or "main music library"
+            self.write_log(f"Guest Mode {state}; album: {album or '(none)'}; source: {source}.\n")
+        return True
 
     def update_mode_text(self) -> None:
         """Refresh the description and predicted URL for the selected mode."""
         mode = MODES[self.mode_name.get()]
         self.description_label.configure(text=mode.description)
         self.public_url = ""
+        self.demo_public_url = ""
+        self.open_demo_button.configure(state=NORMAL if mode.dual_cloudflare else DISABLED)
         self.url.set(self.display_url(mode))
+        self.update_guest_controls()
 
     def python_exe(self) -> str:
         """Prefer the bundled Codex Python, then fall back to PATH."""
@@ -193,12 +275,30 @@ class LauncherApp:
             "127.0.0.1",
             "--port",
             "8766",
+            "--no-guest-mode",
+        ]
+
+    def demo_share_command(self) -> list[str]:
+        """Build the dedicated Guest/demo web-share command."""
+        return [
+            self.python_exe(),
+            str(APP_SCRIPT),
+            "--media-dir",
+            str(DEFAULT_MEDIA_DIR),
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8769",
+            "--web-share",
+            "--guest-mode",
         ]
 
     def start(self) -> None:
         """Start the selected server mode if nothing is already running."""
         if self.process and self.process.poll() is None:
             self.write_log("Already running. Stop or Restart first.\n")
+            return
+        if not self.save_guest_settings(quiet=True):
             return
         mode = MODES[self.mode_name.get()]
         self.write_log(f"\nStarting {mode.name}...\n")
@@ -217,7 +317,12 @@ class LauncherApp:
         threading.Thread(target=self.read_output, args=(self.process, "server"), daemon=True).start()
         if mode.cloudflare:
             self.start_local_edit_server()
-            self.start_cloudflare(mode)
+            if mode.dual_cloudflare:
+                self.start_demo_share_server()
+                self.start_cloudflare(mode.port, "normal")
+                self.start_cloudflare(8769, "demo")
+            else:
+                self.start_cloudflare(mode.port, "primary")
 
     def stop(self) -> None:
         """Stop the server process started by this GUI."""
@@ -232,6 +337,25 @@ class LauncherApp:
             stopped_any = True
         self.cloudflare_process = None
         self.public_url = ""
+        if self.demo_cloudflare_process and self.demo_cloudflare_process.poll() is None:
+            self.write_log("Stopping demo Cloudflare tunnel...\n")
+            self.demo_cloudflare_process.terminate()
+            try:
+                self.demo_cloudflare_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.demo_cloudflare_process.kill()
+            stopped_any = True
+        self.demo_cloudflare_process = None
+        self.demo_public_url = ""
+        if self.demo_process and self.demo_process.poll() is None:
+            self.write_log("Stopping Guest/demo server...\n")
+            self.demo_process.terminate()
+            try:
+                self.demo_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.demo_process.kill()
+            stopped_any = True
+        self.demo_process = None
         if self.local_edit_process and self.local_edit_process.poll() is None:
             self.write_log("Stopping local edit server...\n")
             self.local_edit_process.terminate()
@@ -269,6 +393,10 @@ class LauncherApp:
     def open_local_edit(self) -> None:
         """Open editable localhost mode on the standard edit port."""
         webbrowser.open("http://127.0.0.1:8766/")
+
+    def open_demo_url(self) -> None:
+        """Open the demo public URL, or its local server while the tunnel starts."""
+        webbrowser.open(self.demo_public_url or "http://127.0.0.1:8769/")
 
     def open_local_current(self) -> None:
         """Open the selected mode using localhost and its configured port."""
@@ -309,15 +437,14 @@ class LauncherApp:
         )
         threading.Thread(target=self.read_output, args=(self.local_edit_process, "edit"), daemon=True).start()
 
-    def start_cloudflare(self, mode: LaunchMode) -> None:
-        """Start cloudflared and watch its output for the public URL."""
-        if not CLOUDFLARED.exists():
-            self.write_log(f"Could not find cloudflared: {CLOUDFLARED}\n")
-            self.write_log("The web-share server is still running locally.\n")
+    def start_demo_share_server(self) -> None:
+        """Start the Guest/demo read-only server beside the normal share."""
+        if self.demo_process and self.demo_process.poll() is None:
             return
-        command = [str(CLOUDFLARED), "tunnel", "--url", f"http://127.0.0.1:{mode.port}"]
-        self.write_log("Starting Cloudflare tunnel...\n")
-        self.cloudflare_process = subprocess.Popen(
+        command = self.demo_share_command()
+        self.write_log("Starting Guest/demo server on http://127.0.0.1:8769/...\n")
+        self.write_log(" ".join(command) + "\n")
+        self.demo_process = subprocess.Popen(
             command,
             cwd=str(APP_DIR),
             stdout=subprocess.PIPE,
@@ -326,26 +453,69 @@ class LauncherApp:
             bufsize=1,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
-        threading.Thread(target=self.read_output, args=(self.cloudflare_process, "cloudflare"), daemon=True).start()
+        threading.Thread(target=self.read_output, args=(self.demo_process, "demo-server"), daemon=True).start()
+
+    def start_cloudflare(self, port: int, role: str) -> None:
+        """Start one cloudflared process and watch its output for its public URL."""
+        if not CLOUDFLARED.exists():
+            self.write_log(f"Could not find cloudflared: {CLOUDFLARED}\n")
+            self.write_log("The web-share server is still running locally.\n")
+            return
+        command = [str(CLOUDFLARED), "tunnel", "--url", f"http://127.0.0.1:{port}"]
+        self.write_log(f"Starting {role} Cloudflare tunnel...\n")
+        process = subprocess.Popen(
+            command,
+            cwd=str(APP_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        if role == "demo":
+            self.demo_cloudflare_process = process
+        else:
+            self.cloudflare_process = process
+        threading.Thread(target=self.read_output, args=(process, f"cloudflare-{role}"), daemon=True).start()
 
     def read_output(self, process: subprocess.Popen[str], label: str) -> None:
         """Copy child-process output into the GUI log."""
         assert process.stdout is not None
         for line in process.stdout:
             self.write_log(f"[{label}] {line}")
-            if label == "cloudflare":
-                self.capture_cloudflare_url(line)
+            if label.startswith("cloudflare-"):
+                self.capture_cloudflare_url(line, label.removeprefix("cloudflare-"))
         if process is self.process:
             self.status.set("Stopped")
 
-    def capture_cloudflare_url(self, line: str) -> None:
+    def capture_cloudflare_url(self, line: str, role: str) -> None:
         """Save and show the temporary trycloudflare.com URL when it appears."""
         match = re.search(r"https://[^\s]+\.trycloudflare\.com", line)
         if not match:
             return
-        self.public_url = match.group(0)
-        self.url.set(f"Public: {self.public_url}\nRead-only local: http://127.0.0.1:8767/\nEdit local: http://127.0.0.1:8766/")
-        self.write_log(f"Cloudflare public link ready: {self.public_url}\n")
+        if role == "demo":
+            self.demo_public_url = match.group(0)
+        else:
+            self.public_url = match.group(0)
+        self.update_cloudflare_urls()
+        self.write_log(f"{role.title()} Cloudflare public link ready: {match.group(0)}\n")
+
+    def update_cloudflare_urls(self) -> None:
+        """Refresh the URL summary as one or both tunnels become ready."""
+        mode = MODES[self.mode_name.get()]
+        if mode.dual_cloudflare:
+            normal = self.public_url or "waiting for Cloudflare..."
+            demo = self.demo_public_url or "waiting for Cloudflare..."
+            self.url.set(
+                f"Normal public: {normal}\nDemo public: {demo}\n"
+                "Normal local: http://127.0.0.1:8767/  Demo local: http://127.0.0.1:8769/\n"
+                "Edit local: http://127.0.0.1:8766/"
+            )
+            return
+        self.url.set(
+            f"Public: {self.public_url or 'waiting for Cloudflare...'}\n"
+            "Read-only local: http://127.0.0.1:8767/\nEdit local: http://127.0.0.1:8766/"
+        )
 
     def write_log(self, text: str) -> None:
         """Append text to the log box from any thread."""
@@ -360,6 +530,12 @@ class LauncherApp:
     def display_url(self, mode: LaunchMode) -> str:
         """Return the best URL to show for a mode."""
         if mode.url_kind == "cloudflare":
+            if mode.dual_cloudflare:
+                return (
+                    "Normal public: waiting for Cloudflare...\nDemo public: waiting for Cloudflare...\n"
+                    "Normal local: http://127.0.0.1:8767/  Demo local: http://127.0.0.1:8769/\n"
+                    "Edit local: http://127.0.0.1:8766/"
+                )
             return f"Public: waiting for Cloudflare...\nRead-only local: http://127.0.0.1:{mode.port}/\nEdit local: http://127.0.0.1:8766/"
         if mode.url_kind == "lan":
             return f"PC: http://127.0.0.1:{mode.port}/\nPhone: http://{local_lan_ip()}:{mode.port}/"
@@ -382,6 +558,29 @@ class LauncherApp:
 
     def run(self) -> None:
         self.root.mainloop()
+
+
+def load_launcher_config() -> dict[str, object]:
+    """Load the writable config, falling back to the shipped example."""
+    source = CONFIG_PATH if CONFIG_PATH.is_file() else EXAMPLE_CONFIG_PATH
+    if not source.is_file():
+        return {}
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_launcher_guest_config(enabled: bool, album: str, album_dir: str = "") -> None:
+    """Atomically save only the Guest Mode settings managed by the launcher."""
+    config = load_launcher_config()
+    config["guest_mode"] = bool(enabled)
+    config["guest_album"] = album.strip()
+    config["guest_album_dir"] = album_dir.strip()
+    temporary = CONFIG_PATH.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.replace(CONFIG_PATH)
 
 
 def local_lan_ip() -> str:

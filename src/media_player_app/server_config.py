@@ -104,6 +104,9 @@ class PlayerConfig:
     text_dir: str = "Interviews"
     text_tab_label: str = "Interviews"
     game_dir: str = "game"
+    guest_mode: bool = False
+    guest_album: str = ""
+    guest_album_dir: str = ""
     preferred_categories: list[str] = field(
         default_factory=lambda: ["Albums", "Soundtracks", "Live", "Covers", "Features"]
     )
@@ -117,6 +120,10 @@ class PlayerConfig:
             value = data.get(key, fallback)
             return str(value).strip() or fallback
 
+        def bool_value(key: str, fallback: bool) -> bool:
+            value = data.get(key, fallback)
+            return value if isinstance(value, bool) else fallback
+
         return cls(
             app_name=text_value("app_name", defaults.app_name),
             music_dir=text_value("music_dir", defaults.music_dir),
@@ -124,11 +131,25 @@ class PlayerConfig:
             text_dir=text_value("text_dir", defaults.text_dir),
             text_tab_label=text_value("text_tab_label", defaults.text_tab_label),
             game_dir=str(data.get("game_dir", defaults.game_dir)).strip(),
+            guest_mode=bool_value("guest_mode", defaults.guest_mode),
+            guest_album=str(data.get("guest_album", defaults.guest_album)).strip(),
+            guest_album_dir=str(data.get("guest_album_dir", defaults.guest_album_dir)).strip(),
             preferred_categories=config_string_list(data, "preferred_categories", defaults.preferred_categories),
             preferred_video_categories=config_string_list(
                 data, "preferred_video_categories", defaults.preferred_video_categories
             ),
         )
+
+    @staticmethod
+    def normalize_album(value: object) -> str:
+        """Normalize album labels for stable, case-insensitive matching."""
+        return " ".join(str(value or "").split()).casefold()
+
+    def allows_album(self, album: object) -> bool:
+        """Return whether an album is available under the active app mode."""
+        if not self.guest_mode:
+            return True
+        return bool(self.guest_album) and self.normalize_album(album) == self.normalize_album(self.guest_album)
 
     def library_config(self) -> LibraryConfig:
         """Translate player configuration into scanner configuration."""
@@ -141,6 +162,15 @@ class PlayerConfig:
         configured = Path(self.game_dir).expanduser()
         if not configured.is_absolute():
             configured = APP_ROOT / configured
+        return configured.resolve()
+
+    def guest_music_path(self, config_path: Path) -> Path | None:
+        """Resolve the optional Guest-only music source from trusted config."""
+        if not self.guest_album_dir:
+            return None
+        configured = Path(self.guest_album_dir).expanduser()
+        if not configured.is_absolute():
+            configured = config_path.expanduser().resolve().parent / configured
         return configured.resolve()
 
 

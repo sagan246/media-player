@@ -100,10 +100,26 @@ class HttpHelpersMixin:
     def resolve_track_path(self, track_id: int | None) -> Path | None:
         if track_id is None:
             return None
-        path = self.library.path_for_id(track_id)
+        with self.library.lock:
+            if not (0 <= track_id < len(self.library.tracks)):
+                return None
+            track = self.library.tracks[track_id]
+            if not self.player_config.allows_album(track.album):
+                return None
+            path = self.library.paths[track_id] if track_id < len(self.library.paths) else None
         if path is None or not path.is_file():
             return None
         return path
+
+    def track_access_allowed(self, track_id: int | None) -> bool:
+        """Apply the configured album capability before track-adjacent reads."""
+        if track_id is None:
+            return False
+        with self.library.lock:
+            return (
+                0 <= track_id < len(self.library.tracks)
+                and self.player_config.allows_album(self.library.tracks[track_id].album)
+            )
 
     def send_file(self, path: Path, cache_control: str = "no-store") -> None:
         """Send a small static file; large media uses the streaming pipeline."""

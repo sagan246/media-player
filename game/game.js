@@ -6,7 +6,6 @@
   const floaters = document.querySelector("#floaters");
   const scoreNode = document.querySelector("#score");
   const bestNode = document.querySelector("#best");
-  const statusNode = document.querySelector("#status");
   const pauseButton = document.querySelector("#pause");
   const piecesModeButton = document.querySelector("#pieces-mode");
 
@@ -35,6 +34,8 @@
   let lastTime = 0;
   let bounds = { width: 1, height: 1 };
   let gameScale = 1;
+  let audioSignalTimer = null;
+  let guestPiecesInitialized = false;
 
   const random = (min, max) => min + Math.random() * (max - min);
 
@@ -49,11 +50,11 @@
     try { localStorage.setItem("drift-touch-best", String(bestScore)); } catch {}
   }
 
-  function savedPiecesMode() {
+  function savedPiecesMode(storageKey = "drift-touch-pieces") {
     try {
-      const saved = localStorage.getItem("drift-touch-pieces");
-      // "numbers" was the original plain-piece mode. Keep that preference
-      // useful after upgrading to the three-theme selector.
+      const saved = localStorage.getItem(storageKey);
+      // "numbers" was the original plain-piece mode. Keep old preferences
+      // compatible while preserving the restored album-art mode.
       return saved === "numbers" ? "clean" : saved;
     }
     catch { return null; }
@@ -63,11 +64,11 @@
     const modes = ["photos", "clean", "album"];
     const current = modes.includes(mode) ? mode : "clean";
     const next = modes[(modes.indexOf(current) + 1) % modes.length];
-    const labels = { photos: "photo", clean: "plain green", album: "album artwork" };
+    const labels = { photos: "photo", clean: "plain aqua", album: "album artwork" };
     const icons = {
       photos: '<span class="snsd-mode-icon" aria-hidden="true"></span>',
       clean: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/></svg>',
-      album: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 4a8 8 0 0 1 8 8"/></svg>'
+      album: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m6 18 4-4 3 3 2-2 3 3"/></svg>'
     };
 
     document.documentElement.dataset.pieces = current;
@@ -75,7 +76,10 @@
     piecesModeButton.title = `${labels[current][0].toUpperCase()}${labels[current].slice(1)} pieces`;
     piecesModeButton.setAttribute("aria-label", `Switch to ${labels[next]} pieces`);
     if (remember) {
-      try { localStorage.setItem("drift-touch-pieces", current); } catch {}
+      const storageKey = document.documentElement.dataset.guestMode === "true"
+        ? "drift-touch-guest-pieces"
+        : "drift-touch-pieces";
+      try { localStorage.setItem(storageKey, current); } catch {}
     }
   }
 
@@ -83,6 +87,25 @@
     const modes = ["photos", "clean", "album"];
     const currentIndex = modes.indexOf(document.documentElement.dataset.pieces);
     applyPiecesMode(modes[(currentIndex + 1) % modes.length], true);
+  }
+
+  function applyAudioSignal(data) {
+    const desktop = window.matchMedia("(min-width: 861px)").matches;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const visualizersAllowed = desktop || Boolean(data.mobileEnabled);
+    const active = Boolean(data.active) && visualizersAllowed && !reduced;
+    const energy = active ? Math.max(0, Math.min(1, Number(data.energy) || 0)) : 0;
+    const bass = active ? Math.max(0, Math.min(1, Number(data.bass) || 0)) : 0;
+
+    document.documentElement.dataset.audioReactive = active ? "true" : "false";
+    document.documentElement.style.setProperty("--music-piece-scale", (1 + bass * .075).toFixed(3));
+    document.documentElement.style.setProperty("--music-piece-brightness", (1 + energy * .20).toFixed(3));
+    document.documentElement.style.setProperty("--music-piece-glow", `${14 + energy * 18}px`);
+
+    clearTimeout(audioSignalTimer);
+    if (active) {
+      audioSignalTimer = setTimeout(() => applyAudioSignal({ active: false }), 240);
+    }
   }
 
   function measure() {
@@ -404,17 +427,27 @@
       for (let i = 0; i < CONFIG.initialBadPieces; i++) createPiece("bad", null, 1);
     } else pieces.forEach(piece => place(piece, false));
     running = true; paused = false;
-    statusNode.textContent = "Live";
+    setVisualizerOnly(false);
     pauseButton.textContent = "\u2161";
     pauseButton.setAttribute("aria-label", "Pause game");
+    pauseButton.title = "Pause game";
+  }
+
+  function setVisualizerOnly(enabled) {
+    document.documentElement.dataset.visualizerOnly = enabled ? "true" : "false";
+    window.parent.postMessage(
+      { type: "media-player-game-mode", visualizerOnly: Boolean(enabled) },
+      location.origin
+    );
   }
 
   function togglePause() {
     if (!running) return;
     paused = !paused; pointers.clear();
-    statusNode.textContent = paused ? "Paused" : "Live";
+    setVisualizerOnly(paused);
     pauseButton.textContent = paused ? "\u25b6" : "\u2161";
-    pauseButton.setAttribute("aria-label", paused ? "Resume game" : "Pause game");
+    pauseButton.setAttribute("aria-label", paused ? "Run game" : "Pause game");
+    pauseButton.title = paused ? "Run game" : "Pause game";
   }
 
   field.addEventListener("pointerdown", track, { passive: false });
@@ -434,11 +467,25 @@
     }
     if (event.data?.type === "media-player-game-artwork") {
       const artworkUrl = typeof event.data.artworkUrl === "string" ? event.data.artworkUrl : "";
+      const guestMode = Boolean(event.data.guestMode);
+      const mobileVisualizerEnabled = Boolean(event.data.mobileVisualizerEnabled);
       document.documentElement.style.setProperty(
         "--album-art-image",
         artworkUrl ? `url(${JSON.stringify(artworkUrl)})` : "none"
       );
       document.documentElement.classList.toggle("has-album-art", Boolean(artworkUrl));
+      document.documentElement.dataset.guestMode = guestMode ? "true" : "false";
+      document.documentElement.dataset.mobileVisualizer = mobileVisualizerEnabled ? "true" : "false";
+      // Guest Mode has its own preference and begins in photo mode. Keeping it
+      // separate prevents the normal game's plain default from overriding it.
+      if (guestMode && !guestPiecesInitialized) {
+        guestPiecesInitialized = true;
+        applyPiecesMode(savedPiecesMode("drift-touch-guest-pieces") || "photos");
+      }
+      return;
+    }
+    if (event.data?.type === "media-player-game-audio") {
+      applyAudioSignal(event.data);
     }
   });
 

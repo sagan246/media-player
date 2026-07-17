@@ -38,8 +38,8 @@
       });
     }
 
-    function render({listEl, items, activeIndex, emptyTitle, playIndex, removeIndex, moveItem}){
-      listEl.innerHTML = queueListHtml ? queueListHtml({items, activeIndex, emptyTitle}) : "";
+    function render({listEl, items, activeIndex, emptyTitle, playIndex, removeIndex, moveItem, removable=true}){
+      listEl.innerHTML = queueListHtml ? queueListHtml({items, activeIndex, emptyTitle, removable}) : "";
       bindList(listEl, playIndex, removeIndex);
       bindDrag(listEl, moveItem);
     }

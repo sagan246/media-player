@@ -94,6 +94,8 @@
     let albumViewMode = localStorage.getItem("albumViewMode") || "newest";
     let repeatMode = localStorage.getItem("repeatMode") || "off";
     let videoRepeatMode = localStorage.getItem("videoRepeatMode") || "off";
+    const MOBILE_VISUALIZER_KEY = "mobileVisualizerEnabled";
+    let mobileVisualizerEnabled = localStorage.getItem(MOBILE_VISUALIZER_KEY) === "true";
     let appConfig = {
       editable:true,
       playlistEditable:true,
@@ -103,6 +105,9 @@
       preferredCategories:["Albums","Soundtracks","Live","Covers","Features"],
       preferredVideoCategories:["Concerts"],
       gameAvailable:false,
+      guestMode:false,
+      guestAlbum:"",
+      guestTheme:"blue",
     };
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
@@ -186,6 +191,7 @@
     const healthPanelEl = byId("healthPanel");
     const listeningStatsPanelEl = byId("listeningStatsPanel");
     const themeGridEl = byId("themeGrid");
+    const mobileVisualizerToggleEl = byId("mobileVisualizerToggle");
     const navigationController = navigationControllerModule.create({
       nav:navEl,
       textList:interviewListEl,
@@ -294,9 +300,20 @@
       pulseQueue:()=>pulseQueueButton(videoQueueToggleEl),
       shuffle,
     });
-    const audioVisualizer = visualizerModule.create({player, byId, themeEngine});
+    const audioVisualizer = visualizerModule.create({
+      player,
+      byId,
+      themeEngine,
+      allowMobileNowPlaying:()=>Boolean(appConfig.guestMode||mobileVisualizerEnabled),
+      allowMobileGame:()=>Boolean(appConfig.guestMode||mobileVisualizerEnabled),
+    });
     const musicPlaybackStore = playbackPersistenceModule.create({
       key:"musicPlaybackState",
+      buildState:musicDomain.buildPlaybackState,
+      parseState:musicDomain.parsePlaybackState,
+    });
+    const guestMusicPlaybackStore = playbackPersistenceModule.create({
+      key:"guestMusicPlaybackState",
       buildState:musicDomain.buildPlaybackState,
       parseState:musicDomain.parsePlaybackState,
     });
@@ -322,7 +339,7 @@
         format:t.format||"",
         duration:knownDurations.get(t.id)||player.duration||0,
       }),
-      send:payload=>fetchJson("/api/listening-stats",{
+      send:payload=>appConfig.guestMode?Promise.resolve({ok:true,ignored:true}):fetchJson("/api/listening-stats",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload),
@@ -353,7 +370,12 @@
       const frame=byId("gameFrame");
       if(!frame?.dataset.loaded)return;
       frame.contentWindow?.postMessage(
-        {type:"media-player-game-artwork",artworkUrl:gameArtworkUrl()},
+        {
+          type:"media-player-game-artwork",
+          artworkUrl:gameArtworkUrl(),
+          guestMode:Boolean(appConfig.guestMode),
+          mobileVisualizerEnabled:Boolean(appConfig.guestMode||mobileVisualizerEnabled),
+        },
         location.origin
       );
     }
@@ -445,17 +467,20 @@
     function queueMatchesPlaylist(playlist){return playlistController.matchesQueue(playlist);}
     function syncActivePlaylistContext(){playlistController.syncActive();}
     function playlistResumeIndex(playlist){return playlistController.resumeIndex(playlist);}
+    function activeMusicPlaybackStore(){return appConfig.guestMode?guestMusicPlaybackStore:musicPlaybackStore;}
     function saveMusicState({force=false}={}){
-      if(!queue.length){playlistController.setActiveId(null); musicPlaybackStore.clear(); return;}
+      const playbackStore=activeMusicPlaybackStore();
+      if(!queue.length){playlistController.setActiveId(null); playbackStore.clear(); return;}
       syncActivePlaylistContext();
-      musicPlaybackStore.save({queue,queueIndex,playingId,selectedId,activePlaylistId:playlistController.activeId(),currentTime:player.currentTime,repeatMode},{force});
+      playbackStore.save({queue,queueIndex,playingId,selectedId,activePlaylistId:playlistController.activeId(),currentTime:player.currentTime,repeatMode},{force});
     }
     function restoreMusicState(){
       const validIds=new Set(tracks.map(t=>t.id));
-      const state=musicPlaybackStore.restore(validIds);
-      if(!state)return;
+      const playbackStore=activeMusicPlaybackStore();
+      const state=playbackStore.restore(validIds);
+      if(!state)return false;
       queue=state.queue;
-      if(!queue.length){musicPlaybackStore.clear(); return;}
+      if(!queue.length){playbackStore.clear(); return false;}
       const localQueueIndex=Math.min(Math.max(Number(state.queueIndex)||0,0),queue.length-1);
       queueIndex=localQueueIndex;
       playlistController.setActiveId(typeof state.activePlaylistId==="string"?state.activePlaylistId:null);
@@ -463,7 +488,7 @@
       if(queueMatchesPlaylist(activePlaylist))queueIndex=playlistResumeIndex(activePlaylist);
       const restoredId=queue[queueIndex];
       const t=tracks.find(x=>x.id===restoredId);
-      if(!t)return;
+      if(!t)return false;
       playingId=t.id;
       selectedId=t.id;
       const resumeAt=queueIndex===localQueueIndex?(Number(state.currentTime)||0):0;
@@ -477,6 +502,23 @@
       updateNow();
       renderQueue();
       if(mediaType==="music"&&selectedAlbum==="All")renderAlbums();
+      return true;
+    }
+
+    function initializeGuestQueue(){
+      if(!appConfig.guestMode || queue.length || !tracks.length)return;
+      const guestTracks=albumTrackList(tracks);
+      queue=guestTracks.map(track=>track.id);
+      queueIndex=0;
+      const track=guestTracks[0];
+      playingId=track.id;
+      selectedId=track.id;
+      resetPlaybackTimeline(track);
+      musicDomain.prepareSource(player,track);
+      player.pause();
+      saveMusicState({force:true});
+      updateNow();
+      renderQueue();
     }
     function saveVideoState({force=false}={}){
       if(restoringVideoStateNow)return;
@@ -535,9 +577,11 @@
       if(reload||player.error||(!player.getAttribute("src")&&currentAudioTrack())){
         await reloadCurrentAudioAt(resumeAt);
       }
-      await resumeVisualizerContext();
+      // Mobile Safari may need to resume Web Audio after every pause. Do that
+      // alongside media playback so analyzer startup never serially delays it.
+      const visualizerReady=resumeVisualizerContext();
       try{
-        await player.play();
+        await Promise.all([player.play(),visualizerReady]);
         startVisualizer();
       }catch(err){
         if(retry&&currentAudioTrack()){
@@ -1132,7 +1176,7 @@
         title: t.title,
         subtitle: `${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
       }));
-      queueController.render({listEl:queueListEl,items,activeIndex:queueIndex,emptyTitle:"Queue is empty",playIndex:playQueueIndex,removeIndex:removeQueueIndex,moveItem:moveQueueItem});
+      queueController.render({listEl:queueListEl,items,activeIndex:queueIndex,emptyTitle:"Queue is empty",playIndex:playQueueIndex,removeIndex:removeQueueIndex,moveItem:moveQueueItem,removable:!appConfig.guestMode});
       updatePlaylistSaveAction();
     }
     function loadPlaylists(render=true){return playlistController.load(render);}
@@ -1165,20 +1209,22 @@
     function setPlayerMuted(muted,{persist=true}={}){
       player.muted=Boolean(muted);
       updateVolumeControls();
-      if(persist)localStorage.setItem("playerMuted",String(player.muted));
+      if(persist&&!appConfig.guestMode)localStorage.setItem("playerMuted",String(player.muted));
     }
     function setPlayerVolume(value,{persist=true}={}){
       const volume=Math.min(1,Math.max(0,Number(value)));
       player.volume=volume;
       if(volume>0){
         player.muted=false;
-        localStorage.setItem("playerLastAudibleVolume",String(volume));
-        if(persist)localStorage.setItem("playerMuted","false");
+        if(persist&&!appConfig.guestMode){
+          localStorage.setItem("playerLastAudibleVolume",String(volume));
+          localStorage.setItem("playerMuted","false");
+        }
       }
       volumeBar.value=String(volume);
       const npVolume=byId("npVolumeBar");
       if(npVolume)npVolume.value=String(volume);
-      if(persist)localStorage.setItem("playerVolume",String(volume));
+      if(persist&&!appConfig.guestMode)localStorage.setItem("playerVolume",String(volume));
       updateVolumeControls();
     }
     function togglePlayerMute(){
@@ -1214,7 +1260,11 @@
       if(npDuration)npDuration.textContent=knownDuration>0?`-${fmt(knownDuration)}`:"0:00";
       if(npSeek)npSeek.value="0";
     }
-    function nowPlayingArtSrc(t){return t?.has_artwork?stableAlbumArtUrl(t):"";}
+    function nowPlayingArtSrc(t){
+      if(!t?.has_artwork) return "";
+      // Guest albums may intentionally use different embedded artwork per track.
+      return appConfig.guestMode ? fullArtUrl(t) : stableAlbumArtUrl(t);
+    }
     function renderLrcLyrics(box, trackId, text){
       const lines = lyricsHelpers.parseLrc ? lyricsHelpers.parseLrc(text) : [];
       if(!lines.length){
@@ -1222,7 +1272,7 @@
         currentLrcLyrics = null;
         return;
       }
-      currentLrcLyrics = {trackId, lines, activeIndex:-1};
+      currentLrcLyrics = {trackId, lines, activeIndex:null};
       box.classList.add("syncedLyrics");
       box.innerHTML = lyricsHelpers.syncedLyricsHtml ? lyricsHelpers.syncedLyricsHtml(lines) : "";
       box.querySelectorAll(".lrcLine").forEach(lineEl => {
@@ -1242,6 +1292,8 @@
       const activeIndex = lyricsHelpers.activeLrcIndex ? lyricsHelpers.activeLrcIndex(lines, player.currentTime) : -1;
       if(activeIndex === currentLrcLyrics.activeIndex && !forceScroll)return;
       currentLrcLyrics.activeIndex = activeIndex;
+      const lyricContainer = document.querySelector(".syncedLyrics");
+      if(lyricsHelpers.updateVisibleWindow) lyricsHelpers.updateVisibleWindow(lyricContainer, activeIndex, 3);
       document.querySelectorAll(".lrcLine.active").forEach(el=>el.classList.remove("active"));
       const activeLine = document.querySelector(`.lrcLine[data-lrc-index="${activeIndex}"]`);
       if(activeLine){
@@ -1379,7 +1431,17 @@
     }
     function fmt(seconds){if(!Number.isFinite(seconds))return "0:00"; const m=Math.floor(seconds/60), s=Math.floor(seconds%60); return `${m}:${String(s).padStart(2,"0")}`;}
     function fmtDuration(seconds){if(!Number.isFinite(seconds)||seconds<=0)return "0m"; const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60); return h?`${h}h ${m}m`:`${Math.max(1,m)}m`;}
-    function renderCustomize(){themeController.render();}
+    function renderCustomize(){
+      themeController.render();
+      if(mobileVisualizerToggleEl)mobileVisualizerToggleEl.checked=mobileVisualizerEnabled;
+    }
+    function applyMobileVisualizerPreference(){
+      document.body.classList.toggle(
+        "mobileGameVisualizerEnabled",
+        Boolean(appConfig.guestMode||mobileVisualizerEnabled)
+      );
+      syncGameArtwork();
+    }
     function applyAdaptiveTheme(){return themeController.applyAdaptive();}
     function applyDisplayConfig(){
       const appName=appConfig.appName||"Local Media Player";
@@ -1394,9 +1456,22 @@
       if(emptyText)emptyText.textContent=`Text files are loaded locally from media\\${appConfig.textDir||"Interviews"}.`;
       const savePlaylist=byId("saveQueuePlaylist");
       if(savePlaylist)savePlaylist.hidden=!appConfig.playlistEditable;
+      const clearQueue=byId("clearQueue");
+      if(clearQueue)clearQueue.hidden=Boolean(appConfig.guestMode);
+      document.body.classList.toggle("guestMode",Boolean(appConfig.guestMode));
+      // Guest Mode has a predictable dark presentation without overwriting
+      // the theme the owner selected for the normal application.
+      if(appConfig.guestMode && themeController.setAccent){
+        themeController.setAccent(appConfig.guestTheme||"blue", {persist:false});
+      }
+      if(appConfig.guestMode){
+        if(player.volume===0)setPlayerVolume(savedAudibleVolume(), {persist:false});
+        setPlayerMuted(false, {persist:false});
+      }
+      applyMobileVisualizerPreference();
       gameTabEl.hidden=!appConfig.gameAvailable;
     }
-    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true};} applyDisplayConfig(); document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
+    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true};} applyDisplayConfig(); document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(appConfig.guestMode)setMediaType("game"); else if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
     function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")statsController.render(); else if(mediaType==="customize")renderCustomize(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
@@ -1408,7 +1483,8 @@
       if(refresh && interviewsLoaded) await loadInterviews();
       if(refresh && statsController.hasData()) await statsController.load();
       renderCurrentMedia();
-      restoreMusicState();
+      const restored=restoreMusicState();
+      if(!restored)initializeGuestQueue();
 
       if(keepId !== null && tracks.some(t=>t.id === keepId)){
         selectTrack(keepId);
@@ -1472,6 +1548,7 @@
     // Switching tabs should never stop music, but video is paused so it does
     // not keep decoding in the background while the user is browsing music or stats.
     function setMediaType(type){
+      if(appConfig.guestMode && type!=="game")type="game";
       if(!appConfig.editable && type === "health") type = "music";
       if(mediaType!==type)clearSearchQuery();
       if(mediaType==="game"&&type!=="game"){
@@ -1521,7 +1598,19 @@
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin===location.origin&&event.data?.type==="media-player-game-ready")syncGameArtwork();}); on(window,"beforeunload",()=>listeningRecorder.flush());}
+    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin!==location.origin)return; if(event.data?.type==="media-player-game-ready")syncGameArtwork(); if(event.data?.type==="media-player-game-mode")document.body.classList.toggle("gameVisualizerOnly",Boolean(event.data.visualizerOnly));}); on(window,"beforeunload",()=>listeningRecorder.flush());}
+    function bindCustomizeControls(){
+      on(mobileVisualizerToggleEl,"change",()=>{
+        mobileVisualizerEnabled=mobileVisualizerToggleEl.checked;
+        localStorage.setItem(MOBILE_VISUALIZER_KEY,String(mobileVisualizerEnabled));
+        applyMobileVisualizerPreference();
+        stopVisualizer();
+        nowPlayingRenderedTrackId=null;
+        nowPlayingRenderedArtSrc="";
+        nowPlayingBodyEl.innerHTML="";
+        updateNow();
+      });
+    }
     function bindKeyboardShortcuts(){
       on(document,"keydown",event=>{
         if(isTypingTarget(event.target)||appMode!=="listen")return;
@@ -1616,6 +1705,7 @@
       bindMusicControls();
       bindBrowseControls();
       bindTabsAndSearch();
+      bindCustomizeControls();
       bindKeyboardShortcuts();
       bindVideoControls();
       bindQueueControls();

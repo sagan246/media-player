@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#000000">
   <title>Local Media Player</title>
-  <link rel="stylesheet" href="/assets/styles-bundle.css?v=frontend-bundle1">
+  <link rel="stylesheet" href="/assets/styles-bundle.css?v=frontend-bundle30">
 </head>
 <body class="listen music">
   <header>
@@ -20,12 +20,12 @@
           <button id="customizeTab" class="mediaTab topTab topAction inactive iconOnly" title="Customize" aria-label="Customize"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></button>
           <button id="gameTab" class="mediaTab topTab topAction inactive iconOnly" title="Game" aria-label="Game" hidden><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12l2 8.5a2 2 0 0 1-3.5 1.7L14.5 16h-5l-2 2.2A2 2 0 0 1 4 16.5z"/><path d="M8 11v4M6 13h4"/><circle cx="16" cy="12" r=".8" fill="currentColor" stroke="none"/><circle cx="18" cy="14" r=".8" fill="currentColor" stroke="none"/></svg></button>
           <button id="healthTab" class="mediaTab topTab topAction inactive iconOnly" title="Health" aria-label="Health"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg></button>
-          <button id="refresh" class="secondary topAction iconOnly" title="Refresh library" aria-label="Refresh library"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
           <button id="listenMode" class="ghost topAction active iconOnly" title="Listen Mode" aria-label="Listen Mode"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-1a8 8 0 0 1 16 0v1"/><path d="M5 13h3v6H5z"/><path d="M16 13h3v6h-3z"/></svg></button>
           <button id="editMode" class="ghost topAction iconOnly" title="Edit Mode" aria-label="Edit Mode"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16z"/><path d="M13 7l4 4"/></svg></button>
           <a class="ghost topAction iconOnly iconLink" href="https://github.com/sagan246/media-player" target="_blank" rel="noopener noreferrer" title="View source on GitHub" aria-label="View source on GitHub"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.1-1.5 6.1-6.7a5.2 5.2 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.7 1.4a12.8 12.8 0 0 0-6.7 0C6.7.3 5.6.6 5.6.6a4.8 4.8 0 0 0-.1 3.6 5.2 5.2 0 0 0-1.4 3.6c0 5.2 3.1 6.4 6.1 6.7a3.4 3.4 0 0 0-.9 2.6V22"/></svg></a>
         </div>
       </div>
+      <button id="refresh" class="secondary topAction iconOnly" title="Refresh library" aria-label="Refresh library"><svg class="buttonIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
       <input id="searchBox" type="search" placeholder="Search title, album, folder">
       <select id="musicFilter" class="musicOnly"><option value="all">Library filter</option><optgroup label="Artwork"><option value="art:with">With artwork</option><option value="art:missing">Missing artwork</option></optgroup><optgroup label="Metadata"><option value="missing:any">Missing anything</option><option value="missing:album">Missing album</option><option value="missing:date">Missing date</option><option value="missing:tracknumber">Missing track #</option><option value="missing:genre">Missing genre</option><option value="review:any">Needs review</option><option value="review:non-English title">Non-English title</option><option value="review:suspicious album">Suspicious album</option></optgroup></select>
       <div class="stats" id="stats"></div>
@@ -104,9 +104,16 @@
         <div class="customizeCard">
           <div class="themeGrid" id="themeGrid"></div>
         </div>
+        <div class="customizeCard preferenceCard mobileOnlyPreference">
+          <label class="preferenceRow" for="mobileVisualizerToggle">
+            <span class="preferenceText"><strong>Mobile visualizer</strong><small>Turning this on breaks lock-screen controls. Reload after turning it off to restore them.</small></span>
+            <input id="mobileVisualizerToggle" class="switchControl" type="checkbox" role="switch">
+          </label>
+        </div>
       </section>
       <section class="gamePanel gameOnly" id="gamePanel">
         <iframe id="gameFrame" class="gameFrame" title="Game" loading="lazy" allow="fullscreen"></iframe>
+        <canvas id="gameVisualizer" class="gameVisualizer" width="1200" height="56" aria-hidden="true"></canvas>
       </section>
       <section class="controls interviewsOnly">
         <span class="viewTitle" data-text-label>Interviews</span>
@@ -204,6 +211,6 @@
       <div class="dialogActions"><button id="confirmPlaylist" type="submit">Save</button><button id="cancelPlaylistDialog" class="secondary" type="button">Cancel</button></div>
     </form>
   </dialog>
-  <script src="/assets/app-bundle.js?v=frontend-bundle3"></script>
+  <script src="/assets/app-bundle.js?v=frontend-bundle27"></script>
 </body>
 </html>
