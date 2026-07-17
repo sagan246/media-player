@@ -6,6 +6,7 @@
   const floaters = document.querySelector("#floaters");
   const scoreNode = document.querySelector("#score");
   const bestNode = document.querySelector("#best");
+  const allTimeBestNode = document.querySelector("#all-time-best");
   const scoreLabelNode = document.querySelector("#score-label");
   const pauseButton = document.querySelector("#pause");
   const piecesModeButton = document.querySelector("#pieces-mode");
@@ -105,11 +106,21 @@
     const active = Boolean(data.active) && visualizersAllowed && !reduced;
     const energy = active ? Math.max(0, Math.min(1, Number(data.energy) || 0)) : 0;
     const bass = active ? Math.max(0, Math.min(1, Number(data.bass) || 0)) : 0;
+    const mids = active ? Math.max(0, Math.min(1, Number(data.mids) || 0)) : 0;
+    const highs = active ? Math.max(0, Math.min(1, Number(data.highs) || 0)) : 0;
+    const beat = active ? Math.max(0, Math.min(1, Number(data.beat) || 0)) : 0;
 
     document.documentElement.dataset.audioReactive = active ? "true" : "false";
-    document.documentElement.style.setProperty("--music-piece-scale", (1 + bass * .075).toFixed(3));
-    document.documentElement.style.setProperty("--music-piece-brightness", (1 + energy * .20).toFixed(3));
-    document.documentElement.style.setProperty("--music-piece-glow", `${14 + energy * 18}px`);
+    document.documentElement.style.setProperty("--music-piece-scale", (1 + bass * .025 + beat * .025).toFixed(3));
+    document.documentElement.style.setProperty("--music-piece-brightness", (1 + energy * .34 + beat * .12).toFixed(3));
+    document.documentElement.style.setProperty("--music-piece-saturation", (1 + highs * .48 + beat * .16).toFixed(3));
+    document.documentElement.style.setProperty("--music-piece-glow", `${14 + energy * 30 + beat * 18}px`);
+    document.documentElement.style.setProperty("--music-piece-aura", (.14 + energy * .34 + beat * .18).toFixed(3));
+    document.documentElement.style.setProperty("--music-beat-ring", `${beat * 8}px`);
+    document.documentElement.style.setProperty("--music-beat-ring-opacity", (beat * .34).toFixed(3));
+    document.documentElement.style.setProperty("--music-tail-opacity", active ? (.12 + mids * .48 + beat * .28).toFixed(3) : "0");
+    document.documentElement.style.setProperty("--music-tail-length", (1.55 + energy * .38 + beat * .18).toFixed(3));
+    document.documentElement.style.setProperty("--music-grid-opacity", (.17 + highs * .14).toFixed(3));
 
     clearTimeout(audioSignalTimer);
     if (active) {
@@ -321,6 +332,7 @@
       bestScore = score;
       bestNode.textContent = bestScore;
       saveBestScore();
+      window.parent.postMessage({type:"media-player-game-score",score:bestScore},location.origin);
     }
     if (isGood && !catMode) addBadPiecesForScore();
     scoreNode.textContent = score;
@@ -565,6 +577,10 @@
       if (!event.data.visible && running && !paused) togglePause();
       return;
     }
+    if (event.data?.type === "media-player-game-all-time") {
+      const sharedBest = Number.parseInt(event.data.score, 10);
+      if (Number.isInteger(sharedBest) && sharedBest >= 0) allTimeBestNode.textContent = sharedBest;
+    }
     if (event.data?.type === "media-player-game-artwork") {
       const artworkUrl = typeof event.data.artworkUrl === "string" ? event.data.artworkUrl : "";
       const guestMode = Boolean(event.data.guestMode);
@@ -596,5 +612,5 @@
   measure();
   start();
   requestAnimationFrame(update);
-  window.parent.postMessage({ type: "media-player-game-ready", catMode }, location.origin);
+  window.parent.postMessage({ type: "media-player-game-ready", catMode, bestScore }, location.origin);
 })();

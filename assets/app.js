@@ -52,6 +52,7 @@
     const queueControllerModule = window.MediaPlayerQueueController || {};
     const musicControllerModule = window.MediaPlayerMusicController || {};
     const videoControllerModule = window.MediaPlayerVideoController || {};
+    const gameControllerModule = window.MediaPlayerGameController || {};
 
     // app.js is the stateful coordinator. Stateless markup lives in
     // components.js/stats-components.js so the music, video, queue, and stats
@@ -300,6 +301,27 @@
       pulseQueue:()=>pulseQueueButton(videoQueueToggleEl),
       shuffle,
     });
+    const gameController = gameControllerModule.create({
+      frame:byId("gameFrame"),
+      fetchJson,
+      getArtworkUrl:()=>{
+        const track=tracks.find(t=>t.id===playingId)||tracks.find(t=>t.id===selectedId);
+        const artworkUrl=track ? fullArtUrl(track) : "";
+        return artworkUrl ? new URL(artworkUrl,location.origin).href : "";
+      },
+      getGuestMode:()=>appConfig.guestMode,
+      getMobileVisualizerEnabled:()=>mobileVisualizerEnabled,
+      onCatModeChange:enabled=>{
+        const active=Boolean(enabled);
+        document.body.classList.toggle("gameCatMode",active);
+        if(!active)return;
+        setOpen(queueDrawerEl,false);
+        setOpen(videoQueueDrawerEl,false);
+        setOpen(nowPlayingDrawerEl,false);
+        document.body.classList.remove("queueAboveNowPlaying");
+      },
+      onVisualizerOnlyChange:enabled=>document.body.classList.toggle("gameVisualizerOnly",enabled),
+    });
     const audioVisualizer = visualizerModule.create({
       player,
       byId,
@@ -361,33 +383,6 @@
     function artUrl(t){return t.artwork_thumb_url || t.artwork_url || "";}
     function smallArtUrl(t){return t.artwork_thumb_small_url || artUrl(t);}
     function fullArtUrl(t){return t.artwork_url || t.artwork_thumb_url || "";}
-    function gameArtworkUrl(){
-      const track=tracks.find(t=>t.id===playingId)||tracks.find(t=>t.id===selectedId);
-      const artworkUrl=track ? fullArtUrl(track) : "";
-      return artworkUrl ? new URL(artworkUrl,location.origin).href : "";
-    }
-    function syncGameArtwork(){
-      const frame=byId("gameFrame");
-      if(!frame?.dataset.loaded)return;
-      frame.contentWindow?.postMessage(
-        {
-          type:"media-player-game-artwork",
-          artworkUrl:gameArtworkUrl(),
-          guestMode:Boolean(appConfig.guestMode),
-          mobileVisualizerEnabled:Boolean(appConfig.guestMode||mobileVisualizerEnabled),
-        },
-        location.origin
-      );
-    }
-    function setGameCatMode(enabled){
-      const active=Boolean(enabled);
-      document.body.classList.toggle("gameCatMode",active);
-      if(!active)return;
-      setOpen(queueDrawerEl,false);
-      setOpen(videoQueueDrawerEl,false);
-      setOpen(nowPlayingDrawerEl,false);
-      document.body.classList.remove("queueAboveNowPlaying");
-    }
     function stableAlbumArtUrl(t){const album=albumOf(t); const art=tracks.find(x=>albumOf(x)===album&&x.has_artwork); return art ? fullArtUrl(art) : fullArtUrl(t);}
     function groupOf(t){if(groupMode==="category") return categoryOf(t); if(groupMode==="album") return albumOf(t); return folderOf(t);}
     function musicGroupMatches(t, group=selectedGroup){
@@ -432,7 +427,7 @@
     }
     function cycleMusicRepeat(){
       repeatMode=nextRepeatMode(repeatMode);
-      localStorage.setItem("repeatMode",repeatMode);
+      if(!appConfig.guestMode)localStorage.setItem("repeatMode",repeatMode);
       saveMusicState({force:true});
       updateRepeatButtons();
     }
@@ -505,7 +500,7 @@
       player.pause();
       if(["off","all","one"].includes(state.repeatMode)){
         repeatMode=state.repeatMode;
-        localStorage.setItem("repeatMode",repeatMode);
+        if(!appConfig.guestMode)localStorage.setItem("repeatMode",repeatMode);
       }
       selectTrack(t.id);
       updateNow();
@@ -1428,14 +1423,14 @@
       if(!t){
         nowInfoEl.innerHTML=`<div class="noArt">?</div><div class="nowText"></div>`;
         renderNowPlaying(null);
-        syncGameArtwork();
+        gameController.syncArtwork();
         return;
       }
       mediaSessionController.update(t,{paused:player.paused});
       applyAdaptiveTheme();
       nowInfoEl.innerHTML=`${t.has_artwork?`<img src="${smallArtUrl(t)}" alt="">`:`<div class="noArt">?</div>`}<div class="nowText"><div class="nowTitle">${esc(t.title)}</div><div class="nowSub">${esc(t.artist||"Unknown artist")}</div></div>`;
       renderNowPlaying(t);
-      syncGameArtwork();
+      gameController.syncArtwork();
       if(!player.paused&&!player.ended)requestAnimationFrame(startVisualizer);
     }
     function fmt(seconds){if(!Number.isFinite(seconds))return "0:00"; const m=Math.floor(seconds/60), s=Math.floor(seconds%60); return `${m}:${String(s).padStart(2,"0")}`;}
@@ -1449,12 +1444,12 @@
         "mobileGameVisualizerEnabled",
         Boolean(appConfig.guestMode||mobileVisualizerEnabled)
       );
-      syncGameArtwork();
+      gameController.syncArtwork();
     }
     function applyAdaptiveTheme(){return themeController.applyAdaptive();}
     function applyDisplayConfig(){
       const appName=appConfig.appName||"Local Media Player";
-      const displayTitle=appConfig.guestMode ? "Music Game" : appName;
+      const displayTitle=appConfig.guestMode ? "Soshi Game" : appName;
       const textLabel=appConfig.textTabLabel||"Interviews";
       document.title=displayTitle;
       const titleEl=document.querySelector("header h1");
@@ -1481,7 +1476,20 @@
       applyMobileVisualizerPreference();
       gameTabEl.hidden=!appConfig.gameAvailable;
     }
-    async function loadConfig(){try{appConfig={...appConfig,...await fetchJson("/api/config")};}catch{appConfig={...appConfig,editable:true};} applyDisplayConfig(); document.body.classList.toggle("readOnly",!appConfig.editable); if(!appConfig.editable&&appMode==="edit")setAppMode("listen"); if(appConfig.guestMode)setMediaType("game"); else if(!appConfig.editable&&mediaType==="health")setMediaType("music");}
+    async function loadConfig(){
+      try{appConfig={...appConfig,...await fetchJson("/api/config")};}
+      catch{appConfig={...appConfig,editable:true};}
+      try{
+        applyDisplayConfig();
+        document.body.classList.toggle("readOnly",!appConfig.editable);
+        if(!appConfig.editable&&appMode==="edit")setAppMode("listen");
+        if(appConfig.guestMode)setMediaType("game");
+        else if(!appConfig.editable&&mediaType==="health")setMediaType("music");
+      }finally{
+        document.body.classList.remove("appBooting");
+      }
+      if(appConfig.gameAvailable)await gameController.loadHighScore();
+    }
     function renderCurrentMedia(){if(mediaType==="video")renderVideoAll(); else if(mediaType==="health")renderHealth(); else if(mediaType==="interviews")renderInterviews(); else if(mediaType==="statsPage")statsController.render(); else if(mediaType==="customize")renderCustomize(); else renderAll();}
     async function loadTracks(refresh=false, keepId=null){
       if(refresh) await fetchJson("/api/refresh");
@@ -1495,6 +1503,13 @@
       renderCurrentMedia();
       const restored=restoreMusicState();
       if(!restored)initializeGuestQueue();
+      // Demo Mode represents one configured album, so Repeat All is the
+      // natural startup behavior. Users may still change it after loading.
+      if(appConfig.guestMode){
+        repeatMode="all";
+        saveMusicState({force:true});
+        updateRepeatButtons();
+      }
 
       if(keepId !== null && tracks.some(t=>t.id === keepId)){
         selectTrack(keepId);
@@ -1563,7 +1578,7 @@
       if(mediaType!==type)clearSearchQuery();
       if(mediaType==="game"&&type!=="game"){
         const frame=byId("gameFrame");
-        frame?.contentWindow?.postMessage({type:"media-player-game-visibility",visible:false},location.origin);
+        gameController.setVisible(false);
       }
       mediaType = type;
       // Phones/tablets are playback-first. Editing remains desktop-only so the
@@ -1592,7 +1607,7 @@
       if(type === "game"){
         const frame=byId("gameFrame");
         if(frame&&!frame.dataset.loaded){frame.src="/game/"; frame.dataset.loaded="true";}
-        else syncGameArtwork();
+        else gameController.syncArtwork();
       }
       if(type === "video"){
         setOpen(queueDrawerEl, false);
@@ -1608,7 +1623,23 @@
     function bindTableEvents(){document.querySelectorAll("th.sortable").forEach(th=>th.addEventListener("click",()=>{tableSortActive=true; const key=th.dataset.sort; if(sortKey===key) sortDir=sortDir==="asc"?"desc":"asc"; else { sortKey=key; sortDir=key==="has_artwork"?"desc":"asc"; } renderRows();})); selectShownEl.addEventListener("change",()=>{for(const t of filtered()){selectShownEl.checked?selectedIds.add(t.id):selectedIds.delete(t.id);} renderRows();}); clearSelectedEl.addEventListener("click",()=>{selectedIds.clear(); renderRows();}); bulkSaveEl.addEventListener("click",bulkSave);}
     function bindMusicControls(){on(byId("playShownMusic"),"click",()=>playList(currentPlaybackList())); on(byId("shuffleShownMusic"),"click",()=>playList(currentPlaybackList(),true)); on(byId("topQueueToggle"),"click",toggleMusicQueue); on(byId("showAllAlbums"),"click",closeMusicAlbum); on(byId("listenMode"),"click",enterListenMode); on(byId("editMode"),"click",()=>enterEditMode()); on(albumViewModeEl,"change",()=>setAlbumViewMode(albumViewModeEl.value)); on(musicFilterEl,"change",renderAll);}
     function bindBrowseControls(){on(byId("browseMusic"),"click",toggleBrowse); on(byId("browseVideo"),"click",toggleBrowse); on(byId("toggleBrowsePanel"),"click",toggleBrowse); on(byId("closeBrowse"),"click",closeBrowsePanel); on(byId("browseInterviews"),"click",toggleBrowse); on(byId("shuffleInterviews"),"click",shuffleInterview); on(byId("toggleInterviewBrowsePanel"),"click",toggleBrowse); on(byId("closeInterviewBrowse"),"click",closeInterviewBrowsePanel);}
-    function bindTabsAndSearch(){on(musicTabEl,"click",()=>setMediaType("music")); on(videoTabEl,"click",()=>setMediaType("video")); on(interviewsTabEl,"click",()=>setMediaType("interviews")); on(statsTabEl,"click",()=>setMediaType("statsPage")); on(customizeTabEl,"click",()=>setMediaType("customize")); on(gameTabEl,"click",()=>setMediaType("game")); on(healthTabEl,"click",()=>setMediaType("health")); on(searchEl,"input",renderCurrentMedia); on(byId("refresh"),"click",()=>loadTracks(true,selectedId)); on(window,"resize",setDeviceClass); on(window,"message",event=>{if(event.origin!==location.origin)return; if(event.data?.type==="media-player-game-ready"){syncGameArtwork(); setGameCatMode(event.data.catMode);} if(event.data?.type==="media-player-game-mode")document.body.classList.toggle("gameVisualizerOnly",Boolean(event.data.visualizerOnly)); if(event.data?.type==="media-player-game-cat-mode")setGameCatMode(event.data.enabled);}); on(window,"beforeunload",()=>listeningRecorder.flush());}
+    function bindTabsAndSearch(){
+      const tabs=[
+        [musicTabEl,"music"],
+        [videoTabEl,"video"],
+        [interviewsTabEl,"interviews"],
+        [statsTabEl,"statsPage"],
+        [customizeTabEl,"customize"],
+        [gameTabEl,"game"],
+        [healthTabEl,"health"],
+      ];
+      tabs.forEach(([element,type])=>on(element,"click",()=>setMediaType(type)));
+      on(searchEl,"input",renderCurrentMedia);
+      on(byId("refresh"),"click",()=>loadTracks(true,selectedId));
+      on(window,"resize",setDeviceClass);
+      on(window,"message",gameController.handleMessage);
+      on(window,"beforeunload",()=>listeningRecorder.flush());
+    }
     function bindCustomizeControls(){
       on(mobileVisualizerToggleEl,"change",()=>{
         mobileVisualizerEnabled=mobileVisualizerToggleEl.checked;

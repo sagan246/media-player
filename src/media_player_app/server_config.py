@@ -18,6 +18,7 @@ DEFAULT_MEDIA_DIR = REPO_DIR / "media"
 DEFAULT_CONFIG = APP_ROOT / "media_player_config.json"
 AUDIO_DEBUG_LOG = RUNTIME_DIR / "media_player_audio_debug.log"
 STATS_DB = RUNTIME_DIR / "media_player_stats.sqlite3"
+GAME_STATS_DB = RUNTIME_DIR / "media_player_game_stats.sqlite3"
 ART_THUMB_CACHE_DIR = RUNTIME_DIR / "media_player_cache" / "art_thumbs"
 ART_THUMB_DISPLAY_SIZE = 512
 ART_THUMB_ICON_SIZE = 96
@@ -42,6 +43,7 @@ FRONTEND_SCRIPT_FILES = (
     "queue-controller.js",
     "music-controller.js",
     "video-controller.js",
+    "game-controller.js",
     "components.js",
     "music-components.js",
     "playlist-components.js",

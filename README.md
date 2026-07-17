@@ -113,6 +113,16 @@ http://<lan-address>:8766/
 For safety, `--media-dir` accepts only the repository's expected media folder
 or one of its descendants. It is not a general filesystem browser.
 
+To clear the shared human-game world record before a release or demo, run:
+
+```bash
+media-player --reset-game-record
+```
+
+This resets the record to zero and exits without starting the server.
+On Windows, the confirmation-based `windows_commands/reset_game_record.cmd`
+does the same thing by double-click.
+
 ## Edit Mode
 
 Edit Mode allows supported audio metadata and embedded artwork to be updated

@@ -59,6 +59,7 @@ many latency-heavy requests over a tunnel; text responses are gzip compressed.
 
 - `assets/index.html` - app shell.
 - `assets/app.js` - stateful coordinator and cross-domain event wiring.
+- `assets/game-controller.js` - game iframe protocol and shared high-score coordination.
 - `assets/*-controller.js` - music/video queue mutations, drawers, navigation,
   playlists, editing, stats, and themes.
 - `assets/*-domain.js` - music/video state, stats ranges, playlists, edit payloads,

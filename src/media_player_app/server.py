@@ -17,6 +17,7 @@ from urllib.parse import unquote, urlparse
 
 from .api_routes import ApiRoutesMixin
 from .edit_routes import EditRoutesMixin
+from .game_stats import GameHighScoreStore
 from .http_helpers import HttpHelpersMixin
 from .listening_stats import ListeningStats
 from .media_library import Library
@@ -28,6 +29,7 @@ from .server_config import (
     DEFAULT_MEDIA_DIR,
     FRONTEND_SCRIPT_FILES,
     FRONTEND_STYLE_FILES,
+    GAME_STATS_DB,
     HTML_PATH,
     RUNTIME_DIR,
     STATS_DB,
@@ -45,6 +47,7 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
 
     library: Library
     listening_stats: ListeningStats
+    game_stats: GameHighScoreStore
     playlist_store: PlaylistStore
     player_config = PlayerConfig()
     game_dir: Path | None = None
@@ -73,6 +76,7 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
             "/api/interviews": self.handle_interviews_api,
             "/api/playlists": self.handle_playlists_api,
             "/api/listening-stats": lambda: self.handle_listening_stats_api(query_text),
+            "/api/game-score": self.handle_game_score_api,
             "/api/refresh": self.handle_refresh_api,
         }
 
@@ -168,6 +172,9 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
         if parsed.path == "/api/listening-stats":
             self.handle_listening_stats_record()
             return
+        if parsed.path == "/api/game-score":
+            self.handle_game_score_record()
+            return
         if parsed.path.startswith("/api/playlists/") and parsed.path.endswith("/resume"):
             if self.player_config.guest_mode:
                 self.send_error_json("Playlist changes are disabled for this server.", status=HTTPStatus.FORBIDDEN)
@@ -231,6 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.set_defaults(guest_mode=None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8766, type=int)
+    parser.add_argument(
+        "--reset-game-record",
+        action="store_true",
+        help="Reset the shared human-game world record to zero, then exit.",
+    )
     return parser
 
 
@@ -245,6 +257,10 @@ def resolve_media_dir(value: Path, allowed_root: Path = DEFAULT_MEDIA_DIR) -> Pa
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.reset_game_record:
+        GameHighScoreStore(GAME_STATS_DB).reset()
+        print("Game world record reset to 0.")
+        return 0
     media_dir = resolve_media_dir(args.media_dir)
     if not media_dir.is_dir():
         raise SystemExit(f"Media folder not found: {media_dir}")
@@ -289,6 +305,7 @@ def main() -> int:
             raise SystemExit(f"Guest Mode album was not found in {source}: {player_config.guest_album}")
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     Handler.listening_stats = ListeningStats(STATS_DB)
+    Handler.game_stats = GameHighScoreStore(GAME_STATS_DB)
     Handler.playlist_store = PlaylistStore(RUNTIME_DIR / "playlists.json")
     AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
 

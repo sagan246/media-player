@@ -20,6 +20,8 @@
     let frame = null;
     let lastFrameAt = 0;
     let lastGameSignalAt = 0;
+    let gameBassFollower = 0;
+    let gameBeat = 0;
     let mode = localStorage.getItem("visualizerMode") || "bars";
 
     if(!MODES.includes(mode)) mode = "bars";
@@ -55,7 +57,8 @@
         energy:levels?.energy || 0,
         bass:levels?.bass || 0,
         mids:levels?.mids || 0,
-        highs:levels?.highs || 0
+        highs:levels?.highs || 0,
+        beat:levels?.beat || 0
       }, location.origin);
     }
 
@@ -102,6 +105,8 @@
         frame = null;
       }
       clearAll();
+      gameBassFollower=0;
+      gameBeat=0;
       sendGameEnergy(null, false);
     }
 
@@ -283,6 +288,10 @@
       const mids=valueBetween(Math.min(8,frequencyData.length-1),Math.min(26,frequencyData.length));
       const highs=valueBetween(Math.min(26,frequencyData.length-1),frequencyData.length);
       const energy=Math.min(1,bass*.52+mids*.34+highs*.14);
+      const bassOnset=Math.max(0,bass-gameBassFollower);
+      gameBassFollower+= (bass-gameBassFollower)*.2;
+      gameBeat=Math.max(gameBeat*.84,Math.min(1,bassOnset*5.2),Math.max(0,(bass-.7)*1.8));
+      const beat=gameBeat;
       const motion=reduced ? .12 : energy;
       const centerX=width/2;
       const centerY=height*.5;
@@ -294,6 +303,31 @@
       context.save();
       context.globalCompositeOperation="screen";
       context.lineCap="round";
+
+      // Wide opposing light sweeps respond to the midrange. Curved, blurred
+      // paths keep the effect soft without exposing rotated rectangle edges.
+      for(let sweep=0;sweep<2;sweep++){
+        const angle=time*(sweep ? -1.2 : .9)+sweep*Math.PI/2;
+        context.save();
+        context.translate(centerX,centerY);
+        context.rotate(angle);
+        const sweepWidth=baseRadius*(.16+mids*.11);
+        const sweepLength=baseRadius*1.12;
+        const sweepGradient=context.createLinearGradient(0,0,sweepLength,0);
+        sweepGradient.addColorStop(0,"rgba(76,126,255,0)");
+        sweepGradient.addColorStop(.28,`rgba(${sweep ? violet : cobalt},${.01+mids*.038})`);
+        sweepGradient.addColorStop(.7,`rgba(${sweep ? violet : cobalt},${.008+mids*.025})`);
+        sweepGradient.addColorStop(1,"rgba(152,92,255,0)");
+        context.fillStyle=sweepGradient;
+        context.filter=`blur(${Math.max(12,baseRadius*.035)}px)`;
+        context.beginPath();
+        context.moveTo(-baseRadius*.08,0);
+        context.quadraticCurveTo(sweepLength*.48,-sweepWidth,sweepLength,0);
+        context.quadraticCurveTo(sweepLength*.48,sweepWidth,-baseRadius*.08,0);
+        context.fill();
+        context.filter="none";
+        context.restore();
+      }
 
       const bloom=context.createRadialGradient(centerX,centerY,0,centerX,centerY,baseRadius);
       bloom.addColorStop(0,`rgba(${cobalt},${.15+motion*.17})`);
@@ -327,6 +361,20 @@
         context.fill();
       }
 
+      // Broken spectral arcs orbit at different speeds. Bass expands them,
+      // while mids determine their visibility and travel.
+      for(let arcIndex=0;arcIndex<4;arcIndex++){
+        const arcRadius=baseRadius*(.31+arcIndex*.145+bass*.018);
+        const arcStart=time*(arcIndex%2 ? -1.9 : 1.35)+arcIndex*1.37;
+        const arcLength=.52+mids*.5+arcIndex*.08;
+        const arcColor=arcIndex%2 ? violet : cobalt;
+        context.strokeStyle=`rgba(${arcColor},${.018+mids*.08+beat*.035})`;
+        context.lineWidth=(1.2+arcIndex*.45+beat*2.2)*dpr;
+        context.beginPath();
+        context.arc(centerX,centerY,arcRadius,arcStart,arcStart+arcLength);
+        context.stroke();
+      }
+
       // Two faint travelling waves register bass hits without leaving a
       // permanent target pattern in the middle of the playfield.
       const rippleClock=reduced ? .55 : (performance.now()/2600)%1;
@@ -339,6 +387,20 @@
         context.beginPath();
         context.arc(centerX,centerY,rippleRadius,0,Math.PI*2);
         context.stroke();
+      }
+
+      // A short-lived shockwave makes drum transients register more clearly
+      // than the continuously travelling ambient ripples.
+      if(beat>.035){
+        const shockRadius=baseRadius*(.22+(1-beat)*.62);
+        context.strokeStyle=`rgba(${cobalt},${beat*.16})`;
+        context.lineWidth=(2+beat*10)*dpr;
+        context.shadowColor=`rgba(${violet},${beat*.28})`;
+        context.shadowBlur=(8+beat*28)*dpr;
+        context.beginPath();
+        context.arc(centerX,centerY,shockRadius,0,Math.PI*2);
+        context.stroke();
+        context.shadowBlur=0;
       }
 
       const count=72;
@@ -356,8 +418,27 @@
         context.lineTo(centerX+Math.cos(angle)*outer,centerY+Math.sin(angle)*outer);
         context.stroke();
       }
+
+      // Stable high-frequency motes twinkle instead of being randomly
+      // regenerated each frame, avoiding noisy flicker on large displays.
+      const moteCount=18;
+      for(let index=0;index<moteCount;index++){
+        const band=bandValue((index*7)%count,count);
+        const angle=index*2.399963+time*(index%2 ? -.55 : .72);
+        const radius=baseRadius*(.36+((index*37)%61)/100);
+        const twinkle=.45+.55*Math.sin(time*7+index*1.71);
+        const alpha=Math.max(0,(band*.22+highs*.12)*twinkle);
+        const size=(.8+band*2.4+beat*.8)*dpr;
+        context.fillStyle=`rgba(${index%3 ? cobalt : violet},${alpha})`;
+        context.shadowColor=`rgba(${index%3 ? cobalt : violet},${alpha*.8})`;
+        context.shadowBlur=(3+band*8)*dpr;
+        context.beginPath();
+        context.arc(centerX+Math.cos(angle)*radius,centerY+Math.sin(angle)*radius,size,0,Math.PI*2);
+        context.fill();
+      }
+      context.shadowBlur=0;
       context.restore();
-      return {energy,bass,mids,highs};
+      return {energy,bass,mids,highs,beat};
     }
 
     function drawMountain(canvas, count){

@@ -64,6 +64,10 @@ class ApiRoutesMixin:
         end = query.get("end", [None])[0]
         self.send_json(self.listening_stats.summary(period, start, end))
 
+    def handle_game_score_api(self) -> None:
+        """Return the shared high score for the human game mode."""
+        self.send_json({"best_score": self.game_stats.best_score()})
+
     def handle_config_api(self) -> None:
         self.send_json(
             {
@@ -191,3 +195,15 @@ class ApiRoutesMixin:
             self.send_json(self.listening_stats.record(payload))
         except Exception as exc:  # noqa: BLE001 - stats failures should be visible to the client.
             self.send_error_json(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def handle_game_score_record(self) -> None:
+        """Accept a bounded human-game score, including from Guest Mode."""
+        payload = self.read_json_object()
+        if payload is None:
+            return
+        try:
+            best_score = self.game_stats.record(payload.get("score"))
+        except ValueError as exc:
+            self.send_error_json(str(exc))
+            return
+        self.send_json({"ok": True, "best_score": best_score})
