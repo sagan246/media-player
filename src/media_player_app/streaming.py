@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote
 
 from .http_helpers import content_type_for
-from .media_library import CachedArtwork
+from .media_models import CachedArtwork
 from .runtime_files import atomic_write_bytes
 from .server_config import ART_THUMB_CACHE_DIR, ART_THUMB_DISPLAY_SIZE
 
@@ -192,7 +192,12 @@ class StreamingRoutesMixin:
     def stream_file(self, path: Path, label: str, debug: bool = False) -> None:
         """Stream media from disk with Range support; never load it all in memory."""
         request_started = time.perf_counter()
-        file_size = path.stat().st_size
+        try:
+            file_size = path.stat().st_size
+        except OSError:
+            # A file can disappear between library lookup and playback.
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
         range_header = self.headers.get("Range")
         try:
             status, start, end = parse_range_header(range_header, file_size)

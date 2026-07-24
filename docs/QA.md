@@ -6,6 +6,8 @@
 - Start Cloudflare mode and confirm it tunnels that same server.
 - Confirm desktop and mobile pages load.
 - Confirm browser API responses do not expose local paths.
+- Refresh the library twice quickly and confirm only one scan runs.
+- Confirm `/api/refresh` reports scan timings and current item counts.
 
 ## Music
 
@@ -33,6 +35,19 @@
 ## Regression Checks
 
 - Audio and video seeking returns HTTP `206` for Range requests.
+- Full playback returns `200`, `Accept-Ranges`, and the correct content length.
+- HEAD and invalid Range requests return headers without streaming a body.
+- Canceling playback does not print a server traceback.
 - Playing media does not trigger tag or artwork parsing.
+- Artwork loads from the scan cache without retaining every cover in memory.
 - Missing optional folders produce usable empty states.
 - Invalid playlist IDs and track IDs return JSON errors without server traces.
+
+## Automated Checks
+
+```powershell
+python -m compileall -q src tests
+python -m pytest
+node --test
+git diff --check
+```

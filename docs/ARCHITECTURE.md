@@ -9,7 +9,10 @@ Browser UI
      -> api_routes.py
      -> streaming.py
   -> media_library.py
-     -> metadata_reader.py
+     -> metadata_reader.py + scan cache
+     -> lyrics_reader.py
+     -> library_video.py
+     -> library_text.py
   -> SQLite stats / JSON playlists
 ```
 
@@ -17,14 +20,21 @@ Browser UI
 
 - `server.py` composes the request handler and starts the server.
 - `api_routes.py` serves library, playlist, config, game-score, and stats APIs.
-- `streaming.py` streams artwork, lyrics, audio, and video with Range support.
-- `media_library.py` scans configured music, video, and text folders.
+- `streaming.py` serves cached artwork and streams audio/video from disk with
+  HTTP Range support.
+- `media_library.py` coordinates serialized scans and atomically swaps complete
+  library snapshots.
 - `metadata_reader.py` reads embedded tags and artwork without writing files.
+- `lyrics_reader.py` selects lyric sidecars and validates translated LRC timing.
+- `library_video.py` discovers videos, thumbnails, and folder covers.
+- `library_text.py` discovers and decodes text archives.
 - `playlist_store.py` persists relative track references and playlist resumes.
 - `listening_stats.py` persists listening summaries in SQLite.
 
 Media files are always read-only. Playback never parses tags or artwork; the
-library scan cache performs that work before playback.
+library scan cache performs that work before playback. Cached artwork remains a
+lightweight disk reference until a browser requests the image. Refreshes are
+serialized, built outside the request lock, and installed as one snapshot.
 
 ## Frontend
 
@@ -49,6 +59,7 @@ CSS is split by layout concern under `assets/styles/` and bundled by the server.
 - `GET /api/interviews`
 - `GET /api/listening-stats`
 - `GET /api/playlists`
+- `POST /api/refresh`
 - `GET /audio/<track-id>`
 - `GET /video/<video-id>`
 - `GET /lyrics/<track-id>`
@@ -59,7 +70,7 @@ Python is the final authority for playlist validation and path boundaries.
 ## Checks
 
 ```powershell
-python -m compileall -q media_player.py launcher_gui.py src tests
+python -m compileall -q src tests
 python -m pytest
-Get-ChildItem assets -Filter *.js | ForEach-Object { node --check $_.FullName }
+node --test
 ```

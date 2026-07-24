@@ -3,16 +3,25 @@
 import base64
 import hashlib
 import json
-import re
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
+from .library_text import scan_interviews
+from .library_video import scan_videos
+from .lyrics_reader import (
+    lrc_timing_matches_raw,
+    lyrics_for_track,
+    read_lyric_sidecar,
+    read_lyric_text,
+    strip_lrc_timing,
+    timed_lrc_line_count,
+    timed_lrc_timestamps,
+)
 from .media_identity import require_unique_media_id, stable_media_id
 from .metadata_reader import AUDIO_EXTENSIONS, Artwork, read_artwork, read_metadata
-from .media_models import Interview, Track, Video
+from .media_models import CachedArtwork, Interview, Track, Video
 from .runtime_files import atomic_write_bytes, atomic_write_text
 
 
@@ -22,8 +31,6 @@ SCAN_CACHE_PATH = RUNTIME_DIR / "media_player_scan_cache.json"
 CACHE_DIR = RUNTIME_DIR / "media_player_cache"
 ARTWORK_CACHE_DIR = CACHE_DIR / "artwork"
 SCAN_CACHE_VERSION = 1
-VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m2ts", ".mts", ".ts"}
-VIDEO_THUMBNAIL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 
 
 @dataclass(frozen=True)
@@ -33,14 +40,6 @@ class LibraryConfig:
     music_dir: str = "Music"
     video_dir: str = "Video"
     text_dir: str = "Interviews"
-
-
-@dataclass(frozen=True)
-class CachedArtwork:
-    """Reference to artwork cached on disk instead of retained in memory."""
-
-    mime: str
-    path: Path
 
 
 @dataclass
@@ -377,96 +376,6 @@ def audio_files(music_dir: Path) -> list[Path]:
     )
 
 
-def lyrics_for_track(path: Path) -> tuple[str, str]:
-    """! @brief Return the best lyrics for a track, preferring English translations."""
-    # English lyrics should win even when a non-English timed LRC exists next to
-    # the song. That keeps translated TXT files useful until a timed EN LRC exists.
-    english_lrc_path = path.with_suffix(".en.lrc")
-    if english_lrc_path.is_file():
-        english_lrc = read_lyric_text(english_lrc_path)
-        if english_lrc and lrc_timing_matches_raw(english_lrc, path.with_suffix(".lrc")):
-            return english_lrc, "lrc"
-
-    english_text_sidecar = read_lyric_sidecar(path, ((".en.txt", "text"),))
-    if english_text_sidecar:
-        return english_text_sidecar
-
-    if english_lrc_path.is_file():
-        english_lrc = read_lyric_text(english_lrc_path)
-        plain_text = strip_lrc_timing(english_lrc)
-        if plain_text:
-            return plain_text, "text"
-
-    non_english_sidecar = read_lyric_sidecar(path, ((".lrc", "lrc"), (".txt", "text")))
-    return non_english_sidecar if non_english_sidecar else ("", "")
-
-
-def lrc_timing_matches_raw(english_lrc: str, raw_lrc_path: Path) -> bool:
-    """! @brief Check whether translated LRC timestamps match the raw non-empty lyric rows."""
-    if not raw_lrc_path.is_file():
-        return True
-    raw_lrc = read_lyric_text(raw_lrc_path)
-    english_timestamps = timed_lrc_timestamps(english_lrc)
-    raw_timestamps = timed_lrc_timestamps(raw_lrc)
-    return bool(english_timestamps and raw_timestamps and english_timestamps == raw_timestamps)
-
-
-def timed_lrc_line_count(content: str) -> int:
-    """! @brief Count LRC rows that contain both a timestamp and lyric text."""
-    return len(timed_lrc_timestamps(content))
-
-
-def timed_lrc_timestamps(content: str) -> list[str]:
-    """! @brief Return timestamps for non-empty LRC lyric rows, ignoring timed blanks."""
-    timestamps: list[str] = []
-    for line in content.splitlines():
-        matches = re.findall(r"\[([0-9]{1,2}:[0-9]{2}(?:[.:][0-9]{1,3})?)\]", line)
-        if matches:
-            text = re.sub(r"\[[^\]]+\]", "", line).strip()
-            if text and not text.startswith("#"):
-                timestamps.extend(matches)
-    return timestamps
-
-
-def strip_lrc_timing(content: str) -> str:
-    """! @brief Keep readable lyric text while removing unreliable LRC timestamps."""
-    lines: list[str] = []
-    for line in content.splitlines():
-        text = re.sub(r"\[[^\]]+\]", "", line).strip()
-        if text and not text.startswith("#"):
-            lines.append(text)
-    return "\n".join(lines).strip()
-
-
-def read_lyric_sidecar(
-    path: Path,
-    candidates: tuple[tuple[str, str], ...] = (
-        (".en.lrc", "lrc"),
-        (".en.txt", "text"),
-        (".lrc", "lrc"),
-        (".txt", "text"),
-    ),
-) -> tuple[str, str] | None:
-    """! @brief Read .lrc/.txt files next to an audio file without touching tags."""
-    for suffix, lyric_format in candidates:
-        lyric_path = path.with_suffix(suffix)
-        if not lyric_path.is_file():
-            continue
-        content = read_lyric_text(lyric_path)
-        if content:
-            return content, lyric_format
-    return None
-
-
-def read_lyric_text(path: Path) -> str:
-    """! @brief Read a local lyric file using common Korean/Japanese-friendly encodings."""
-    try:
-        return path.read_text(encoding="utf-8-sig").strip()
-    except UnicodeDecodeError:
-        return path.read_text(encoding="cp949", errors="replace").strip()
-
-
-
 def cached_audio_entry(entry: dict[str, object] | None, stat) -> dict[str, object] | None:
     if not isinstance(entry, dict):
         return None
@@ -511,127 +420,3 @@ def artwork_from_cache(entry: dict[str, object]) -> CachedArtwork | None:
     if not path.is_file() or path.stat().st_size <= 0:
         return None
     return CachedArtwork(mime=mime, path=path)
-
-
-def scan_videos(video_dir: Path) -> tuple[list[Video], list[Path], dict[int, Path], dict[str, Path]]:
-    """! @brief Scan video files and optional sidecar cover images."""
-    # Video thumbnails are simple sidecar files next to videos/folders. We avoid
-    # generating thumbnails here so scans stay predictable.
-    video_paths = video_files(video_dir)
-    videos: list[Video] = []
-    video_thumbnails: dict[int, Path] = {}
-    video_folder_covers: dict[str, Path] = {}
-    seen_ids: dict[int, str] = {}
-    for path in video_paths:
-        relative_path = path.relative_to(video_dir).as_posix()
-        video_id = stable_media_id("video", relative_path)
-        require_unique_media_id(seen_ids, video_id, relative_path)
-        folder = str(Path(relative_path).parent).replace("\\", "/")
-        if folder == ".":
-            folder = "(root)"
-        category = relative_path.split("/", 1)[0] if "/" in relative_path else "(root)"
-        suffix = path.suffix.lower()
-        thumbnail = find_video_thumbnail(path)
-        folder_cover = find_video_folder_cover(path.parent)
-        if folder_cover is not None:
-            video_folder_covers[folder] = folder_cover
-        if thumbnail is not None:
-            video_thumbnails[video_id] = thumbnail
-        videos.append(
-            Video(
-                id=video_id,
-                path=relative_path,
-                filename=path.name,
-                title=path.stem,
-                folder=folder,
-                category=category,
-                format=suffix.lstrip("."),
-                size_mb=round(path.stat().st_size / 1024 / 1024, 2),
-                video_url=f"/video/{video_id}",
-                thumbnail_url=f"/video-thumb/{video_id}" if thumbnail is not None else "",
-                has_thumbnail=thumbnail is not None,
-                folder_cover_url=f"/video-folder-cover/{quote(folder, safe='/')}" if folder_cover is not None else "",
-                has_folder_cover=folder_cover is not None,
-                browser_friendly=suffix in {".mp4", ".m4v", ".mov", ".webm"},
-            )
-        )
-    return videos, video_paths, video_thumbnails, video_folder_covers
-
-
-def video_files(video_dir: Path) -> list[Path]:
-    if not video_dir.is_dir():
-        return []
-    return sorted(
-        path
-        for path in video_dir.rglob("*")
-        if path.is_file()
-        and path.suffix.lower() in VIDEO_EXTENSIONS
-        and ".bak" not in path.name.lower()
-    )
-
-
-def scan_interviews(interviews_dir: Path) -> list[Interview]:
-    """! @brief Scan plain text interview files into readable records."""
-    # Interviews are just local text files. The UI groups them by filename/year
-    # instead of needing a separate database.
-    interview_paths = interview_files(interviews_dir)
-    interviews: list[Interview] = []
-    for interview_id, path in enumerate(interview_paths):
-        relative_path = path.relative_to(interviews_dir).as_posix()
-        title_base = clean_interview_title(path.stem)
-        year_match = re.search(r"(19|20)\d{2}", title_base)
-        year = year_match.group(0) if year_match else ""
-        source = re.sub(r"^(19|20)\d{2}\s*", "", title_base).strip(" -_") or title_base
-        try:
-            content = path.read_text(encoding="utf-8-sig")
-        except UnicodeDecodeError:
-            content = path.read_text(encoding="cp949", errors="replace")
-        interviews.append(
-            Interview(
-                id=interview_id,
-                path=relative_path,
-                filename=path.name,
-                title=title_base,
-                year=year,
-                source=source,
-                content=content,
-            )
-        )
-    return interviews
-
-
-def clean_interview_title(title: str) -> str:
-    """! @brief Remove translator/source tags from interview display titles."""
-    cleaned = title.replace("_", " ")
-    # Some text archives include compact source/translator credits in the file
-    # name. Drop those display-only tokens while leaving normal words intact.
-    cleaned = re.sub(r"\b\d{2,}[A-Za-z]{2,}\b", "", cleaned)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned)
-    return cleaned.strip(" -_")
-
-
-def interview_files(interviews_dir: Path) -> list[Path]:
-    if not interviews_dir.is_dir():
-        return []
-    return sorted(path for path in interviews_dir.rglob("*.txt") if path.is_file())
-
-
-def find_video_thumbnail(path: Path) -> Path | None:
-    """! @brief Find a same-name image next to a video file, if present."""
-    # Individual video thumbnails are optional sidecars named like the video:
-    # Example.mp4 can use Example.jpg, Example.png, or Example.webp.
-    for extension in VIDEO_THUMBNAIL_EXTENSIONS:
-        candidate = path.with_suffix(extension)
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def find_video_folder_cover(folder: Path) -> Path | None:
-    """! @brief Find cover.jpg/png/webp in a video folder."""
-    # Folder covers are optional sidecars named cover.jpg/png/webp.
-    for extension in VIDEO_THUMBNAIL_EXTENSIONS:
-        candidate = folder / f"cover{extension}"
-        if candidate.is_file():
-            return candidate
-    return None

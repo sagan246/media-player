@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class CachedArtwork:
+    """Reference to artwork cached on disk instead of retained in memory."""
+
+    mime: str
+    path: Path
 
 
 @dataclass
