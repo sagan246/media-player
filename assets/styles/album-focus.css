@@ -11,8 +11,6 @@
     body.listen.music.albumSelected #shuffleShownMusic,
     body.listen.music.albumSelected #topQueueToggle,
     body.listen.music.albumSelected #albumViewMode,
-    body.listen.music.albumSelected #listenMode,
-    body.listen.music.albumSelected #editMode,
     body.listen.music.albumSelected .iconLink { display:none; }
     body.music.albumSelected .controls { position:sticky; top:12px; z-index:4; justify-content:flex-end; align-items:flex-start; min-height:0; height:0; padding:0; background:transparent; pointer-events:none; }
     body.music.albumSelected .controls .viewTitle { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }

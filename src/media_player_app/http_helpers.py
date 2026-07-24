@@ -31,7 +31,8 @@ class HttpHelpersMixin:
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache_control)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def send_compressible_bytes(
         self,
@@ -54,7 +55,8 @@ class HttpHelpersMixin:
         self.send_header("Content-Length", str(len(compressed)))
         self.send_header("Cache-Control", cache_control)
         self.end_headers()
-        self.wfile.write(compressed)
+        if self.command != "HEAD":
+            self.wfile.write(compressed)
 
     def send_json(self, payload: object, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -101,12 +103,12 @@ class HttpHelpersMixin:
         if track_id is None:
             return None
         with self.library.lock:
-            if not (0 <= track_id < len(self.library.tracks)):
+            track = self.library.track_by_id.get(track_id)
+            path = self.library.track_paths_by_id.get(track_id)
+            if track is None:
                 return None
-            track = self.library.tracks[track_id]
             if not self.player_config.allows_album(track.album):
                 return None
-            path = self.library.paths[track_id] if track_id < len(self.library.paths) else None
         if path is None or not path.is_file():
             return None
         return path
@@ -116,10 +118,8 @@ class HttpHelpersMixin:
         if track_id is None:
             return False
         with self.library.lock:
-            return (
-                0 <= track_id < len(self.library.tracks)
-                and self.player_config.allows_album(self.library.tracks[track_id].album)
-            )
+            track = self.library.track_by_id.get(track_id)
+            return track is not None and self.player_config.allows_album(track.album)
 
     def send_file(self, path: Path, cache_control: str = "no-store") -> None:
         """Send a small static file; large media uses the streaming pipeline."""

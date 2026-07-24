@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict
 from http import HTTPStatus
 from urllib.parse import parse_qs, unquote
@@ -20,14 +21,7 @@ class ApiRoutesMixin:
                 for track in self.library.tracks
                 if self.player_config.allows_album(track.album)
             ]
-        self.send_json(
-            {
-                "tracks": tracks,
-                "total": len(tracks),
-                "with_artwork": sum(1 for track in tracks if track["has_artwork"]),
-                "missing_artwork": sum(1 for track in tracks if not track["has_artwork"]),
-            }
-        )
+        self.send_json({"tracks": tracks, "total": len(tracks)})
 
     def handle_videos_api(self) -> None:
         with self.library.lock:
@@ -36,13 +30,7 @@ class ApiRoutesMixin:
                 if self.player_config.guest_mode
                 else [self.public_video(video) for video in self.library.videos]
             )
-        self.send_json(
-            {
-                "videos": videos,
-                "total": len(videos),
-                "browser_friendly": sum(1 for video in videos if video["browser_friendly"]),
-            }
-        )
+        self.send_json({"videos": videos, "total": len(videos)})
 
     def handle_interviews_api(self) -> None:
         with self.library.lock:
@@ -71,7 +59,6 @@ class ApiRoutesMixin:
     def handle_config_api(self) -> None:
         self.send_json(
             {
-                "editable": self.editable,
                 "playlistEditable": self.playlist_editable,
                 "webShare": self.web_share,
                 "appName": self.player_config.app_name,
@@ -97,14 +84,13 @@ class ApiRoutesMixin:
 
     def public_track(self, track: object) -> dict[str, object]:
         data = asdict(track)
+        data["playback_key"] = self.playback_key(str(data.get("path", "")))
         thumb_url = self.art_thumbnail_url(str(data.get("artwork_url", "")))
         data["artwork_thumb_url"] = thumb_url
         data["artwork_thumb_small_url"] = self.add_query_param(thumb_url, "s", str(ART_THUMB_ICON_SIZE))
         if self.web_share:
             data["path"] = ""
             data["filename"] = ""
-            data["missing_fields"] = []
-            data["review_flags"] = []
         return data
 
     @staticmethod
@@ -120,10 +106,17 @@ class ApiRoutesMixin:
 
     def public_video(self, video: object) -> dict[str, object]:
         data = asdict(video)
+        data["playback_key"] = self.playback_key(str(data.get("path", "")))
         if self.web_share:
             data["path"] = ""
             data["filename"] = ""
         return data
+
+    @staticmethod
+    def playback_key(relative_path: str) -> str:
+        """Return a path-stable identifier without exposing the path itself."""
+        normalized = relative_path.replace("\\", "/")
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
 
     def public_interview(self, interview: object) -> dict[str, object]:
         data = asdict(interview)

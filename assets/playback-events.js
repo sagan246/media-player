@@ -23,7 +23,12 @@
     });
     on(player,"ended",()=>{
       mediaSession.setup(); stopVisualizer(); listeningRecorder.flush();
-      if(getRepeatMode()==="one"){player.currentTime=0; playCurrent({retry:true}); return;}
+      if(getRepeatMode()==="one"){
+        player.currentTime=0;
+        listeningRecorder.reset(getPlayingId());
+        playCurrent({retry:true});
+        return;
+      }
       if(getQueueIndex()+1<getQueue().length)playQueueIndex(getQueueIndex()+1);
       else if(getRepeatMode()==="all"&&getQueue().length)playQueueIndex(0);
     });

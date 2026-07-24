@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 from contextlib import closing
 from pathlib import Path
 
+from .sqlite_utils import connect_runtime_database
 
 MAX_GAME_SCORE = 1_000_000
 
@@ -17,8 +17,7 @@ class GameHighScoreStore:
     def __init__(self, database_path: Path):
         self.database_path = Path(database_path)
         self.lock = threading.Lock()
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.database_path)) as database:
+        with closing(connect_runtime_database(self.database_path)) as database:
             with database:
                 database.execute(
                     """
@@ -31,7 +30,7 @@ class GameHighScoreStore:
 
     def best_score(self) -> int:
         """Return the highest recorded human-game score."""
-        with self.lock, closing(sqlite3.connect(self.database_path)) as database:
+        with self.lock, closing(connect_runtime_database(self.database_path)) as database:
             row = database.execute("SELECT best_score FROM game_stats WHERE id = 1").fetchone()
         return int(row[0]) if row else 0
 
@@ -41,7 +40,7 @@ class GameHighScoreStore:
             raise ValueError("Game score must be an integer.")
         if not 0 <= score <= MAX_GAME_SCORE:
             raise ValueError(f"Game score must be between 0 and {MAX_GAME_SCORE}.")
-        with self.lock, closing(sqlite3.connect(self.database_path)) as database:
+        with self.lock, closing(connect_runtime_database(self.database_path)) as database:
             with database:
                 database.execute(
                     """
@@ -55,6 +54,6 @@ class GameHighScoreStore:
 
     def reset(self) -> None:
         """Clear the shared high score for release or testing preparation."""
-        with self.lock, closing(sqlite3.connect(self.database_path)) as database:
+        with self.lock, closing(connect_runtime_database(self.database_path)) as database:
             with database:
                 database.execute("DELETE FROM game_stats WHERE id = 1")

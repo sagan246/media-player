@@ -97,7 +97,10 @@
   }
 
   function emptyCardHtml(){
-    return `<div class="videoCard"><div class="videoName">Nothing matched</div><div class="videoMeta">Try a different folder.</div></div>`;
+    const statusPanelHtml=components.statusPanelHtml;
+    return statusPanelHtml
+      ? statusPanelHtml({kind:"empty",title:"No videos found",message:"Try another section or clear the search."})
+      : `<div class="videoCard"><div class="videoName">No videos found</div></div>`;
   }
 
   function closeAlbumButtonHtml(){

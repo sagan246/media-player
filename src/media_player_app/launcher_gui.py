@@ -45,13 +45,13 @@ class LaunchMode:
 
 
 MODES = {
-    "Local edit": LaunchMode(
-        name="Local edit",
+    "Local": LaunchMode(
+        name="Local",
         host="127.0.0.1",
         port=8766,
         flags=(),
         url_kind="local",
-        description="Normal desktop mode with editing available.",
+        description="Use the player on this computer.",
     ),
     "Phone on Wi-Fi": LaunchMode(
         name="Phone on Wi-Fi",
@@ -65,9 +65,9 @@ MODES = {
         name="Private Tailscale",
         host="0.0.0.0",
         port=8768,
-        flags=("--read-only",),
+        flags=(),
         url_kind="tailscale",
-        description="Private read-only access from your own Tailscale devices.",
+        description="Private access from your own Tailscale devices.",
     ),
     "Web share + Cloudflare": LaunchMode(
         name="Web share + Cloudflare",
@@ -75,7 +75,7 @@ MODES = {
         port=8767,
         flags=("--web-share",),
         url_kind="cloudflare",
-        description="Read-only public temporary link through Cloudflare Tunnel.",
+        description="Temporary public link that hides local file paths.",
         cloudflare=True,
     ),
     "Normal + Demo Cloudflare": LaunchMode(
@@ -84,7 +84,7 @@ MODES = {
         port=8767,
         flags=("--web-share", "--no-guest-mode"),
         url_kind="cloudflare",
-        description="Start separate normal and Guest/demo public links, plus local edit mode.",
+        description="Start separate normal and Guest/demo public links, plus local mode.",
         cloudflare=True,
         dual_cloudflare=True,
     ),
@@ -94,7 +94,7 @@ MODES = {
         port=8767,
         flags=("--web-share",),
         url_kind="lan",
-        description="Read-only web-share server without starting Cloudflare.",
+        description="Web-share server without starting Cloudflare.",
     ),
 }
 
@@ -109,10 +109,10 @@ class LauncherApp:
         self.root.minsize(620, 480)
         self.process: subprocess.Popen[str] | None = None
         self.demo_process: subprocess.Popen[str] | None = None
-        self.local_edit_process: subprocess.Popen[str] | None = None
+        self.local_process: subprocess.Popen[str] | None = None
         self.cloudflare_process: subprocess.Popen[str] | None = None
         self.demo_cloudflare_process: subprocess.Popen[str] | None = None
-        self.mode_name = StringVar(value="Local edit")
+        self.mode_name = StringVar(value="Local")
         self.status = StringVar(value="Stopped")
         self.url = StringVar(value="")
         self.public_url = ""
@@ -181,7 +181,7 @@ class LauncherApp:
         ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=4, column=3, sticky="we", padx=(6, 0))
 
         ttk.Button(frame, text="Open Current", command=self.open_url).grid(row=5, column=0, sticky="we", pady=(10, 2), padx=(0, 6))
-        ttk.Button(frame, text="Open Edit", command=self.open_local_edit).grid(row=5, column=1, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open Local", command=self.open_local).grid(row=5, column=1, sticky="we", pady=(10, 2), padx=6)
         ttk.Button(frame, text="Open Local", command=self.open_local_current).grid(row=5, column=2, sticky="we", pady=(10, 2), padx=6)
         ttk.Button(frame, text="Open LAN", command=self.open_lan_current).grid(row=5, column=3, sticky="we", pady=(10, 2), padx=(6, 0))
 
@@ -264,8 +264,8 @@ class LauncherApp:
             *mode.flags,
         ]
 
-    def local_edit_command(self) -> list[str]:
-        """Build the companion local edit server command for web-share mode."""
+    def local_command(self) -> list[str]:
+        """Build the companion localhost server command for web-share mode."""
         return [
             self.python_exe(),
             str(APP_SCRIPT),
@@ -316,7 +316,7 @@ class LauncherApp:
         self.url.set(self.display_url(mode))
         threading.Thread(target=self.read_output, args=(self.process, "server"), daemon=True).start()
         if mode.cloudflare:
-            self.start_local_edit_server()
+            self.start_local_server()
             if mode.dual_cloudflare:
                 self.start_demo_share_server()
                 self.start_cloudflare(mode.port, "normal")
@@ -356,15 +356,15 @@ class LauncherApp:
                 self.demo_process.kill()
             stopped_any = True
         self.demo_process = None
-        if self.local_edit_process and self.local_edit_process.poll() is None:
-            self.write_log("Stopping local edit server...\n")
-            self.local_edit_process.terminate()
+        if self.local_process and self.local_process.poll() is None:
+            self.write_log("Stopping local server...\n")
+            self.local_process.terminate()
             try:
-                self.local_edit_process.wait(timeout=5)
+                self.local_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.local_edit_process.kill()
+                self.local_process.kill()
             stopped_any = True
-        self.local_edit_process = None
+        self.local_process = None
         if not self.process or self.process.poll() is not None:
             self.status.set("Stopped")
             if not stopped_any:
@@ -390,8 +390,8 @@ class LauncherApp:
         if url:
             webbrowser.open(url)
 
-    def open_local_edit(self) -> None:
-        """Open editable localhost mode on the standard edit port."""
+    def open_local(self) -> None:
+        """Open localhost mode on the standard local port."""
         webbrowser.open("http://127.0.0.1:8766/")
 
     def open_demo_url(self) -> None:
@@ -413,20 +413,21 @@ class LauncherApp:
         mode = MODES[self.mode_name.get()]
         url = f"http://127.0.0.1:{mode.port}/api/refresh"
         try:
-            with urllib.request.urlopen(url, timeout=8) as response:
+            request = urllib.request.Request(url, data=b"", method="POST")
+            with urllib.request.urlopen(request, timeout=8) as response:
                 data = json.loads(response.read().decode("utf-8"))
             self.write_log(f"Refresh response: {data}\n")
         except Exception as exc:
             self.write_log(f"Refresh failed: {exc}\n")
 
-    def start_local_edit_server(self) -> None:
-        """Start editable localhost mode beside a read-only Cloudflare share."""
-        if self.local_edit_process and self.local_edit_process.poll() is None:
+    def start_local_server(self) -> None:
+        """Start localhost mode beside a Cloudflare share."""
+        if self.local_process and self.local_process.poll() is None:
             return
-        command = self.local_edit_command()
-        self.write_log("Starting local edit server on http://127.0.0.1:8766/...\n")
+        command = self.local_command()
+        self.write_log("Starting local server on http://127.0.0.1:8766/...\n")
         self.write_log(" ".join(command) + "\n")
-        self.local_edit_process = subprocess.Popen(
+        self.local_process = subprocess.Popen(
             command,
             cwd=str(APP_DIR),
             stdout=subprocess.PIPE,
@@ -435,10 +436,10 @@ class LauncherApp:
             bufsize=1,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
-        threading.Thread(target=self.read_output, args=(self.local_edit_process, "edit"), daemon=True).start()
+        threading.Thread(target=self.read_output, args=(self.local_process, "local"), daemon=True).start()
 
     def start_demo_share_server(self) -> None:
-        """Start the Guest/demo read-only server beside the normal share."""
+        """Start the Guest/demo server beside the normal share."""
         if self.demo_process and self.demo_process.poll() is None:
             return
         command = self.demo_share_command()
@@ -509,12 +510,12 @@ class LauncherApp:
             self.url.set(
                 f"Normal public: {normal}\nDemo public: {demo}\n"
                 "Normal local: http://127.0.0.1:8767/  Demo local: http://127.0.0.1:8769/\n"
-                "Edit local: http://127.0.0.1:8766/"
+                "Local: http://127.0.0.1:8766/"
             )
             return
         self.url.set(
             f"Public: {self.public_url or 'waiting for Cloudflare...'}\n"
-            "Read-only local: http://127.0.0.1:8767/\nEdit local: http://127.0.0.1:8766/"
+            "Share local: http://127.0.0.1:8767/\nLocal: http://127.0.0.1:8766/"
         )
 
     def write_log(self, text: str) -> None:
@@ -534,9 +535,9 @@ class LauncherApp:
                 return (
                     "Normal public: waiting for Cloudflare...\nDemo public: waiting for Cloudflare...\n"
                     "Normal local: http://127.0.0.1:8767/  Demo local: http://127.0.0.1:8769/\n"
-                    "Edit local: http://127.0.0.1:8766/"
+                    "Local: http://127.0.0.1:8766/"
                 )
-            return f"Public: waiting for Cloudflare...\nRead-only local: http://127.0.0.1:{mode.port}/\nEdit local: http://127.0.0.1:8766/"
+            return f"Public: waiting for Cloudflare...\nShare local: http://127.0.0.1:{mode.port}/\nLocal: http://127.0.0.1:8766/"
         if mode.url_kind == "lan":
             return f"PC: http://127.0.0.1:{mode.port}/\nPhone: http://{local_lan_ip()}:{mode.port}/"
         return self.primary_display_url(mode)

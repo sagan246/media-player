@@ -18,10 +18,10 @@ echo
 echo "Media folder: $MEDIA_DIR"
 echo
 echo "Choose a launch mode:"
-echo "  1) Local edit"
+echo "  1) Local"
 echo "  2) Home network (LAN)"
-echo "  3) Private remote (read-only)"
-echo "  4) Web share local only (read-only)"
+echo "  3) Private remote"
+echo "  4) Web share local only"
 echo
 printf "Mode [1]: "
 read MODE
@@ -47,7 +47,7 @@ case "$MODE" in
   3)
     HOST="0.0.0.0"
     PORT="8768"
-    EXTRA_ARGS=("--read-only")
+    EXTRA_ARGS=()
     URL="http://127.0.0.1:8768/"
     ;;
   4)

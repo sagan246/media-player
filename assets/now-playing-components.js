@@ -14,10 +14,13 @@
       : `<div class="nowPlayingArt">No Artwork</div>`;
   }
 
-  function metaHtml(track){
+  function metaHtml(track, contextText=""){
     const year = String(track.date || "").slice(0, 4);
     const format = String(track.format || "").toUpperCase();
-    return `<div class="nowPlayingText"><div class="nowPlayingTitle">${esc(track.title)}</div><div class="nowPlayingMeta">${esc(track.album || "No album")} - ${esc(track.artist || "Unknown artist")}${year ? ` - ${esc(year)}` : ""}${format ? ` - ${esc(format)}` : ""}</div></div>`;
+    const album = track.album
+      ? `<button class="nowPlayingAlbumLink" type="button" title="View album">${esc(track.album)}</button>`
+      : "No album";
+    return `<div class="nowPlayingText"><div class="nowPlayingTitle">${esc(track.title)}</div><div class="nowPlayingMeta">${album} - ${esc(track.artist || "Unknown artist")}${year ? ` - ${esc(year)}` : ""}${format ? ` - ${esc(format)}` : ""}</div>${contextText?`<div class="nowPlayingContext">${esc(contextText)}</div>`:""}</div>`;
   }
 
   function visualizerHtml({enabled, visualizerMode}){
@@ -46,10 +49,10 @@
     return `<div class="nowPlayingArt">No Song</div><div><div class="nowPlayingTitle">Nothing playing</div><div class="nowPlayingMeta">Choose a song, album, or category.</div></div>`;
   }
 
-  function fullHtml({track, artSrc, visualizerEnabled, visualizerMode, seekValue, currentTime, remainingTime, paused, queueCount, volume, muted}){
+  function fullHtml({track, artSrc, visualizerEnabled, visualizerMode, seekValue, currentTime, remainingTime, paused, queueCount, volume, muted, contextText=""}){
     return [
       artworkHtml(artSrc),
-      metaHtml(track),
+      metaHtml(track, contextText),
       visualizerHtml({enabled:visualizerEnabled, visualizerMode}),
       seekHtml({seekValue, currentTime, remainingTime}),
       controlsHtml({paused, queueCount, volume, muted}),

@@ -9,6 +9,7 @@
       setQueue,
       setIndex,
       getSelectedId,
+      setContext,
       save,
       playIndex,
       stopPlayback,
@@ -20,17 +21,20 @@
       shuffle,
     } = options;
 
-    function playList(list, randomize=false, startId=null){
+    function playList(list, randomize=false, startId=null, settings={}){
       const playable = randomize ? shuffle(list) : [...list];
       if(!playable.length) return;
       const ids = playable.map(video => video.id);
       setQueue(ids);
+      setContext({...settings.context, shuffled:Boolean(randomize)});
       setIndex(startId === null ? 0 : Math.max(0, ids.indexOf(startId)));
       save({force:true});
+      const source=settings.context?.label||settings.context?.kind||"selection";
+      showToast(`Playing ${ids.length} ${ids.length===1?"video":"videos"} · ${source}`);
       playIndex(getIndex());
     }
 
-    function add(list){
+    function add(list, settings={}){
       const queue = getQueue();
       const existing = new Set(queue);
       const ids = [];
@@ -43,9 +47,10 @@
       if(!ids.length) return;
       const wasEmpty = queue.length === 0;
       queue.push(...ids);
-      showToast(ids.length === 1 ? "Added video to queue" : `Added ${ids.length} videos to queue`);
+      showToast(`${ids.length === 1 ? "Added 1 video" : `Added ${ids.length} videos`} · ${queue.length} in queue`);
       pulseQueue();
       if(wasEmpty){
+        setContext(settings.context || {kind:"Queue", label:"Added videos"});
         setIndex(0);
         save({force:true});
         playIndex(0);
@@ -71,6 +76,7 @@
           playIndex(currentIndex);
         }else{
           setIndex(-1);
+          setContext(null);
           stopPlayback();
           save({force:true});
           renderVideos();

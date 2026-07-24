@@ -25,10 +25,10 @@
       catch{ return null; }
     }
 
-    function restore(validIds){
+    function restore(catalog){
       if(restored) return null;
       restored = true;
-      return parseState(storage.getItem(key), validIds);
+      return parseState(storage.getItem(key), catalog);
     }
 
     return {save, clear, peek, restore};

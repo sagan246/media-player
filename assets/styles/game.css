@@ -109,7 +109,6 @@ body.game nav,
 body.game aside,
 body.game .workspace > :not(.gameOnly),
 body.game #searchBox,
-body.game #musicFilter,
 body.game #refresh,
 body.game .stats { display:none !important; }
 body.game .workspace { min-width:0; }

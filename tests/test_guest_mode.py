@@ -45,12 +45,17 @@ def test_guest_track_path_rejects_other_albums(tmp_path: Path):
             lock=threading.Lock(),
             tracks=[SimpleNamespace(album="Guest Album"), SimpleNamespace(album="Other")],
             paths=[allowed_path, blocked_path],
+            track_by_id={
+                101: SimpleNamespace(album="Guest Album"),
+                205: SimpleNamespace(album="Other"),
+            },
+            track_paths_by_id={101: allowed_path, 205: blocked_path},
         ),
         player_config=PlayerConfig(guest_mode=True, guest_album="Guest Album"),
     )
 
-    assert HttpHelpersMixin.resolve_track_path(helper, 0) == allowed_path
-    assert HttpHelpersMixin.resolve_track_path(helper, 1) is None
+    assert HttpHelpersMixin.resolve_track_path(helper, 101) == allowed_path
+    assert HttpHelpersMixin.resolve_track_path(helper, 205) is None
 
 
 def test_guest_tracks_api_only_returns_configured_album():

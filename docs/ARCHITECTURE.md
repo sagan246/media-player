@@ -1,98 +1,47 @@
 # Architecture
 
-The app is a Python web server with a plain HTML/CSS/JavaScript frontend.
+The player is a Python HTTP server with a dependency-free HTML, CSS, and
+JavaScript client.
 
 ```text
 Browser UI
-  -> media_player.py
-  -> src/media_player_app/server.py
-     -> api_routes.py / edit_routes.py / streaming.py
-  -> src/media_player_app/media_library.py
-  -> src/media_player_app/media_models.py
-
-Metadata writes:
-Browser UI -> edit_routes.py -> metadata_tag_tools.py -> MP3/FLAC files
-
-Stats:
-Browser UI -> media_player.py -> src/media_player_app/listening_stats.py -> SQLite
-
-Playlists:
-Browser UI -> media_player.py -> src/media_player_app/playlist_store.py -> runtime/playlists.json
+  -> server.py
+     -> api_routes.py
+     -> streaming.py
+  -> media_library.py
+     -> metadata_reader.py
+  -> SQLite stats / JSON playlists
 ```
-
-## Repository Layout
-
-- `media_player.py` - command-line entry point.
-- `launcher_gui.py` - GUI launcher entry point.
-- `src/media_player_app/` - Python application package.
-- `assets/` - browser UI, JavaScript, and CSS.
-- `game/` - built-in dependency-free browser game.
-- `docs/` - project documentation.
-- `windows_commands/` and `mac_commands/` - one-click launchers.
-- `runtime/` - ignored local caches, logs, and SQLite state.
 
 ## Backend
 
-- `src/media_player_app/media_player.py` - compatibility entry point for existing launchers and imports.
-- `src/media_player_app/server.py` - HTTP handler composition, route dispatch, and server startup.
-- `src/media_player_app/server_config.py` - application paths and user-facing configuration.
-- `src/media_player_app/http_helpers.py` - shared request parsing and response helpers.
-- `src/media_player_app/api_routes.py` - library, playlist, config, and listening-stats APIs.
-- `src/media_player_app/edit_routes.py` - guarded metadata and embedded-artwork writes.
-- `src/media_player_app/streaming.py` - artwork, lyrics, thumbnails, and Range-aware media streaming.
-- `src/media_player_app/media_library.py` - scans music, videos, lyrics, artwork, and text files.
-- `src/media_player_app/media_models.py` - shared data records.
-- `src/media_player_app/metadata_tag_tools.py` - MP3/FLAC metadata and artwork writes.
-- `src/media_player_app/metadata_browser.py` - audio metadata/artwork reading helpers.
-- `src/media_player_app/listening_stats.py` - playback stats stored in SQLite.
-- `src/media_player_app/playlist_store.py` - named playlists and shared resume tracks stored as relative track references.
-- `src/media_player_app/launcher_gui.py` - optional launcher for access modes.
+- `server.py` composes the request handler and starts the server.
+- `api_routes.py` serves library, playlist, config, game-score, and stats APIs.
+- `streaming.py` streams artwork, lyrics, audio, and video with Range support.
+- `media_library.py` scans configured music, video, and text folders.
+- `metadata_reader.py` reads embedded tags and artwork without writing files.
+- `playlist_store.py` persists relative track references and playlist resumes.
+- `listening_stats.py` persists listening summaries in SQLite.
+
+Media files are always read-only. Playback never parses tags or artwork; the
+library scan cache performs that work before playback.
 
 ## Frontend
 
-`assets/app.js` coordinates shared state and rendering. Domain modules keep
-music/video persistence, stats date math, playlists, metadata payloads, and app
-startup independently testable and easier to change without cross-tab drift.
-The server serves the split JavaScript and CSS as `/assets/app-bundle.js` and
-`/assets/styles-bundle.css`. This preserves modular source files while avoiding
-many latency-heavy requests over a tunnel; text responses are gzip compressed.
+`assets/app.js` coordinates application state. Focused component, controller,
+domain, persistence, playback, and theme modules own individual behaviors.
+The server bundles these source files into a compressed JavaScript response.
 
-- `assets/index.html` - app shell.
-- `assets/app.js` - stateful coordinator and cross-domain event wiring.
-- `assets/game-controller.js` - game iframe protocol and shared high-score coordination.
-- `assets/*-controller.js` - music/video queue mutations, drawers, navigation,
-  playlists, editing, stats, and themes.
-- `assets/*-domain.js` - music/video state, stats ranges, playlists, edit payloads,
-  and startup boundaries.
-- `assets/components.js` - shared UI helpers.
-- `assets/music-components.js` - music rendering.
-- `assets/playlist-components.js` - playlist cards and detail views.
-- `assets/video-components.js` - video rendering.
-- `assets/queue-components.js` - music/video queues.
-- `assets/now-playing-components.js` - Now Playing screen.
-- `assets/stats-components.js` - stats screen.
-- `assets/lyrics.js` - text and LRC lyric handling.
-- `assets/audio-visualizer.js` - Web Audio setup, animation lifecycle, and visualizer renderers.
-- `assets/playback-persistence.js` - throttled music/video playback-state storage.
-- `assets/media-session.js` - browser and lock-screen media controls.
-- `assets/listening-stats-recorder.js` - listening thresholds and batched stats writes.
-- `assets/theme-data.js` / `assets/theme-engine.js` - themes.
+CSS is split by layout concern under `assets/styles/` and bundled by the server.
 
-## Styles
+## Stored State
 
-`assets/styles.css` imports focused files from `assets/styles/`:
+- Music and video queues: browser storage
+- Named playlists and shared resume positions: `runtime/playlists.json`
+- Listening statistics and game score: SQLite under `runtime/`
+- Scan and thumbnail caches: generated files under `runtime/`
 
-- `themes.css`
-- `base.css`
-- `album-focus.css`
-- `shared-panels.css`
-- `music.css`
-- `player-queue-now-playing.css`
-- `video.css`
-- `health-stats-interviews.css`
-- `responsive.css`
-
-## Key APIs
+## Main APIs
 
 - `GET /api/config`
 - `GET /api/tracks`
@@ -103,30 +52,9 @@ many latency-heavy requests over a tunnel; text responses are gzip compressed.
 - `GET /audio/<track-id>`
 - `GET /video/<video-id>`
 - `GET /lyrics/<track-id>`
-- `POST /api/listening-stats`
-- `POST /api/playlists`
-- `POST /api/playlists/<playlist-id>/resume`
-- `PATCH /api/playlists/<playlist-id>`
-- `DELETE /api/playlists/<playlist-id>`
-- `POST /api/track/<track-id>/metadata`
-- `POST /api/track/<track-id>/artwork`
-- `POST /api/bulk/metadata`
+- Playlist and playback-state mutation routes under `/api/`
 
-Metadata write APIs are disabled in read-only and web-share modes. Playlist
-management and resume updates remain available because they are player state;
-`playlist_editable` can disable playlist changes independently when needed.
-Browser validation provides immediate feedback, but Python validates every
-playlist, metadata, and artwork request before anything is persisted or written.
-
-## Streaming
-
-Audio and video use HTTP Range requests.
-
-This lets large files start quickly, seek correctly, and stream from disk without
-loading the full file into memory.
-
-Playback routes should not parse metadata or artwork. That work belongs in the
-library scan cache.
+Python is the final authority for playlist validation and path boundaries.
 
 ## Checks
 

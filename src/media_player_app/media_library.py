@@ -9,8 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-from .metadata_browser import AUDIO_EXTENSIONS, Artwork, read_artwork, read_metadata
+from .media_identity import require_unique_media_id, stable_media_id
+from .metadata_reader import AUDIO_EXTENSIONS, Artwork, read_artwork, read_metadata
 from .media_models import Interview, Track, Video
+from .runtime_files import atomic_write_bytes, atomic_write_text
 
 
 APP_ROOT = Path(__file__).resolve().parents[2]
@@ -82,9 +84,12 @@ class Library:
         self.text_dir = media_dir / config.text_dir
         self.tracks: list[Track] = []
         self.paths: list[Path] = []
+        self.track_by_id: dict[int, Track] = {}
+        self.track_paths_by_id: dict[int, Path] = {}
         self.artwork: dict[int, Artwork] = {}
         self.videos: list[Video] = []
         self.video_paths: list[Path] = []
+        self.video_paths_by_id: dict[int, Path] = {}
         self.video_thumbnails: dict[int, Path] = {}
         self.video_folder_covers: dict[str, Path] = {}
         self.interviews: list[Interview] = []
@@ -107,9 +112,16 @@ class Library:
         with self.lock:
             self.tracks = snapshot.tracks
             self.paths = snapshot.paths
+            self.track_by_id = {track.id: track for track in snapshot.tracks}
+            self.track_paths_by_id = {
+                track.id: path for track, path in zip(snapshot.tracks, snapshot.paths)
+            }
             self.artwork = snapshot.artwork
             self.videos = snapshot.videos
             self.video_paths = snapshot.video_paths
+            self.video_paths_by_id = {
+                video.id: path for video, path in zip(snapshot.videos, snapshot.video_paths)
+            }
             self.video_thumbnails = snapshot.video_thumbnails
             self.video_folder_covers = snapshot.video_folder_covers
             self.interviews = snapshot.interviews
@@ -118,23 +130,25 @@ class Library:
 
     def path_for_id(self, track_id: int) -> Path | None:
         with self.lock:
-            if 0 <= track_id < len(self.paths):
-                return self.paths[track_id]
-        return None
+            return self.track_paths_by_id.get(track_id)
+
+    def track_for_id(self, track_id: int) -> Track | None:
+        with self.lock:
+            return self.track_by_id.get(track_id)
 
     def video_path_for_id(self, video_id: int) -> Path | None:
         with self.lock:
-            if 0 <= video_id < len(self.video_paths):
-                return self.video_paths[video_id]
-        return None
+            return self.video_paths_by_id.get(video_id)
 
     def album_paths_for_track(self, track_id: int) -> list[Path]:
         with self.lock:
-            if not (0 <= track_id < len(self.tracks)):
+            selected_track = self.track_by_id.get(track_id)
+            selected_path = self.track_paths_by_id.get(track_id)
+            if selected_track is None or selected_path is None:
                 return []
-            album = self.tracks[track_id].album
+            album = selected_track.album
             if not album:
-                return [self.paths[track_id]]
+                return [selected_path]
             return [
                 path
                 for track, path in zip(self.tracks, self.paths)
@@ -199,10 +213,9 @@ def load_scan_cache(path: Path = SCAN_CACHE_PATH) -> dict[str, dict[str, object]
 
 def save_scan_cache(files: dict[str, dict[str, object]], path: Path = SCAN_CACHE_PATH) -> None:
     """! @brief Persist scan cache records after a successful music scan."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    atomic_write_text(
+        path,
         json.dumps({"version": SCAN_CACHE_VERSION, "files": files}, ensure_ascii=False),
-        encoding="utf-8",
     )
 
 
@@ -222,10 +235,13 @@ def scan_music(
     lyrics_formats: dict[int, str] = {}
     next_cache: dict[str, dict[str, object]] = {}
     audio_paths = audio_files(music_dir)
+    seen_ids: dict[int, str] = {}
 
-    for track_id, path in enumerate(audio_paths):
+    for path in audio_paths:
         stat = path.stat()
         relative_path = path.relative_to(music_dir).as_posix()
+        track_id = stable_media_id("audio", relative_path)
+        require_unique_media_id(seen_ids, track_id, relative_path)
         cache_key = f"{cache_namespace}/{relative_path}" if cache_namespace else relative_path
         file_cache = cached_audio_entry(cache.get(cache_key), stat)
         if file_cache is None:
@@ -254,8 +270,6 @@ def scan_music(
         folder = str(Path(relative_path).parent).replace("\\", "/")
         if folder == ".":
             folder = "(root)"
-        missing_fields = track_missing_fields(title, artist, album, date, tracknumber, genre, art is not None)
-        review_flags = track_review_flags(title, artist, album, albumartist)
         lyric_text, lyric_format = lyrics_for_track(path)
         if art:
             artwork[track_id] = art
@@ -284,8 +298,6 @@ def scan_music(
                 has_lyrics=bool(lyric_text),
                 lyrics_url=f"/lyrics/{track_id}" if lyric_text else "",
                 lyrics_format=lyric_format if lyric_text else "",
-                missing_fields=missing_fields,
-                review_flags=review_flags,
             )
         )
     return tracks, paths, artwork, lyrics, lyrics_formats, next_cache
@@ -422,7 +434,7 @@ def cache_artwork_data(relative_path: str, data: bytes) -> str:
     digest = hashlib.sha1(relative_path.encode("utf-8")).hexdigest()
     cache_path = ARTWORK_CACHE_DIR / f"{digest}.bin"
     if not cache_path.exists() or cache_path.stat().st_size != len(data):
-        cache_path.write_bytes(data)
+        atomic_write_bytes(cache_path, data)
     return cache_path.name
 
 
@@ -448,8 +460,11 @@ def scan_videos(video_dir: Path) -> tuple[list[Video], list[Path], dict[int, Pat
     videos: list[Video] = []
     video_thumbnails: dict[int, Path] = {}
     video_folder_covers: dict[str, Path] = {}
-    for video_id, path in enumerate(video_paths):
+    seen_ids: dict[int, str] = {}
+    for path in video_paths:
         relative_path = path.relative_to(video_dir).as_posix()
+        video_id = stable_media_id("video", relative_path)
+        require_unique_media_id(seen_ids, video_id, relative_path)
         folder = str(Path(relative_path).parent).replace("\\", "/")
         if folder == ".":
             folder = "(root)"
@@ -538,55 +553,6 @@ def interview_files(interviews_dir: Path) -> list[Path]:
     if not interviews_dir.is_dir():
         return []
     return sorted(path for path in interviews_dir.rglob("*.txt") if path.is_file())
-
-
-def track_missing_fields(
-    title: str,
-    artist: str,
-    album: str,
-    date: str,
-    tracknumber: str,
-    genre: str,
-    has_artwork: bool,
-) -> list[str]:
-    # These drive the Health/Edit warnings. Listen Mode hides them so the player
-    # stays focused on browsing and playback.
-    missing = []
-    for field, value in (
-        ("title", title),
-        ("artist", artist),
-        ("album", album),
-        ("date", date),
-        ("tracknumber", tracknumber),
-        ("genre", genre),
-    ):
-        if not value:
-            missing.append(field)
-    if not has_artwork:
-        missing.append("artwork")
-    return missing
-
-
-def contains_cjk(value: str) -> bool:
-    return any(
-        "\u3040" <= char <= "\u30ff"
-        or "\u3400" <= char <= "\u4dbf"
-        or "\u4e00" <= char <= "\u9fff"
-        or "\uac00" <= char <= "\ud7af"
-        for char in value
-    )
-
-
-def track_review_flags(title: str, artist: str, album: str, albumartist: str) -> list[str]:
-    """! @brief Return soft cleanup warnings for non-English or odd metadata."""
-    flags = []
-    if contains_cjk(title):
-        flags.append("non-English title")
-    if contains_cjk(album):
-        flags.append("non-English album")
-    if album.strip().lower() in {"tae", "unknown", "none"}:
-        flags.append("suspicious album")
-    return flags
 
 
 def find_video_thumbnail(path: Path) -> Path | None:

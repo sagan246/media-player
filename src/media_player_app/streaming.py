@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote
 
 from .http_helpers import content_type_for
+from .runtime_files import atomic_write_bytes
 from .server_config import ART_THUMB_CACHE_DIR, ART_THUMB_DISPLAY_SIZE
 
 try:
@@ -64,7 +65,7 @@ class StreamingRoutesMixin:
         if artwork is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+        self.send_bytes(artwork.data, artwork.mime, cache_control="private, max-age=86400")
 
     def handle_art_thumbnail(self, path_text: str, query_text: str) -> None:
         track_id = self.parse_last_int(path_text)
@@ -77,7 +78,7 @@ class StreamingRoutesMixin:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if Image is None:
-            self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+            self.send_bytes(artwork.data, artwork.mime, cache_control="private, max-age=86400")
             return
 
         query = parse_qs(query_text)
@@ -85,7 +86,7 @@ class StreamingRoutesMixin:
         size = self.thumbnail_size(query)
         cache_path = ART_THUMB_CACHE_DIR / f"{track_id}-{version}-{size}.jpg"
         if cache_path.is_file():
-            self.send_file(cache_path, cache_control="public, max-age=604800")
+            self.send_file(cache_path, cache_control="private, max-age=604800")
             return
 
         try:
@@ -96,11 +97,11 @@ class StreamingRoutesMixin:
                 output = BytesIO()
                 image.save(output, format="JPEG", quality=82, optimize=True, progressive=True)
             body = output.getvalue()
-            cache_path.write_bytes(body)
-            self.send_bytes(body, "image/jpeg", cache_control="public, max-age=604800")
+            atomic_write_bytes(cache_path, body)
+            self.send_bytes(body, "image/jpeg", cache_control="private, max-age=604800")
         except Exception:
             # Rare embedded image formats should not make artwork disappear.
-            self.send_bytes(artwork.data, artwork.mime, cache_control="public, max-age=86400")
+            self.send_bytes(artwork.data, artwork.mime, cache_control="private, max-age=86400")
 
     @staticmethod
     def thumbnail_size(query: dict[str, list[str]]) -> int:
@@ -151,13 +152,15 @@ class StreamingRoutesMixin:
         self.send_header("Content-Type", content_type_for(path))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
-        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_header("Cache-Control", "private, no-cache")
         if status == HTTPStatus.PARTIAL_CONTENT:
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
         self.end_headers()
 
     def write_file_range(self, path: Path, start: int, length: int, label: str, request_started: float, debug: bool) -> None:
         """Copy one byte range directly from disk to the response stream."""
+        if self.command == "HEAD":
+            return
         with path.open("rb") as handle:
             handle.seek(start)
             remaining = length
@@ -186,7 +189,12 @@ class StreamingRoutesMixin:
         try:
             status, start, end = parse_range_header(range_header, file_size)
         except ValueError:
-            self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range", f"bytes */{file_size}")
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "private, no-cache")
+            self.end_headers()
             return
         length = end - start + 1
         if debug:
@@ -215,7 +223,7 @@ class StreamingRoutesMixin:
         if path is None or not path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_bytes(path.read_bytes(), content_type_for(path), cache_control="public, max-age=86400")
+        self.send_bytes(path.read_bytes(), content_type_for(path), cache_control="private, max-age=86400")
 
     def handle_video_folder_cover(self, path_text: str) -> None:
         if self.player_config.guest_mode:
@@ -226,4 +234,4 @@ class StreamingRoutesMixin:
         if path is None or not path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        self.send_bytes(path.read_bytes(), content_type_for(path), cache_control="public, max-age=86400")
+        self.send_bytes(path.read_bytes(), content_type_for(path), cache_control="private, max-age=86400")

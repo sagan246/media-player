@@ -6,7 +6,7 @@ archives in one place.
 It runs on your computer, streams local files to a browser, and is designed for
 a personal media library with a UI tailored to the collection. It can stay local
 by default, stream to a phone on the home network, work remotely through a
-private network, or create a temporary read-only web link.
+private network, or create a temporary web link that hides local paths.
 
 ## Screenshots
 
@@ -29,7 +29,6 @@ private network, or create a temporary read-only web link.
 - Save or update music queues as named playlists with cross-device resume
 - Now Playing screen with artwork, lyrics, controls, and visualizers
 - Listening stats by day, week, month, year, and all time
-- Optional MP3/FLAC metadata and artwork editing
 - Desktop and mobile browser UI
 - Built-in touch game that can use current album artwork
 - Configurable Guest Mode for a game-first, single-album listening session
@@ -71,11 +70,11 @@ If macOS blocks the launcher, run once:
 chmod +x mac_commands/start_launcher.command mac_commands/start_player.command
 ```
 
-Editable mode uses port `8766`. Read-only web-share mode uses port `8767`.
+Local mode uses port `8766`. Web-share mode uses port `8767`.
 The Windows launcher can also start normal and Guest/demo Cloudflare links
 together; the demo server uses local port `8769`.
 
-For a simple local editable start without the launcher, use:
+For a simple local start without the launcher, use:
 
 ```text
 windows_commands/start_player.cmd
@@ -90,7 +89,7 @@ media-player --media-dir <media-folder>
 
 ## Command Line
 
-Editable local mode:
+Local mode:
 
 ```powershell
 python media_player.py --media-dir <media-folder> --host 127.0.0.1 --port 8766
@@ -122,25 +121,6 @@ media-player --reset-game-record
 This resets the record to zero and exits without starting the server.
 On Windows, the confirmation-based `windows_commands/reset_game_record.cmd`
 does the same thing by double-click.
-
-## Edit Mode
-
-Edit Mode allows supported audio metadata and embedded artwork to be updated
-from the browser.
-
-Supported edits include:
-
-- Title
-- Artist
-- Album
-- Album Artist
-- Track Number
-- Date
-- Genre
-- Embedded Artwork
-
-Edit Mode writes directly to MP3 and FLAC files. Use a copy or backup of your
-media if you are experimenting.
 
 ## Configuration
 

@@ -54,7 +54,7 @@
         margin-bottom:28px;
       }
     }
-    @media (max-width:980px) { .bar,main { grid-template-columns:1fr; } .playerBar { grid-template-columns:minmax(220px,1fr) auto minmax(220px,1.2fr); gap:10px; padding:9px 14px; } .playerBar .volume { display:none; } body.listen.music main, body.readOnly main, body.browseCollapsed.music main, body.readOnly.browseCollapsed.music main, body.browseCollapsed.video main { grid-template-columns:1fr; } aside,nav { position:static; } nav { max-height:none; } th { top:0; } .transport { justify-content:center; } .videoGrid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); } .videoCard { height:238px; } .albumDetail { grid-template-columns:1fr; } }
+    @media (max-width:980px) { .bar,main { grid-template-columns:1fr; } .playerBar { grid-template-columns:minmax(220px,1fr) auto minmax(220px,1.2fr); gap:10px; padding:9px 14px; } .playerBar .volume { display:none; } body.listen.music main, body.browseCollapsed.music main, body.browseCollapsed.video main { grid-template-columns:1fr; } aside,nav { position:static; } nav { max-height:none; } th { top:0; } .transport { justify-content:center; } .videoGrid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); } .videoCard { height:238px; } .albumDetail { grid-template-columns:1fr; } }
     @media (max-width:860px) {
       header { position:static; }
       .bar { grid-template-columns:1fr; padding:8px 10px; gap:8px; }
@@ -63,11 +63,10 @@
       .appTabs { display:grid; grid-template-columns:repeat(auto-fit,minmax(44px,1fr)); gap:6px; width:100%; }
       .mediaTab { width:100%; min-width:0; height:40px; }
       .mediaTab.iconOnly { width:100%; min-width:0; }
-      #healthTab { display:none; }
-      #musicFilter, #refresh { display:none; }
+      #refresh { display:none; }
       body.interviews .bar { padding:8px 10px; }
       body.interviews main { padding-top:8px; }
-      #listenMode, #editMode, .iconLink { display:none; }
+      .iconLink { display:none; }
       .stats { display:none; }
       body.customize .stats { display:none; }
       body.video .videoPanel > .controls .viewTitle,
@@ -76,7 +75,7 @@
       body.interviews #browseInterviews { grid-column:1; width:38px; min-width:38px; padding:0; }
       body.interviews #shuffleInterviews { grid-column:3; justify-self:end; width:38px; min-width:38px; height:34px; padding:0; margin-left:0; }
       .desktopOnly { display:none !important; }
-      .statsHero { align-items:stretch; padding:12px; }
+      .statsHero { align-items:stretch; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
       body.statsPage .statsHero > div:first-child { display:none; }
       .statsHero, .statsControls { flex-direction:column; }
       .statsControls { align-items:stretch; }
@@ -120,13 +119,12 @@
       .statsYearHeat { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; padding:10px; }
       .statsYearCell { min-height:58px; padding:7px; }
       .statsYearCell span, .statsYearCell strong { font-size:11px; }
-      .statsCalendarWeekdays { gap:4px; padding:10px 10px 0; font-size:10px; }
-      .statsCalendarGrid { gap:4px; padding:6px 10px 10px; }
-      .statsCalendarCell { min-height:42px; padding:5px; border-radius:7px; }
+      .statsCalendarWeekdays { gap:3px; padding:10px 8px 0; font-size:10px; }
+      .statsCalendarGrid { gap:3px; padding:6px 8px 10px; }
+      .statsCalendarCell { min-height:0; padding:4px; border-radius:7px; }
       .statsCalendarCell span, .statsCalendarCell strong { font-size:10px; }
       main { padding-top:10px; }
       body.listen.music main,
-      body.readOnly main,
       body.video main { grid-template-columns:1fr; }
       .browseToggle, .closeBrowse { display:inline-grid; place-items:center; }
       body.browseCollapsed nav { display:grid; }
@@ -150,10 +148,9 @@
       body.interviews .interviewsPanel { grid-template-columns:1fr; }
       body.interviews .interviewReader { resize:none; min-width:0; max-width:none; }
       .pathCell, th[data-sort="path"] { display:none; }
-      .checkCell, th[data-sort="artist"], .artistCell, th[data-sort="album"], .albumCell { display:none; }
+      th[data-sort="artist"], .artistCell, th[data-sort="album"], .albumCell { display:none; }
       .mobileAlbumRow { display:table-row; }
       .mobileAlbumRow td { padding:8px 10px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
-      .rowBadges { display:none; }
       .nowPlayingDrawer { padding-top:0; }
       .nowPlayingHead { top:12px; right:max(4px, env(safe-area-inset-right)); left:auto; width:44px; }
       body.music.albumSelected #showAllAlbums { top:12px; right:12px; left:auto; }
@@ -212,9 +209,9 @@
       .tableWrap thead { display:none; }
       .tableWrap tr[data-id] { display:grid; grid-template-columns:44px minmax(0,1fr) auto; grid-template-areas:"art title actions" "art date actions"; gap:2px 10px; align-items:center; padding:8px; border-bottom:1px solid var(--line); }
       .tableWrap tr[data-id] td { display:block; padding:0; border-bottom:0; }
-      .tableWrap tr[data-id] td:nth-child(2) { grid-area:art; }
+      .tableWrap tr[data-id] td:nth-child(1) { grid-area:art; }
       .tableWrap tr[data-id] .titleCell { grid-area:title; max-width:none; }
-      .tableWrap tr[data-id] td:nth-child(6) { grid-area:date; color:var(--muted); font-size:12px; }
+      .tableWrap tr[data-id] td:nth-child(5) { grid-area:date; color:var(--muted); font-size:12px; }
       .tableWrap tr[data-id] .rowActions { grid-area:actions; width:auto; }
       table { min-width:0; }
       .albumGrid,
@@ -263,12 +260,13 @@
       .videoCard .videoWarn { display:none; }
     }
     @media (max-width:680px) {
-      body { --player-bar-space:76px; font-size:13px; }
+      body { --player-bar-space:80px; font-size:13px; }
       .bar { padding:10px; gap:8px; }
       h1 { font-size:18px; }
       .appTabs { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:5px; width:100%; }
       .mediaTab { min-width:0; width:100%; height:38px; }
       .mediaTab.iconOnly { width:100%; min-width:0; }
+      .themeModeToggle { margin-inline:auto; }
       input,select,button { height:34px; min-width:0; }
       .stats { padding:0 10px 10px; gap:6px; overflow:auto; flex-wrap:nowrap; }
       .stat { flex:0 0 auto; min-height:26px; padding:0 8px; }
@@ -278,7 +276,6 @@
       .groupItem { min-height:34px; }
       body.music .groupItem, body.video .groupItem { min-height:30px; padding:5px 8px; }
       body.music .groupItem.browseChild { padding-left:24px; }
-      .bulkPanel { display:none; }
       .controls { gap:6px; }
       .viewTitle { width:100%; font-size:20px; }
       .controls .spacer { display:none; }
@@ -296,9 +293,11 @@
       body.video #videoSort { width:100%; min-width:0; padding:0 6px; font-size:12px; }
       body.video #shuffleShownVideo { width:38px; min-width:38px; height:34px; padding:0; }
       body.video #shuffleShownVideo { grid-column:3; justify-self:end; }
-      .albumShelf { padding:10px; width:100%; }
-      .albumGrid { width:100%; }
-      .albumCard { width:100%; }
+      .workspace, .albumShelf, .albumGrid { min-width:0; max-width:100%; }
+      .albumShelf { width:auto; padding:0; }
+      body.music:not(.albumSelected) .albumShelf { border:0; background:transparent; box-shadow:none; overflow:visible; }
+      .albumGrid { width:auto; padding-right:0; }
+      .albumCard { width:100%; min-width:0; }
       .albumHomeSection { gap:8px; }
       .albumSectionHead h2 { font-size:16px; }
       .albumName { min-height:32px; font-size:12px; }
@@ -312,14 +311,14 @@
       .albumActions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
       .albumActions .iconControl { width:38px; height:34px; min-width:38px; padding:0; }
       body.music.albumSelected .albumActions .iconControl { width:48px; height:42px; min-width:48px; font-size:20px; }
-      .albumActions #albumEdit { display:none; }
       .tableWrap { max-height:58vh; overflow:auto; }
       table { min-width:0; }
       th,td { padding:8px; }
       .pathCell { max-width:260px; }
       aside { min-height:auto; padding:10px; }
       body.listen aside { display:none; }
-      .playerBar { grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:7px 10px; }
+      .playerBar { grid-template-columns:minmax(0,1fr) auto; gap:8px; bottom:max(4px, env(safe-area-inset-bottom)); padding:7px 10px; }
+      .playerBar::after { content:""; position:absolute; top:100%; left:0; right:0; height:max(4px, env(safe-area-inset-bottom)); background:inherit; pointer-events:none; }
       .queueToast { left:12px; right:12px; bottom:86px; text-align:center; }
       .now { min-width:0; }
       .now img, .now .noArt { width:38px; height:38px; }
@@ -331,18 +330,22 @@
       .queueDrawer { width:100vw; }
       .queueHeadTop .queueTitleButton { font-size:17px; }
       .queuePanelActions button { height:32px; }
+      .queueItem { grid-template-columns:42px minmax(0,1fr) auto auto; }
+      .queueMoveActions { display:flex; }
+      .queueMoveActions .iconControl { width:36px; min-width:36px; height:36px; }
+      .queueItem > button[data-remove] { width:36px; min-width:36px; height:36px; padding:0; }
       .videoGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 10px; max-height:76vh; }
       .videoGrid.videoFileMode .videoCard[data-id] { min-height:46px; }
       .videoHomeSection { gap:8px; }
-      .healthHero { display:grid; padding:12px; }
-      .healthGrid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
-      .healthCard { padding:10px; }
-      .healthNumber { font-size:24px; }
-      .healthSections { grid-template-columns:1fr; }
       .interviewsPanel { grid-template-columns:1fr; }
       .interviewList, .interviewReader { max-height:none; }
       body.interviews .interviewReader { min-height:calc(100vh - 118px); min-width:0; max-width:none; resize:none; }
       .interviewText { max-width:none; }
+    }
+    @media (pointer:coarse) {
+      button, .iconLink, [role="button"] { min-height:44px; }
+      input[type="range"] { min-height:44px; }
+      .queueMoveActions { display:flex; }
     }
 @media (min-width:861px) {
   .mobileOnlyPreference { display:none !important; }

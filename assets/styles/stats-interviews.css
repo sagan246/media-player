@@ -5,26 +5,7 @@
     .videoCard .videoMeta { min-height:2.75em; font-size:12px; font-weight:var(--card-meta-weight); color:var(--muted); }
     .videoWarn { color:var(--danger); font-size:12px; font-weight:700; }
     .videoQueueControls { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
-    /* Health and stats --------------------------------------------------- */
-    .healthPanel { display:grid; gap:16px; }
-    .healthHero { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:16px; border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg-strong); box-shadow:0 12px 28px rgba(0,0,0,.30); }
-    .healthHero h2 { margin:0 0 4px; font-size:24px; }
-    .healthHero p { margin:0; color:var(--muted); }
-    .healthGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
-    .healthCard { padding:14px; border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); box-shadow:var(--card-shadow); }
-    .healthNumber { font-size:28px; font-weight:900; }
-    .healthLabel { color:var(--muted); font-weight:var(--card-meta-weight); }
-    .healthSections { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
-    .healthSection { border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); overflow:hidden; box-shadow:var(--card-shadow); }
-    .healthSection h3 { margin:0; padding:12px 14px; border-bottom:1px solid var(--line); font-size:16px; }
-    .healthList { display:grid; }
-    .healthItem { display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; min-height:48px; padding:10px 14px; border-bottom:1px solid var(--line); }
-    .healthItem:last-child { border-bottom:0; }
-    .healthItemTitle { font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .healthItemSub { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .healthItem button { height:30px; padding:0 8px; }
-    .healthActionHint { color:var(--muted); font-size:12px; padding:0 14px 12px; }
-    .healthEmpty { padding:16px; color:var(--muted); border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); }
+    /* Stats -------------------------------------------------------------- */
     .statsPanel { display:grid; gap:16px; width:100%; }
     .statsHero { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:16px; border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg-strong); box-shadow:0 12px 28px rgba(0,0,0,.30); }
     .statsHero h2 { margin:0 0 4px; font-size:24px; }
@@ -42,7 +23,7 @@
     .statsDayRange.visible, .statsStepRange.visible, .statsCustomRange.visible { display:flex; }
     .statsDayRange input, .statsCustomRange input { width:146px; min-width:0; }
     .statsDayRange .iconControl, .statsStepRange .iconControl { width:34px; height:34px; flex:0 0 34px; }
-    .statsCard { border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); box-shadow:var(--card-shadow); overflow:hidden; }
+    .statsCard { border:0; border-radius:0; background:transparent; box-shadow:none; overflow:hidden; }
     .statsSections { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
     .statsCardHead { display:flex; align-items:center; justify-content:flex-start; gap:8px; padding:12px 14px; border-bottom:1px solid var(--line); background:transparent; }
     .statsSection h3 { margin:0; font-size:16px; }
@@ -77,9 +58,9 @@
     .statsYearCell span { font-size:12px; font-weight:900; }
     .statsYearCell strong { justify-self:end; font-size:12px; }
     .statsCalendarTitle { padding:14px 14px 0; color:var(--text); font-size:15px; font-weight:900; text-align:center; }
-    .statsCalendarWeekdays { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:14px 14px 0; color:var(--muted); font-size:11px; font-weight:900; text-align:center; }
-    .statsCalendarGrid { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:8px 14px 14px; }
-    .statsCalendarCell { aspect-ratio:1; min-height:52px; border-radius:8px; padding:6px; display:grid; align-content:space-between; box-shadow:inset 0 0 0 1px rgba(255,255,255,.04); color:#fff; }
+    .statsCalendarWeekdays { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; padding:14px 14px 0; color:var(--muted); font-size:11px; font-weight:900; text-align:center; }
+    .statsCalendarGrid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; padding:8px 14px 14px; }
+    .statsCalendarCell { width:100%; min-width:0; aspect-ratio:1; min-height:52px; box-sizing:border-box; overflow:hidden; border-radius:8px; padding:6px; display:grid; align-content:space-between; box-shadow:inset 0 0 0 1px rgba(255,255,255,.04); color:#fff; }
     .statsCalendarCell span { font-size:11px; font-weight:900; opacity:.9; }
     .statsCalendarCell strong { justify-self:end; font-size:11px; }
     .blankCalendarCell { background:transparent !important; box-shadow:none; }

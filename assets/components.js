@@ -96,6 +96,14 @@
     return `<div class="topTabControls">${title ? `<strong>${esc(title)}</strong>` : ""}${metricsHtml ? `<div class="topTabMetrics">${metricsHtml}</div>` : ""}<div class="topTabActions">${controlsHtml}</div></div>`;
   }
 
+  function statusPanelHtml({kind="empty", title="", message="", compact=false}={}){
+    const icon = kind === "loading" ? `<span class="uiStateSpinner" aria-hidden="true"></span>`
+      : kind === "error" ? `<span class="uiStateIcon" aria-hidden="true">!</span>`
+      : `<span class="uiStateIcon" aria-hidden="true">&mdash;</span>`;
+    const role = kind === "error" ? "alert" : "status";
+    return `<div class="uiState uiState-${esc(kind)} ${compact?"compact":""}" role="${role}" aria-live="${kind==="loading"?"polite":"off"}">${icon}<div class="uiStateCopy">${title?`<strong class="uiStateTitle">${esc(title)}</strong>`:""}${message?`<span class="uiStateMessage">${esc(message)}</span>`:""}</div></div>`;
+  }
+
   function selectOptionsHtml(options, selectedValue){
     return options.map(([value, label]) => `<option value="${esc(value)}" ${selectedValue === value ? "selected" : ""}>${esc(label)}</option>`).join("");
   }
@@ -116,6 +124,7 @@
     selectOptionsHtml,
     statCardHtml,
     statPillHtml,
+    statusPanelHtml,
     topControlBarHtml,
     topIconButton,
     topQueueButton,

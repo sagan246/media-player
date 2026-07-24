@@ -1,7 +1,7 @@
 """HTTP server composition and command-line startup.
 
 The handler is intentionally a coordinator. Route behavior lives in focused
-mixins for APIs, metadata editing, streaming, and shared HTTP mechanics.
+mixins for APIs, streaming, and shared HTTP mechanics.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from typing import Callable
 from urllib.parse import unquote, urlparse
 
 from .api_routes import ApiRoutesMixin
-from .edit_routes import EditRoutesMixin
 from .game_stats import GameHighScoreStore
 from .http_helpers import HttpHelpersMixin
 from .listening_stats import ListeningStats
@@ -42,7 +41,7 @@ from .streaming import StreamingRoutesMixin
 RouteHandler = Callable[[], None]
 
 
-class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpersMixin, BaseHTTPRequestHandler):
+class Handler(ApiRoutesMixin, StreamingRoutesMixin, HttpHelpersMixin, BaseHTTPRequestHandler):
     """Compose the application route layers into one request handler."""
 
     library: Library
@@ -51,7 +50,6 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
     playlist_store: PlaylistStore
     player_config = PlayerConfig()
     game_dir: Path | None = None
-    editable = True
     playlist_editable = True
     web_share = False
     log_lock = threading.Lock()
@@ -77,7 +75,6 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
             "/api/playlists": self.handle_playlists_api,
             "/api/listening-stats": lambda: self.handle_listening_stats_api(query_text),
             "/api/game-score": self.handle_game_score_api,
-            "/api/refresh": self.handle_refresh_api,
         }
 
     def get_prefix_routes(self, path_text: str, query_text: str) -> tuple[tuple[str, RouteHandler], ...]:
@@ -103,6 +100,10 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
                 handler()
                 return
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_HEAD(self) -> None:  # noqa: N802
+        """Return the same headers as GET without reading response bodies."""
+        self.do_GET()
 
     def handle_asset(self, path_text: str) -> None:
         relative = unquote(path_text.removeprefix("/assets/"))
@@ -169,6 +170,9 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/api/refresh":
+            self.handle_refresh_api()
+            return
         if parsed.path == "/api/listening-stats":
             self.handle_listening_stats_record()
             return
@@ -184,17 +188,6 @@ class Handler(EditRoutesMixin, ApiRoutesMixin, StreamingRoutesMixin, HttpHelpers
         if parsed.path == "/api/playlists":
             if self.require_playlist_access():
                 self.handle_playlist_create()
-            return
-        if not self.require_edit_access():
-            return
-        if parsed.path == "/api/bulk/metadata":
-            self.handle_bulk_metadata()
-            return
-        if parsed.path.startswith("/api/track/") and parsed.path.endswith("/artwork"):
-            self.handle_artwork_update(parsed.path)
-            return
-        if parsed.path.startswith("/api/track/") and parsed.path.endswith("/metadata"):
-            self.handle_track_metadata(parsed.path)
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -221,11 +214,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local media player.")
     parser.add_argument("--media-dir", default=DEFAULT_MEDIA_DIR, type=Path)
     parser.add_argument("--config", default=DEFAULT_CONFIG, type=Path, help="Optional JSON config file.")
-    parser.add_argument("--read-only", action="store_true", help="Run without metadata editing.")
     parser.add_argument(
         "--web-share",
         action="store_true",
-        help="Hide local paths and disable media-file edits for temporary sharing.",
+        help="Hide local paths for temporary sharing.",
     )
     guest_group = parser.add_mutually_exclusive_group()
     guest_group.add_argument("--guest-mode", dest="guest_mode", action="store_true", help="Enable configured Guest Mode.")
@@ -280,12 +272,6 @@ def main() -> int:
     if player_config.guest_mode and Handler.game_dir is None:
         raise SystemExit("Guest Mode requires a valid configured game directory.")
     Handler.web_share = web_share
-    Handler.editable = (
-        bool(config.get("editable", True))
-        and not args.read_only
-        and not web_share
-        and not player_config.guest_mode
-    )
     Handler.playlist_editable = bool(config.get("playlist_editable", True)) and not player_config.guest_mode
     guest_music_dir = player_config.guest_music_path(args.config) if player_config.guest_mode else None
     if guest_music_dir is not None and not guest_music_dir.is_dir():
@@ -306,17 +292,21 @@ def main() -> int:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     Handler.listening_stats = ListeningStats(STATS_DB)
     Handler.game_stats = GameHighScoreStore(GAME_STATS_DB)
-    Handler.playlist_store = PlaylistStore(RUNTIME_DIR / "playlists.json")
-    AUDIO_DEBUG_LOG.write_text(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+    Handler.playlist_store = PlaylistStore(
+        RUNTIME_DIR / "playlists.sqlite3",
+        legacy_json_path=RUNTIME_DIR / "playlists.json",
+    )
+    with AUDIO_DEBUG_LOG.open("a", encoding="utf-8") as log:
+        log.write(f"Audio debug log started {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")
     if player_config.guest_mode:
         mode = "guest"
     elif Handler.web_share:
-        mode = "web-share read-only"
+        mode = "web-share"
     else:
-        mode = "editable" if Handler.editable else "read-only"
+        mode = "local"
     print(f"Mode: {mode}")
     print("Press Ctrl+C to stop.")
     try:

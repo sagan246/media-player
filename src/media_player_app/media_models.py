@@ -26,8 +26,6 @@ class Track:
     has_lyrics: bool
     lyrics_url: str
     lyrics_format: str
-    missing_fields: list[str]
-    review_flags: list[str]
 
 
 @dataclass

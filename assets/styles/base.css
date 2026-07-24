@@ -28,11 +28,11 @@
     select:focus-visible,
     button:focus-visible,
     .iconLink:focus-visible { outline:2px solid rgba(var(--accent-rgb),.58); outline-offset:2px; border-color:var(--accent-border); }
+    [tabindex="0"]:focus-visible { outline:2px solid rgba(var(--accent-rgb),.58); outline-offset:2px; }
+    button, [role="button"], a, input, select { touch-action:manipulation; }
     select option:checked { background:var(--accent); color:white; }
     input { width:100%; }
     #searchBox { order:3; flex:0 1 320px; max-width:320px; }
-    #musicFilter { order:4; flex:0 0 210px; width:210px; }
-    body.listen #musicFilter { display:none; }
     #refresh { order:3; flex:0 0 38px; width:38px; margin-left:auto; }
     input[type=range] { accent-color:var(--accent); }
     button { cursor:pointer; background:linear-gradient(180deg, var(--accent-strong), var(--accent)); color:white; border-color:rgba(var(--accent-strong-rgb),.34); font-weight:700; box-shadow:0 5px 12px rgba(var(--accent-rgb),.075); }
@@ -53,6 +53,15 @@
     .stats { order:2; display:flex; flex:0 1 auto; min-width:0; gap:6px; padding:0; color:var(--muted); flex-wrap:wrap; align-items:center; }
     .stat { display:inline-flex; align-items:center; gap:4px; min-height:26px; padding:0 8px; border:1px solid rgba(148,163,184,.14); border-radius:999px; background:rgba(255,255,255,.025); font-size:12px; }
     .stat strong { color:var(--text); }
+    .uiState { width:min(100%,680px); min-height:112px; margin:16px auto; padding:22px; display:flex; align-items:center; justify-content:center; gap:14px; border:1px solid var(--line); border-radius:8px; background:var(--card-bg); color:var(--muted); text-align:left; }
+    .uiState.compact { min-height:72px; margin:4px 0; padding:14px; justify-content:flex-start; }
+    .uiStateIcon { width:30px; height:30px; flex:0 0 30px; display:grid; place-items:center; border:1px solid var(--line); border-radius:50%; color:var(--muted); font-weight:900; }
+    .uiState-error .uiStateIcon { border-color:rgba(248,113,113,.38); color:#f87171; }
+    .uiStateCopy { display:grid; gap:3px; }
+    .uiStateTitle { color:var(--text); font-size:15px; }
+    .uiStateMessage { font-size:13px; }
+    .uiStateSpinner { width:24px; height:24px; flex:0 0 24px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:uiStateSpin .8s linear infinite; }
+    @keyframes uiStateSpin { to { transform:rotate(360deg); } }
     .statsTopControls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; width:100%; }
     .statsTopControls > strong { color:var(--text); font-size:18px; }
     .statsTopMetrics { display:flex; align-items:center; gap:12px; margin-left:6px; }
@@ -62,7 +71,7 @@
     .topTabActions { margin-left:0; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .topTabActions .topSelect { width:auto; min-width:112px; flex:0 0 auto; }
     .customizePanel { display:grid; gap:16px; max-width:760px; }
-    .customizeCard { padding:16px; border:1px solid var(--card-border); border-radius:8px; background:var(--card-bg); box-shadow:var(--card-shadow); }
+    .customizeCard { padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
     .customizeCard h2 { margin:0 0 6px; font-size:24px; line-height:1.15; }
     .customizeCard p { margin:0; color:var(--muted); }
     .customizePanel .preferenceRow { display:flex; align-items:center; justify-content:space-between; gap:18px; color:var(--text); text-transform:none; letter-spacing:0; cursor:pointer; }
@@ -85,39 +94,33 @@
     .themeSwatch { width:34px; height:34px; border-radius:999px; background:linear-gradient(135deg,var(--swatch-a),var(--swatch-b)); box-shadow:0 0 12px rgba(var(--swatch-rgb),.16); }
     .themeChoice strong { display:block; font-size:14px; line-height:1.2; }
     body[class*="theme-light"] .themeChoice { background:rgba(255,255,255,.72); }
-    main { display:grid; grid-template-columns:270px minmax(0,1fr) 360px; gap:18px; padding:18px 20px; align-items:start; }
+    main { display:grid; grid-template-columns:270px minmax(0,1fr); gap:18px; padding:18px 20px; align-items:start; }
     body.listen.music main { grid-template-columns:270px minmax(0,1fr); }
-    body.listen #healthTab { display:none; }
-    body.readOnly main { grid-template-columns:270px minmax(0,1fr); }
     body.video main { grid-template-columns:270px minmax(0,1fr); }
-    body.browseCollapsed.music main { grid-template-columns:minmax(0,1fr) 360px; }
+    body.browseCollapsed.music main { grid-template-columns:minmax(0,1fr); }
     body.listen.browseCollapsed.music main,
-    body.readOnly.browseCollapsed.music main,
     body.browseCollapsed.video main { grid-template-columns:minmax(0,1fr); }
     body.browseCollapsed nav { display:none; }
     body.browseCollapsed.interviews .interviewsPanel { grid-template-columns:minmax(0,1fr); }
     body.browseCollapsed.interviews .interviewList { display:none; }
-    body.health main, body.interviews main, body.statsPage main, body.customize main { grid-template-columns:minmax(0,1fr); }
-    body.video .musicOnly, body.music .videoOnly, body.health .musicOnly, body.health .videoOnly, body.interviews .musicOnly, body.interviews .videoOnly, body.statsPage .musicOnly, body.statsPage .videoOnly,
-    body.music .healthOnly, body.video .healthOnly, body.interviews .healthOnly, body.statsPage .healthOnly, body.music .interviewsOnly, body.video .interviewsOnly, body.health .interviewsOnly, body.statsPage .interviewsOnly,
-    body.music .statsOnly, body.video .statsOnly, body.health .statsOnly, body.interviews .statsOnly,
-    body.customize .musicOnly, body.customize .videoOnly, body.customize .healthOnly, body.customize .interviewsOnly, body.customize .statsOnly,
-    body.music .customizeOnly, body.video .customizeOnly, body.health .customizeOnly, body.interviews .customizeOnly, body.statsPage .customizeOnly { display:none !important; }
+    body.interviews main, body.statsPage main, body.customize main { grid-template-columns:minmax(0,1fr); }
+    body.video .musicOnly, body.music .videoOnly, body.interviews .musicOnly, body.interviews .videoOnly, body.statsPage .musicOnly, body.statsPage .videoOnly,
+    body.music .interviewsOnly, body.video .interviewsOnly, body.statsPage .interviewsOnly,
+    body.music .statsOnly, body.video .statsOnly, body.interviews .statsOnly,
+    body.customize .musicOnly, body.customize .videoOnly, body.customize .interviewsOnly, body.customize .statsOnly,
+    body.music .customizeOnly, body.video .customizeOnly, body.interviews .customizeOnly, body.statsPage .customizeOnly { display:none !important; }
     body.video #browseVideo,
     body.video #videoSort { display:none !important; }
-    body.health #searchBox,
     body.statsPage #searchBox,
-    body.statsPage #musicFilter,
     body.statsPage #refresh,
     body.customize #searchBox,
-    body.customize #musicFilter,
     body.customize #refresh,
     body.interviews #searchBox,
     body.interviews #refresh { display:none; }
     body.interviews .bar { padding:8px 20px 8px; }
     body.interviews .appTabs { margin-top:0; }
     body.interviews main { padding-top:10px; }
-    body.health nav, body.health aside, body.statsPage nav, body.statsPage aside, body.interviews nav, body.interviews aside, body.customize nav, body.customize aside { display:none !important; }
+    body.statsPage nav, body.statsPage aside, body.interviews nav, body.interviews aside, body.customize nav, body.customize aside { display:none !important; }
     body.interviews .playerBar.musicOnly,
     body.statsPage .playerBar.musicOnly,
     body.customize .playerBar.musicOnly { display:grid !important; }
@@ -127,14 +130,3 @@
     body.interviews .queueDrawer.musicOnly.open,
     body.statsPage .queueDrawer.musicOnly.open,
     body.customize .queueDrawer.musicOnly.open { display:block !important; }
-    body.readOnly #healthTab,
-    body.readOnly #musicFilter,
-    body.readOnly #listenMode,
-    body.readOnly #editMode,
-    body.readOnly aside,
-    body.readOnly .bulkPanel,
-    body.readOnly .artworkPanel { display:none !important; }
-    body.edit.music #browseMusic,
-    body.edit.music #topQueueToggle,
-    body.edit.music #playShownMusic,
-    body.edit.music #shuffleShownMusic { display:none !important; }

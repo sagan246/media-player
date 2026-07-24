@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-rem Start the normal local media player with edit mode available.
+rem Start the normal local media player.
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "APP_DIR=%%~fI"
 for %%I in ("%APP_DIR%\..\..\media") do set "MEDIA_DIR=%%~fI"

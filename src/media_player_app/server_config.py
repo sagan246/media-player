@@ -58,8 +58,6 @@ FRONTEND_SCRIPT_FILES = (
     "stats-controller.js",
     "playlist-domain.js",
     "playlist-controller.js",
-    "edit-domain.js",
-    "edit-controller.js",
     "app.js",
     "app-bootstrap.js",
 )
@@ -74,7 +72,7 @@ FRONTEND_STYLE_FILES = (
     "styles/music.css",
     "styles/player-queue-now-playing.css",
     "styles/video.css",
-    "styles/health-stats-interviews.css",
+    "styles/stats-interviews.css",
     "styles/game.css",
     "styles/responsive.css",
 )

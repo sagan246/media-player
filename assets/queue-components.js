@@ -11,13 +11,19 @@
   }
 
   function emptyQueueHtml(title, subtitle=""){
-    const subtitleHtml = subtitle ? `<div class="queueItemSub">${esc(subtitle)}</div>` : "";
-    return `<div class="queueItem mediaRow"><div class="noArt mediaRowArt">?</div><div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${esc(title)}</div>${subtitleHtml}</div></div>`;
+    const statusPanelHtml = window.MediaPlayerComponents?.statusPanelHtml;
+    return statusPanelHtml
+      ? statusPanelHtml({kind:"empty", title, message:subtitle, compact:true})
+      : `<div class="queueEmpty" role="status">${esc(title)}</div>`;
   }
 
-  function queueItemHtml({index, displayIndex=index, active, artworkHtml, title, subtitle, draggable=false, removable=true}){
+  function moveButtonsHtml(index, count){
+    return `<div class="queueMoveActions"><button class="secondary iconControl" data-move="-1" data-index="${index}" title="Move earlier" aria-label="Move ${esc(index+1)} earlier" ${index===0?"disabled":""}>&uarr;</button><button class="secondary iconControl" data-move="1" data-index="${index}" title="Move later" aria-label="Move ${esc(index+1)} later" ${index===count-1?"disabled":""}>&darr;</button></div>`;
+  }
+
+  function queueItemHtml({index, displayIndex=index, count, active, artworkHtml, title, subtitle, draggable=false, removable=true}){
     const removeHtml = removable ? removeQueueButtonHtml(index) : "";
-    return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${displayIndex+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${removeHtml}</div>`;
+    return `<div class="queueItem mediaRow ${active?"active":""}" data-index="${index}" role="button" tabindex="0" aria-label="Play ${esc(title)}" ${active?'aria-current="true"':""} ${draggable?'draggable="true"':""}>${artworkHtml}<div class="mediaRowText"><div class="queueItemTitle mediaRowTitle">${displayIndex+1}. ${esc(title)}</div><div class="queueItemSub mediaRowMeta">${esc(subtitle)}</div></div>${moveButtonsHtml(index,count)}${removeHtml}</div>`;
   }
 
   function sectionLabelHtml(index, activeIndex){
@@ -33,6 +39,7 @@
       return sectionLabelHtml(index, activeIndex) + queueItemHtml({
       index,
       displayIndex,
+      count:items.length,
       active: index === activeIndex,
       draggable,
       removable,

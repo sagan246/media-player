@@ -8,13 +8,15 @@ That keeps the database private, compact, and useful for "Wrapped"-style views.
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 import threading
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import sqlite3
+
+from .sqlite_utils import connect_runtime_database
 
 VALID_PERIODS = {"day", "week", "month", "year", "all", "custom"}
 MAX_CUSTOM_RANGE_DAYS = 366
@@ -30,9 +32,7 @@ class ListeningStats:
 
     def connect(self) -> sqlite3.Connection:
         """! @brief Open a SQLite connection with row dictionaries enabled."""
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        return connection
+        return connect_runtime_database(self.db_path, rows=True)
 
     def init_db(self) -> None:
         """! @brief Create compact summary tables if they do not exist."""

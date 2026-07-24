@@ -10,6 +10,7 @@
       setIndex,
       getPlayingId,
       setActivePlaylist,
+      setContext,
       save,
       playIndex,
       stopPlayback,
@@ -39,6 +40,7 @@
       const playable = randomize ? shuffled(ordered) : ordered;
       if(!playable.length) return;
       setActivePlaylist(settings.playlistId || null);
+      setContext({...settings.context, shuffled:Boolean(randomize)});
       const ids = playable.map(track => track.id);
       const savedIndex = Number(settings.startIndex);
       const index = Number.isInteger(savedIndex)
@@ -47,10 +49,12 @@
       setQueue(ids);
       setIndex(index);
       save({force:true});
+      const source=settings.context?.label||settings.context?.kind||"selection";
+      showToast(`Playing ${ids.length} ${ids.length===1?"track":"tracks"} · ${source}`);
       playIndex(index, settings);
     }
 
-    function add(list){
+    function add(list, settings={}){
       const queue = getQueue();
       const existing = new Set(queue);
       const ids = [];
@@ -63,9 +67,11 @@
       if(!ids.length) return;
       const wasEmpty = queue.length === 0;
       queue.push(...ids);
-      showToast(ids.length === 1 ? "Added to queue" : `Added ${ids.length} to queue`);
+      showToast(`${ids.length === 1 ? "Added 1 track" : `Added ${ids.length} tracks`} · ${queue.length} in queue`);
       pulseQueue();
       if(wasEmpty){
+        setActivePlaylist(settings.playlistId || null);
+        setContext(settings.context || {kind:"Queue", label:"Added tracks"});
         setIndex(0);
         save({force:true});
         playIndex(0);
@@ -91,6 +97,8 @@
           playIndex(currentIndex);
         }else{
           setIndex(-1);
+          setActivePlaylist(null);
+          setContext(null);
           stopPlayback();
           save({force:true});
           update();

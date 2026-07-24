@@ -1,6 +1,5 @@
 {
   "app_name": "Local Media Player",
-  "editable": true,
   "playlist_editable": true,
   "web_share": false,
   "guest_mode": false,

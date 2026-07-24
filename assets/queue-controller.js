@@ -7,12 +7,29 @@
 
     function bindList(listEl, playIndex, removeIndex){
       listEl.querySelectorAll(".queueItem[data-index]").forEach(item => item.addEventListener("click", event => {
-        if(event.target.closest("button[data-remove]")) return;
+        if(event.target.closest("button")) return;
+        playIndex(Number(item.dataset.index));
+      }));
+      listEl.querySelectorAll(".queueItem[data-index]").forEach(item => item.addEventListener("keydown", event => {
+        if(event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
         playIndex(Number(item.dataset.index));
       }));
       listEl.querySelectorAll("button[data-remove]").forEach(button => button.addEventListener("click", event => {
         event.stopPropagation();
         removeIndex(Number(button.dataset.remove));
+      }));
+    }
+
+    function bindMoveButtons(listEl, moveItem){
+      listEl.querySelectorAll("button[data-move]").forEach(button => button.addEventListener("click", event => {
+        event.stopPropagation();
+        const fromIndex = Number(button.dataset.index);
+        const toIndex = fromIndex + Number(button.dataset.move);
+        moveItem(fromIndex, toIndex);
+        requestAnimationFrame(() => {
+          listEl.querySelector(`.queueItem[data-index="${toIndex}"]`)?.focus();
+        });
       }));
     }
 
@@ -42,6 +59,7 @@
       listEl.innerHTML = queueListHtml ? queueListHtml({items, activeIndex, emptyTitle, removable}) : "";
       bindList(listEl, playIndex, removeIndex);
       bindDrag(listEl, moveItem);
+      bindMoveButtons(listEl, moveItem);
     }
 
     function scrollCurrentToTop(listEl, index){
@@ -68,7 +86,10 @@
       const opening = !drawer.classList.contains("open");
       setOpen(drawer, opening);
       renderQueue();
-      if(opening) scrollCurrentToTop(listEl, activeIndex);
+      if(opening){
+        scrollCurrentToTop(listEl, activeIndex);
+        requestAnimationFrame(() => drawer.querySelector(".queueTitleButton, .closeQueue")?.focus({preventScroll:true}));
+      }
     }
 
     return {render, toggle};

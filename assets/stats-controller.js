@@ -8,12 +8,13 @@
     const {
       byId,on,esc,fetchJson,localDateString,domain,components,
       topPanel,contentPanel,getTracks,getKnownDuration,getMediaType,
-      isMobile,playList,playSingleTrack,fmtDuration,
+      isMobile,playList,playSingleTrack,fmtDuration,statusPanelHtml,
     }=options;
     const {
       allTimeStatsCard,fmtStatsSongTime,statsHero,statsRangeControlHtml,
       statsTableSection,statsTimeChart,statsTopControls,
     }=components;
+    const statusHtml=statusPanelHtml||(({title="",message=""})=>`<div class="statsEmpty">${esc(title)}${message?` ${esc(message)}`:""}</div>`);
     let period=localStorage.getItem("statsPeriod")||"week";
     let day=localStorage.getItem("statsDay")||localDateString();
     const legacyEnd=localStorage.getItem("statsRangeEnd")||localDateString();
@@ -153,7 +154,7 @@
       on(byId("statsDay"),"change",event=>{const next=event.target.value||localDateString(); if(isFutureDay(next)){event.target.value=day; return;} day=save("statsDay",next); if(period==="day")load();});
     }
     function render(){
-      if(!data){contentPanel.innerHTML=`<div class="statsEmpty">Loading listening stats...</div>`; return;}
+      if(!data){contentPanel.innerHTML=statusHtml({kind:"loading",title:"Loading statistics",message:"Preparing your listening summary."}); return;}
       const summary=data.summary||{},daily=data.chart_daily||[],songs=data.top_songs||[];
       const chartHtml=period==="all"?allTimeStatsCard(summary):chart(daily,data.chart_unit||"day");
       if(isMobile()){
@@ -176,7 +177,7 @@
       try{data=await fetchJson(url()); if(getMediaType()==="statsPage")render();}
       catch(error){
         console.warn("[stats] load failed",error); data=null;
-        if(getMediaType()==="statsPage")contentPanel.innerHTML=`<div class="statsEmpty">Could not load listening stats. Restart the server so the new stats API is available, then refresh this page.</div>`;
+        if(getMediaType()==="statsPage")contentPanel.innerHTML=statusHtml({kind:"error",title:"Statistics unavailable",message:"Restart the server, then refresh this page."});
       }
     }
     return {hasData:()=>Boolean(data),load,render};

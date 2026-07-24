@@ -51,10 +51,6 @@
     .groupItem.browseChild .groupName { position:relative; }
     .groupItem.browseChild .groupName::before { content:""; position:absolute; left:-12px; top:.2em; bottom:.2em; width:1px; background:rgba(var(--accent-rgb),.28); }
     body[class*="theme-light"] .groupItem.browseParent { background:rgba(var(--accent-rgb),.055); }
-    .bulkPanel { padding:10px 12px; border-top:1px solid var(--line); display:grid; gap:8px; }
-    body.listen .bulkPanel { display:none; }
-    .bulkPanel input { width:100%; height:32px; }
-    .bulkPanel button { height:32px; }
     .workspace { display:grid; gap:16px; min-width:0; }
     .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:2px 0; }
     .controls .spacer { flex:1; min-width:12px; }

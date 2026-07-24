@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-# Start the normal local media player with edit mode available.
+# Start the normal local media player.
 
 set -u
 
