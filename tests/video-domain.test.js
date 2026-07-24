@@ -5,6 +5,20 @@ const path = require("node:path");
 global.window = {};
 require(path.join(__dirname, "..", "assets", "video-domain.js"));
 
+test("video ordering uses public folder and title fields", () => {
+  const source = [
+    {folder:"Concert B", title:"2 Finale", year:2024},
+    {folder:"Concert A", title:"10 Encore", year:2023},
+    {folder:"Concert A", title:"2 Opening", year:2023},
+  ];
+
+  assert.deepEqual(
+    [...source].sort(window.MediaPlayerVideoDomain.videoFileCompare).map(video => video.title),
+    ["2 Opening", "10 Encore", "2 Finale"],
+  );
+  assert.equal(window.MediaPlayerVideoDomain.videoYear(source[0]), 2024);
+});
+
 test("saved video queues retain the active video after scan IDs change", () => {
   const state = {
     videoQueue:[10,11,12],

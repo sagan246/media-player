@@ -350,7 +350,7 @@
     // keeps an artist/collection parent and its major sections visible while
     // leaving album directories below them as cards rather than browse rows.
     function categoryOf(t){const parts=musicPathParts(t); return parts.length?parts.slice(0,2).join("/"):"(root)";}
-    function folderOf(t){return t.folder || (t.path.includes("/") ? t.path.split("/").slice(0,-1).join("/") : "(root)");}
+    function folderOf(t){return t.folder || "(root)";}
     function albumOf(t){return t.album || "(No album)";}
     const albumKeyOf=musicDomain.albumIdentity;
     function artUrl(t){return t.artwork_thumb_url || t.artwork_url || "";}
@@ -706,9 +706,7 @@
       });
     }
     function sortValue(t,key){if(key==="has_artwork")return t.has_artwork?1:0; return String(t[key]??"").toLowerCase();}
-    // Prefer embedded track numbers, but fall back to names like "01 - Title.flac".
-    function trackParts(t){const raw=String(t.tracknumber||"").trim(); const match=raw.match(/(?:(\d+)[/. -]+)?(\d+)/); const pathMatch=String(t.path||"").match(/(?:^|[\\/])(?:(\d+)-)?(\d+)\s*[-.]/); const disc=match&&match[1]?Number(match[1]):pathMatch&&pathMatch[1]?Number(pathMatch[1]):1; const track=match&&match[2]?Number(match[2]):pathMatch&&pathMatch[2]?Number(pathMatch[2]):9999; return {disc,track};}
-    function albumTrackList(list){return [...list].sort((a,b)=>{const at=trackParts(a), bt=trackParts(b); if(at.disc!==bt.disc)return at.disc-bt.disc; if(at.track!==bt.track)return at.track-bt.track; return String(a.title||a.path||"").localeCompare(String(b.title||b.path||""),undefined,{numeric:true,sensitivity:"base"});});}
+    const albumTrackList=musicDomain.sortAlbumTracks;
     function sortedList(list){return [...list].sort((a,b)=>{const av=sortValue(a,sortKey), bv=sortValue(b,sortKey); let result=0; if(typeof av==="number"&&typeof bv==="number") result=av-bv; else result=String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:"base"}); return sortDir==="asc"?result:-result;});}
     function newestFirstList(list){return [...list].sort((a,b)=>{const ay=Number(String(a.date||"").slice(0,4))||0, by=Number(String(b.date||"").slice(0,4))||0; if(ay!==by)return by-ay; const ad=String(a.date||""), bd=String(b.date||""); if(ad!==bd)return bd.localeCompare(ad,undefined,{numeric:true,sensitivity:"base"}); const aa=albumOf(a), ba=albumOf(b); if(aa!==ba)return aa.localeCompare(ba,undefined,{numeric:true,sensitivity:"base"}); const at=Number(String(a.tracknumber||"").split("/")[0])||0, bt=Number(String(b.tracknumber||"").split("/")[0])||0; if(at!==bt)return at-bt; return String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"});});}
     function showQueueToast(message){if(!queueToastEl)return; clearTimeout(queueToastTimer); queueToastEl.textContent=message; queueToastEl.classList.add("show"); queueToastTimer=setTimeout(()=>queueToastEl.classList.remove("show"),1300);}
@@ -764,7 +762,7 @@
     // Music filtering/rendering. These functions decide what the current music page shows.
     function playlistById(id=selectedPlaylistId){return playlistController.byId(id);}
     function playlistTracks(playlist=playlistById()){return playlistController.tracksFor(playlist);}
-    function baseFiltered(){if(selectedPlaylistId)return playlistTracks(); return tracks.filter(t=>{if(selectedGroup!=="Playlists"&&!musicGroupMatches(t))return false; if(selectedGroup==="Playlists")return false; if(selectedAlbum!=="All"&&albumKeyOf(t)!==selectedAlbum)return false; if(!containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]))return false; return true;});}
+    function baseFiltered(){if(selectedPlaylistId)return playlistTracks(); return tracks.filter(t=>{if(selectedGroup!=="Playlists"&&!musicGroupMatches(t))return false; if(selectedGroup==="Playlists")return false; if(selectedAlbum!=="All"&&albumKeyOf(t)!==selectedAlbum)return false; if(!containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.folder]))return false; return true;});}
     function filtered(){const list=baseFiltered(); if(selectedPlaylistId)return list; if(selectedAlbum!=="All")return albumTrackList(list); return tableSortActive?sortedList(list):currentPlaybackList();}
     function musicBrowseHierarchy(counts){
       const parentGroups=new Map();
@@ -803,7 +801,7 @@
     }
     function renderStats(){renderMusicTopControls();}
     function renderSortHeaders(){document.querySelectorAll("th.sortable").forEach(th=>{const active=tableSortActive&&th.dataset.sort===sortKey; th.classList.toggle("sorted",active); th.classList.toggle("asc",active&&sortDir==="asc"); th.classList.toggle("desc",active&&sortDir==="desc");});}
-    function albumSource(){if(selectedGroup==="Playlists")return []; return tracks.filter(t=>musicGroupMatches(t)&&containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.path,t.folder]));}
+    function albumSource(){if(selectedGroup==="Playlists")return []; return tracks.filter(t=>musicGroupMatches(t)&&containsSearch([t.title,t.artist,t.album,t.albumartist,t.date,t.folder]));}
     function albumList(key){return albumSource().filter(t=>albumKeyOf(t)===key);}
     function selectedAlbumTitle(){const list=selectedAlbum==="All"?[]:albumList(selectedAlbum); return list.length?albumOf(list[0]):selectedAlbum;}
     function albumYears(list){return [...new Set(list.map(t=>(t.date||"").slice(0,4)).filter(Boolean))].sort();}
@@ -949,7 +947,7 @@
     const videoYear=videoDomain.videoYear;
     const videoFileCompare=videoDomain.videoFileCompare;
     function videoCompare(a,b){const ay=videoYear(a), by=videoYear(b); if(ay!==by)return videoSort==="oldest"?ay-by:by-ay; return videoFileCompare(a,b);}
-    function videoFiltered(){return videos.filter(v=>{const matchesGroup=selectedVideoGroup==="All" || (selectedVideoAsFolder?v.folder===selectedVideoGroup:(v.category===selectedVideoGroup || v.folder===selectedVideoGroup)); if(!matchesGroup)return false; return containsSearch([v.title,v.folder,v.category,v.path,v.format]);}).sort(videoFileCompare);}
+    function videoFiltered(){return videos.filter(v=>{const matchesGroup=selectedVideoGroup==="All" || (selectedVideoAsFolder?v.folder===selectedVideoGroup:(v.category===selectedVideoGroup || v.folder===selectedVideoGroup)); if(!matchesGroup)return false; return containsSearch([v.title,v.folder,v.category,v.format,v.year]);}).sort(videoFileCompare);}
     function isVideoCategory(group){return !selectedVideoAsFolder&&group!=="All"&&videos.some(v=>v.category===group);}
     function videoCategoryRank(name){return preferredCategoryRank(name, appConfig.preferredVideoCategories);}
     function videoNameCompare(a,b){const ar=videoCategoryRank(a), br=videoCategoryRank(b); if(ar!==br)return ar-br; return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:"base"});}
@@ -1016,9 +1014,9 @@
     function renderVideoStats(){renderVideoTopControls(videoViewTitleEl.textContent || "Videos");}
     function renderInterviewStats(){renderInterviewsTopControls();}
     // Interviews are plain text files, grouped by their cleaned source/title.
-    function interviewKey(i){return i ? (i.path || i.filename || `${i.source}|${i.year}|${i.title}`) : "";}
+    function interviewKey(i){return i ? (i.selection_key || `${i.source}|${i.year}|${i.title}`) : "";}
     function saveSelectedInterview(i){selectedInterviewId=i?.id ?? null; selectedInterviewKey=interviewKey(i); if(selectedInterviewKey)localStorage.setItem("selectedInterviewKey", selectedInterviewKey);}
-    function filteredInterviews(){return [...interviews].filter(i=>containsSearch([i.source,i.year,i.filename,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"}));}
+    function filteredInterviews(){return [...interviews].filter(i=>containsSearch([i.source,i.year,i.title,i.content])).sort((a,b)=>(Number(b.year)||0)-(Number(a.year)||0)||a.source.localeCompare(b.source,undefined,{numeric:true,sensitivity:"base"}));}
     function shuffleInterview(){const ordered=filteredInterviews(); if(!ordered.length)return; const currentIndex=ordered.findIndex(i=>i.id===selectedInterviewId); let nextIndex=Math.floor(Math.random()*ordered.length); if(ordered.length>1&&nextIndex===currentIndex)nextIndex=(nextIndex+1)%ordered.length; saveSelectedInterview(ordered[nextIndex]); setOpen(interviewListEl,false); renderInterviews(); interviewReaderEl.scrollTo({top:0,behavior:"smooth"});}
     function renderInterviews(){
       renderInterviewStats();
@@ -1030,7 +1028,7 @@
         if(!selectedStillVisible)saveSelectedInterview(remembered||ordered[0]);
       }
       interviewItemsEl.innerHTML=ordered.length
-        ? ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.filename)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join("")
+        ? ordered.map(i=>`<button class="interviewItem ${i.id===selectedInterviewId?"active":""}" data-id="${i.id}" title="${esc(i.title)}"><span class="interviewItemTitle">${esc(i.source)}</span><span class="interviewItemSub">${esc(i.year||"Unknown year")}</span></button>`).join("")
         : statusPanelHtml({kind:"empty",title:"No text files found",message:"Try another section or clear the search.",compact:true});
       interviewItemsEl.querySelectorAll(".interviewItem[data-id]").forEach(btn=>btn.addEventListener("click",()=>{
         const picked=interviews.find(i=>i.id===Number(btn.dataset.id));

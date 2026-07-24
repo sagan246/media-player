@@ -51,7 +51,6 @@ class Handler(ApiRoutesMixin, StreamingRoutesMixin, HttpHelpersMixin, BaseHTTPRe
     player_config = PlayerConfig()
     game_dir: Path | None = None
     playlist_editable = True
-    web_share = False
     log_lock = threading.Lock()
     frontend_bundle: bytes | None = None
     frontend_style_bundle: bytes | None = None
@@ -211,11 +210,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the local media player.")
     parser.add_argument("--media-dir", default=DEFAULT_MEDIA_DIR, type=Path)
     parser.add_argument("--config", default=DEFAULT_CONFIG, type=Path, help="Optional JSON config file.")
-    parser.add_argument(
-        "--web-share",
-        action="store_true",
-        help="Hide local paths for temporary sharing.",
-    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8766, type=int)
     parser.add_argument(
@@ -246,8 +240,6 @@ def main() -> int:
         raise SystemExit(f"Media folder not found: {media_dir}")
     config = load_config(args.config)
     player_config = PlayerConfig.from_mapping(config)
-    web_share = bool(config.get("web_share", False)) or args.web_share
-
     Handler.player_config = player_config
     configured_game_dir = player_config.game_path()
     Handler.game_dir = (
@@ -255,7 +247,6 @@ def main() -> int:
         if configured_game_dir is not None and (configured_game_dir / "index.html").is_file()
         else None
     )
-    Handler.web_share = web_share
     Handler.playlist_editable = bool(config.get("playlist_editable", True))
     Handler.library = Library(media_dir, player_config.library_config())
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -270,11 +261,6 @@ def main() -> int:
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")
-    if Handler.web_share:
-        mode = "web-share"
-    else:
-        mode = "local"
-    print(f"Mode: {mode}")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()

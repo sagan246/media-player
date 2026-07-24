@@ -112,6 +112,22 @@
     return [...albums.entries()];
   }
 
+  function trackSortParts(track){
+    return {
+      disc:Number(track?.sort_disc)||1,
+      track:Number(track?.sort_track)||9999,
+    };
+  }
+
+  function sortAlbumTracks(tracks){
+    return [...tracks].sort((a,b)=>{
+      const aOrder=trackSortParts(a), bOrder=trackSortParts(b);
+      if(aOrder.disc!==bOrder.disc)return aOrder.disc-bOrder.disc;
+      if(aOrder.track!==bOrder.track)return aOrder.track-bOrder.track;
+      return String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"});
+    });
+  }
+
   /**
    * Unknown dates remain last in either direction. Titles are always the
    * deterministic tie-breaker instead of reversing alphabetical order.
@@ -140,5 +156,7 @@
     prepareSource,
     resolveStableQueue,
     sortAlbumEntries,
+    sortAlbumTracks,
+    trackSortParts,
   };
 })();

@@ -42,46 +42,38 @@ class LaunchMode:
 
 
 MODES = {
-    "Local": LaunchMode(
-        name="Local",
+    "Private - This Computer": LaunchMode(
+        name="Private - This Computer",
         host="127.0.0.1",
         port=8766,
         flags=(),
         url_kind="local",
-        description="Use the player on this computer.",
+        description="Private player access on this computer.",
     ),
-    "Phone on Wi-Fi": LaunchMode(
-        name="Phone on Wi-Fi",
+    "Private - Home Wi-Fi": LaunchMode(
+        name="Private - Home Wi-Fi",
         host="0.0.0.0",
         port=8766,
         flags=(),
         url_kind="lan",
-        description="Use from your phone while it is on the same home network.",
+        description="Private player access from devices on the same home network.",
     ),
-    "Private Tailscale": LaunchMode(
-        name="Private Tailscale",
+    "Private - Tailscale": LaunchMode(
+        name="Private - Tailscale",
         host="0.0.0.0",
-        port=8768,
+        port=8766,
         flags=(),
         url_kind="tailscale",
         description="Private access from your own Tailscale devices.",
     ),
-    "Web share + Cloudflare": LaunchMode(
-        name="Web share + Cloudflare",
+    "Web Share - Cloudflare": LaunchMode(
+        name="Web Share - Cloudflare",
         host="0.0.0.0",
-        port=8767,
-        flags=("--web-share",),
+        port=8766,
+        flags=(),
         url_kind="cloudflare",
-        description="Temporary public link that hides local file paths.",
+        description="Temporary public link to the same player through Cloudflare.",
         cloudflare=True,
-    ),
-    "Web share local only": LaunchMode(
-        name="Web share local only",
-        host="0.0.0.0",
-        port=8767,
-        flags=("--web-share",),
-        url_kind="lan",
-        description="Web-share server without starting Cloudflare.",
     ),
 }
 
@@ -95,9 +87,8 @@ class LauncherApp:
         self.root.geometry("720x600")
         self.root.minsize(620, 480)
         self.process: subprocess.Popen[str] | None = None
-        self.local_process: subprocess.Popen[str] | None = None
         self.cloudflare_process: subprocess.Popen[str] | None = None
-        self.mode_name = StringVar(value="Local")
+        self.mode_name = StringVar(value="Private - This Computer")
         self.status = StringVar(value="Stopped")
         self.url = StringVar(value="")
         self.public_url = ""
@@ -142,8 +133,8 @@ class LauncherApp:
         ttk.Button(frame, text="Refresh Library", command=self.refresh_library).grid(row=4, column=3, sticky="we", padx=(6, 0))
 
         ttk.Button(frame, text="Open Current", command=self.open_url).grid(row=5, column=0, sticky="we", pady=(10, 2), padx=(0, 6))
-        ttk.Button(frame, text="Open Local", command=self.open_local).grid(row=5, column=1, sticky="we", pady=(10, 2), padx=6)
-        ttk.Button(frame, text="Open Local", command=self.open_local_current).grid(row=5, column=2, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open Private", command=self.open_local).grid(row=5, column=1, sticky="we", pady=(10, 2), padx=6)
+        ttk.Button(frame, text="Open Selected Locally", command=self.open_local_current).grid(row=5, column=2, sticky="we", pady=(10, 2), padx=6)
         ttk.Button(frame, text="Open LAN", command=self.open_lan_current).grid(row=5, column=3, sticky="we", pady=(10, 2), padx=(6, 0))
 
         ttk.Label(frame, textvariable=self.url, wraplength=660, style="Status.TLabel").grid(row=7, column=0, columnspan=4, sticky="w", pady=(8, 10))
@@ -181,19 +172,6 @@ class LauncherApp:
             *mode.flags,
         ]
 
-    def local_command(self) -> list[str]:
-        """Build the companion localhost server command for web-share mode."""
-        return [
-            self.python_exe(),
-            str(APP_SCRIPT),
-            "--media-dir",
-            str(DEFAULT_MEDIA_DIR),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            "8766",
-        ]
-
     def start(self) -> None:
         """Start the selected server mode if nothing is already running."""
         if self.process and self.process.poll() is None:
@@ -215,7 +193,6 @@ class LauncherApp:
         self.url.set(self.display_url(mode))
         threading.Thread(target=self.read_output, args=(self.process, "server"), daemon=True).start()
         if mode.cloudflare:
-            self.start_local_server()
             self.start_cloudflare(mode.port, "primary")
 
     def stop(self) -> None:
@@ -231,15 +208,6 @@ class LauncherApp:
             stopped_any = True
         self.cloudflare_process = None
         self.public_url = ""
-        if self.local_process and self.local_process.poll() is None:
-            self.write_log("Stopping local server...\n")
-            self.local_process.terminate()
-            try:
-                self.local_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.local_process.kill()
-            stopped_any = True
-        self.local_process = None
         if not self.process or self.process.poll() is not None:
             self.status.set("Stopped")
             if not stopped_any:
@@ -266,7 +234,7 @@ class LauncherApp:
             webbrowser.open(url)
 
     def open_local(self) -> None:
-        """Open localhost mode on the standard local port."""
+        """Open the private player on the standard local port."""
         webbrowser.open("http://127.0.0.1:8766/")
 
     def open_local_current(self) -> None:
@@ -291,29 +259,11 @@ class LauncherApp:
         except Exception as exc:
             self.write_log(f"Refresh failed: {exc}\n")
 
-    def start_local_server(self) -> None:
-        """Start localhost mode beside a Cloudflare share."""
-        if self.local_process and self.local_process.poll() is None:
-            return
-        command = self.local_command()
-        self.write_log("Starting local server on http://127.0.0.1:8766/...\n")
-        self.write_log(" ".join(command) + "\n")
-        self.local_process = subprocess.Popen(
-            command,
-            cwd=str(APP_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-        )
-        threading.Thread(target=self.read_output, args=(self.local_process, "local"), daemon=True).start()
-
     def start_cloudflare(self, port: int, role: str) -> None:
         """Start one cloudflared process and watch its output for its public URL."""
         if not CLOUDFLARED.exists():
             self.write_log(f"Could not find cloudflared: {CLOUDFLARED}\n")
-            self.write_log("The web-share server is still running locally.\n")
+            self.write_log("The player is still running locally.\n")
             return
         command = [str(CLOUDFLARED), "tunnel", "--url", f"http://127.0.0.1:{port}"]
         self.write_log(f"Starting {role} Cloudflare tunnel...\n")
@@ -353,7 +303,8 @@ class LauncherApp:
         mode = MODES[self.mode_name.get()]
         self.url.set(
             f"Public: {self.public_url or 'waiting for Cloudflare...'}\n"
-            "Share local: http://127.0.0.1:8767/\nLocal: http://127.0.0.1:8766/"
+            f"Local: http://127.0.0.1:{mode.port}/\n"
+            f"LAN: http://{local_lan_ip()}:{mode.port}/"
         )
 
     def write_log(self, text: str) -> None:
@@ -369,7 +320,11 @@ class LauncherApp:
     def display_url(self, mode: LaunchMode) -> str:
         """Return the best URL to show for a mode."""
         if mode.url_kind == "cloudflare":
-            return f"Public: waiting for Cloudflare...\nShare local: http://127.0.0.1:{mode.port}/\nLocal: http://127.0.0.1:8766/"
+            return (
+                "Public: waiting for Cloudflare...\n"
+                f"Local: http://127.0.0.1:{mode.port}/\n"
+                f"LAN: http://{local_lan_ip()}:{mode.port}/"
+            )
         if mode.url_kind == "lan":
             return f"PC: http://127.0.0.1:{mode.port}/\nPhone: http://{local_lan_ip()}:{mode.port}/"
         return self.primary_display_url(mode)

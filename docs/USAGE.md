@@ -9,7 +9,7 @@ windows_commands/start_launcher.cmd
 mac_commands/start_launcher.command
 ```
 
-The plain launchers start local mode on port `8766`.
+The plain launchers start the private player on port `8766`.
 
 ```text
 windows_commands/start_player.cmd
@@ -57,20 +57,21 @@ Lyrics should live beside the matching song. Lookup prefers:
 
 ## Access Modes
 
-- Local: `http://127.0.0.1:8766/`
-- LAN: bind to `0.0.0.0`, then use `http://<lan-address>:8766/`
-- Web share: run with `--web-share` on port `8767`
+- Private on this computer: `http://127.0.0.1:8766/`
+- Private on home Wi-Fi: bind to `0.0.0.0`, then use `http://<lan-address>:8766/`
 - Private remote: use the launcher with Tailscale
+- Cloudflare Web Share: use the launcher to tunnel the player running on port `8766`
 
-Web-share mode hides local paths. It does not provide authentication. Playlist
-changes remain available when `playlist_editable` is enabled.
+Browser APIs hide local paths in every mode. Cloudflare Web Share does not
+provide application authentication; anyone with the temporary URL can use the
+same player features, including playlist changes when `playlist_editable` is
+enabled.
 
 ## Command Line
 
 ```powershell
 python media_player.py --media-dir <media-folder>
 python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8766
-python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8767 --web-share
 ```
 
 `--media-dir` is validated against the configured media root.

@@ -1,7 +1,6 @@
 {
   "app_name": "Local Media Player",
   "playlist_editable": true,
-  "web_share": false,
   "music_dir": "Music",
   "video_dir": "Video",
   "text_dir": "Interviews",

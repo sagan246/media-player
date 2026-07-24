@@ -39,13 +39,13 @@
   }
 
   function mobileAlbumDividerHtml(album){
-    return `<tr class="mobileAlbumRow"><td colspan="7">${esc(album)}</td></tr>`;
+    return `<tr class="mobileAlbumRow"><td colspan="6">${esc(album)}</td></tr>`;
   }
 
   function trackRowHtml({track, trackNo="", artHtml="", selected=false, playing=false}){
     const selectedClass = selected ? "selected" : "";
     const playingClass = playing ? "playingNow" : "";
-    return `<tr data-id="${track.id}" class="mediaTableRow ${selectedClass} ${playingClass}"><td>${artHtml}</td><td class="titleCell mediaRowTitle"><span class="trackNo">${esc(trackNo)}</span>${esc(track.title)}</td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="pathCell">${esc(track.path)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
+    return `<tr data-id="${track.id}" class="mediaTableRow ${selectedClass} ${playingClass}"><td>${artHtml}</td><td class="titleCell mediaRowTitle"><span class="trackNo">${esc(trackNo)}</span>${esc(track.title)}</td><td class="artistCell">${esc(track.artist)}</td><td class="albumCell">${esc(track.album)}</td><td>${esc(track.date)}</td><td class="rowActions"><button class="secondary playSong iconControl" data-id="${track.id}" type="button" title="Play song" aria-label="Play song">&#9654;</button><button class="secondary addSongQueue iconControl addIcon" data-id="${track.id}" type="button" title="Add to queue" aria-label="Add to queue">+</button></td></tr>`;
   }
 
   window.MediaPlayerMusicComponents = {

@@ -11,9 +11,20 @@ const {
   albumReleaseDate,
   parseReleaseDate,
   parsePlaybackState,
+  sortAlbumTracks,
   sortAlbumEntries,
   buildPlaybackState,
 } = global.window.MediaPlayerMusicDomain;
+
+test("album tracks use explicit disc and track order without browser paths", () => {
+  const source = [
+    {title:"Second disc", sort_disc:2, sort_track:1},
+    {title:"Second", sort_disc:1, sort_track:2},
+    {title:"First", sort_disc:1, sort_track:1},
+  ];
+
+  assert.deepEqual(sortAlbumTracks(source).map(track => track.title), ["First", "Second", "Second disc"]);
+});
 
 test("album identity separates matching titles in different release folders", () => {
   const first = {album:"Live", albumartist:"Artist A", folder:"Artist A/Live"};

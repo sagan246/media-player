@@ -93,7 +93,7 @@
   }
 
   function fileCardHtml({video, active=false, meta="", warning=""}){
-    return `<div class="videoCard ${active ? "active" : ""}" data-id="${esc(video.id)}" title="${esc(video.path)}" role="button" tabindex="0">${videoActionsHtml(video.id)}<div class="videoName">${esc(video.title)}</div><div class="videoMeta">${esc(meta)}</div>${warning ? `<div class="videoWarn">${esc(warning)}</div>` : ""}</div>`;
+    return `<div class="videoCard ${active ? "active" : ""}" data-id="${esc(video.id)}" title="${esc(video.title)}" role="button" tabindex="0">${videoActionsHtml(video.id)}<div class="videoName">${esc(video.title)}</div><div class="videoMeta">${esc(meta)}</div>${warning ? `<div class="videoWarn">${esc(warning)}</div>` : ""}</div>`;
   }
 
   function emptyCardHtml(){

@@ -2,10 +2,10 @@
 
 ## Startup
 
-- Start local mode on port `8766`.
-- Start web-share mode on port `8767`.
+- Start the player on port `8766`.
+- Start Cloudflare mode and confirm it tunnels that same server.
 - Confirm desktop and mobile pages load.
-- Confirm web-share responses do not expose local paths.
+- Confirm browser API responses do not expose local paths.
 
 ## Music
 

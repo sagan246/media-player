@@ -147,7 +147,6 @@
       body.interviews .interviewList { display:grid; grid-template-rows:auto minmax(0,1fr); }
       body.interviews .interviewsPanel { grid-template-columns:1fr; }
       body.interviews .interviewReader { resize:none; min-width:0; max-width:none; }
-      .pathCell, th[data-sort="path"] { display:none; }
       th[data-sort="artist"], .artistCell, th[data-sort="album"], .albumCell { display:none; }
       .mobileAlbumRow { display:table-row; }
       .mobileAlbumRow td { padding:8px 10px; background:var(--soft); color:var(--muted); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
@@ -314,7 +313,6 @@
       .tableWrap { max-height:58vh; overflow:auto; }
       table { min-width:0; }
       th,td { padding:8px; }
-      .pathCell { max-width:260px; }
       aside { min-height:auto; padding:10px; }
       body.listen aside { display:none; }
       .playerBar { grid-template-columns:minmax(0,1fr) auto; gap:8px; bottom:max(4px, env(safe-area-inset-bottom)); padding:7px 10px; }

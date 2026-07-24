@@ -1,8 +1,11 @@
 (function(){
   "use strict";
   function yearFromText(text){const years=[...String(text||"").matchAll(/(?:19|20)\d{2}/g)].map(match=>Number(match[0])).filter(Boolean); return years.length?Math.max(...years):0;}
-  function videoYear(video){return yearFromText(`${video.path||""} ${video.folder||""} ${video.title||""}`);}
-  function videoFileCompare(a,b){return String(a.path||a.title||"").localeCompare(String(b.path||b.title||""),undefined,{numeric:true,sensitivity:"base"});}
+  function videoYear(video){return Number(video.year)||yearFromText(`${video.folder||""} ${video.title||""}`);}
+  function videoFileCompare(a,b){
+    const folderOrder=String(a.folder||"").localeCompare(String(b.folder||""),undefined,{numeric:true,sensitivity:"base"});
+    return folderOrder || String(a.title||"").localeCompare(String(b.title||""),undefined,{numeric:true,sensitivity:"base"});
+  }
   function normalizePlaybackContext(context){
     if(!context || typeof context !== "object")return null;
     const kind=String(context.kind||"").trim().slice(0,40);

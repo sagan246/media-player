@@ -83,13 +83,8 @@
     body.music.albumSelected th[data-sort="date"],
     body.music.albumSelected .tableWrap tr[data-id] td:nth-child(5) { display:none; }
     body.listen.music.albumSelected .rowActions { display:none; }
-    .pathCell { color:var(--muted); font-size:12px; max-width:380px; word-break:break-word; }
     .rowActions { width:86px; white-space:nowrap; }
     .rowActions button { width:32px; height:32px; padding:0; margin-right:4px; border-radius:999px; }
-    body.listen .pathCell,
-    body.listen th[data-sort="path"] { display:none; }
-    body.mobileUi.music .pathCell,
-    body.mobileUi.music th[data-sort="path"],
     body.mobileUi.music th[data-sort="artist"],
     body.mobileUi.music .artistCell,
     body.mobileUi.music th[data-sort="album"],

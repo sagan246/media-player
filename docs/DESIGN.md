@@ -15,9 +15,10 @@ and reliable playback on desktop and mobile.
 
 ## Modes
 
-- Local and LAN modes expose the complete player.
-- Web share hides local paths but still permits playback and optional playlist
-  management.
+- Private computer, LAN, and Tailscale modes expose the complete player.
+- Browser APIs hide local paths in every mode.
+- Cloudflare Web Share tunnels the same player and retains its playback and
+  optional playlist-management behavior.
 
 Themes change presentation only. Access and media behavior must not depend on a
 theme.

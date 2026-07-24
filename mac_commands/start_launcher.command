@@ -21,7 +21,6 @@ echo "Choose a launch mode:"
 echo "  1) Local"
 echo "  2) Home network (LAN)"
 echo "  3) Private remote"
-echo "  4) Web share local only"
 echo
 printf "Mode [1]: "
 read MODE
@@ -29,7 +28,6 @@ MODE="${MODE:-1}"
 
 HOST="127.0.0.1"
 PORT="8766"
-EXTRA_ARGS=()
 URL="http://127.0.0.1:8766/"
 
 case "$MODE" in
@@ -46,15 +44,8 @@ case "$MODE" in
     ;;
   3)
     HOST="0.0.0.0"
-    PORT="8768"
-    EXTRA_ARGS=()
-    URL="http://127.0.0.1:8768/"
-    ;;
-  4)
-    HOST="0.0.0.0"
-    PORT="8767"
-    EXTRA_ARGS=("--web-share")
-    URL="http://127.0.0.1:8767/"
+    PORT="8766"
+    URL="http://127.0.0.1:8766/"
     ;;
   *)
     echo "Unknown mode: $MODE"
@@ -72,8 +63,7 @@ echo
 "$PYTHON_BIN" "$APP_DIR/media_player.py" \
   --media-dir "$MEDIA_DIR" \
   --host "$HOST" \
-  --port "$PORT" \
-  "${EXTRA_ARGS[@]}"
+  --port "$PORT"
 
 echo
 echo "Server stopped."

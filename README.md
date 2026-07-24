@@ -6,7 +6,7 @@ archives in one place.
 It runs on your computer, streams local files to a browser, and is designed for
 a personal media library with a UI tailored to the collection. It can stay local
 by default, stream to a phone on the home network, work remotely through a
-private network, or create a temporary web link that hides local paths.
+private network, or create a temporary web link for short-term sharing.
 
 ## Screenshots
 
@@ -69,7 +69,9 @@ If macOS blocks the launcher, run once:
 chmod +x mac_commands/start_launcher.command mac_commands/start_player.command
 ```
 
-Local mode uses port `8766`. Web-share mode uses port `8767`.
+The player uses port `8766` for local, LAN, and Cloudflare access. Cloudflare
+tunnels the same running player instead of starting a duplicate server.
+Browser APIs never expose local paths.
 
 For a simple local start without the launcher, use:
 
@@ -86,7 +88,7 @@ media-player --media-dir <media-folder>
 
 ## Command Line
 
-Local mode:
+Private mode:
 
 ```powershell
 python media_player.py --media-dir <media-folder> --host 127.0.0.1 --port 8766
@@ -96,7 +98,7 @@ python media_player.py --media-dir <media-folder> --host 127.0.0.1 --port 8766
 http://127.0.0.1:8766/
 ```
 
-Home network mode:
+Private home-network mode:
 
 ```powershell
 python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8766

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import asdict
 from http import HTTPStatus
 from urllib.parse import parse_qs, unquote
@@ -48,7 +49,6 @@ class ApiRoutesMixin:
         self.send_json(
             {
                 "playlistEditable": self.playlist_editable,
-                "webShare": self.web_share,
                 "appName": self.player_config.app_name,
                 "textTabLabel": self.player_config.text_tab_label,
                 "textDir": self.player_config.text_dir,
@@ -64,14 +64,16 @@ class ApiRoutesMixin:
 
     def public_track(self, track: object) -> dict[str, object]:
         data = asdict(track)
-        data["playback_key"] = self.playback_key(str(data.get("path", "")))
+        relative_path = str(data.get("path", ""))
+        data["playback_key"] = self.playback_key(relative_path)
+        data["sort_disc"], data["sort_track"] = self.track_sort_parts(
+            str(data.get("tracknumber", "")),
+            relative_path,
+        )
         thumb_url = self.art_thumbnail_url(str(data.get("artwork_url", "")))
         data["artwork_thumb_url"] = thumb_url
         data["artwork_thumb_small_url"] = self.add_query_param(thumb_url, "s", str(ART_THUMB_ICON_SIZE))
-        if self.web_share:
-            data["path"] = ""
-            data["filename"] = ""
-        return data
+        return self.without_private_paths(data)
 
     @staticmethod
     def art_thumbnail_url(artwork_url: str) -> str:
@@ -86,11 +88,14 @@ class ApiRoutesMixin:
 
     def public_video(self, video: object) -> dict[str, object]:
         data = asdict(video)
-        data["playback_key"] = self.playback_key(str(data.get("path", "")))
-        if self.web_share:
-            data["path"] = ""
-            data["filename"] = ""
-        return data
+        relative_path = str(data.get("path", ""))
+        data["playback_key"] = self.playback_key(relative_path)
+        data["year"] = self.latest_year(
+            relative_path,
+            str(data.get("folder", "")),
+            str(data.get("title", "")),
+        )
+        return self.without_private_paths(data)
 
     @staticmethod
     def playback_key(relative_path: str) -> str:
@@ -100,10 +105,34 @@ class ApiRoutesMixin:
 
     def public_interview(self, interview: object) -> dict[str, object]:
         data = asdict(interview)
-        if self.web_share:
-            data["path"] = ""
-            data["filename"] = ""
+        data["selection_key"] = self.playback_key(str(data.get("path", "")))
+        return self.without_private_paths(data)
+
+    @staticmethod
+    def without_private_paths(data: dict[str, object]) -> dict[str, object]:
+        """Remove filesystem-only fields from every browser response."""
+        data.pop("path", None)
+        data.pop("filename", None)
         return data
+
+    @staticmethod
+    def track_sort_parts(tracknumber: str, relative_path: str) -> tuple[int, int]:
+        """Return explicit disc/track ordering without exposing the filename."""
+        tagged = re.search(r"(?:(\d+)[/. -]+)?(\d+)", tracknumber.strip())
+        named = re.search(r"(?:^|[\\/])(?:(\d+)-)?(\d+)\s*[-.]", relative_path)
+        disc = int(tagged.group(1)) if tagged and tagged.group(1) else int(named.group(1)) if named and named.group(1) else 1
+        track = int(tagged.group(2)) if tagged else int(named.group(2)) if named else 9999
+        return disc, track
+
+    @staticmethod
+    def latest_year(*values: str) -> int:
+        """Return the newest year encoded in explicit video display fields."""
+        years = [
+            int(match.group(0))
+            for value in values
+            for match in re.finditer(r"(?:19|20)\d{2}", value)
+        ]
+        return max(years, default=0)
 
     def require_playlist_access(self) -> bool:
         if not self.playlist_editable:
