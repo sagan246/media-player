@@ -10,8 +10,19 @@
   const LIGHT_ADAPTIVE_THEME_ID = themeData.lightAdaptiveThemeId || "albumAdaptiveLight";
   const DEFAULT_ADAPTIVE_COLOR = themeData.defaultAdaptiveColor || {r:63, g:111, b:216};
   const ADAPTIVE_THEME_IDS = new Set([DARK_ADAPTIVE_THEME_ID, LIGHT_ADAPTIVE_THEME_ID]);
-  const ADAPTIVE_STYLE_VARS = themeData.adaptiveStyleVars || [];
   const THEME_CHOICES = themeData.choices || [];
+  const ACCENT_STYLE_VARS = [
+    "--accent-rgb",
+    "--accent-strong-rgb",
+    "--accent-glow-rgb",
+    "--accent-sheen-rgb",
+    "--accent",
+    "--accent-strong",
+    "--accent-deep",
+    "--accent-link",
+    "--ok",
+    "--track-number-color",
+  ];
 
   function clampColor(value){
     return Math.max(0, Math.min(255, Math.round(value)));
@@ -54,15 +65,15 @@
     const themeId = !savedTheme || legacyAutomaticTheme
       ? (prefersDark ? DARK_ADAPTIVE_THEME_ID : LIGHT_ADAPTIVE_THEME_ID)
       : savedTheme;
-    return themeById(themeId) ? themeId : DEFAULT_THEME_ID;
+    return THEME_CHOICES.some(item => item.id === themeId) ? themeId : DEFAULT_THEME_ID;
   }
 
   function isAdaptiveTheme(themeId){
     return ADAPTIVE_THEME_IDS.has(themeId);
   }
 
-  function clearAdaptiveThemeVars(){
-    ADAPTIVE_STYLE_VARS.forEach(name => document.body.style.removeProperty(name));
+  function clearAccentThemeVars(){
+    ACCENT_STYLE_VARS.forEach(name => document.body.style.removeProperty(name));
   }
 
   function applyThemeClass(theme){
@@ -76,8 +87,29 @@
       document.body.classList.add(theme.className);
       document.documentElement.classList.add(theme.className);
     }
+    const mode = theme?.mode || "dark";
+    const family = theme?.family || "blue";
+    document.body.dataset.themeMode = mode;
+    document.body.dataset.themeFamily = family;
+    document.documentElement.dataset.themeMode = mode;
+    document.documentElement.dataset.themeFamily = family;
     const themeMeta = document.querySelector('meta[name="theme-color"]');
-    if(themeMeta) themeMeta.setAttribute("content", theme?.browserColor || "#000000");
+    if(themeMeta) themeMeta.setAttribute("content", theme?.browserColor || (mode === "light" ? "#f7f8fb" : "#000000"));
+  }
+
+  function applyFixedColor(theme){
+    if(!theme || isAdaptiveTheme(theme.id)) return;
+    const style = document.body.style;
+    style.setProperty("--accent-rgb", theme.rgb);
+    style.setProperty("--accent-strong-rgb", theme.strongRgb);
+    style.setProperty("--accent-glow-rgb", theme.glowRgb);
+    style.setProperty("--accent-sheen-rgb", theme.sheenRgb);
+    style.setProperty("--accent", theme.accent);
+    style.setProperty("--accent-strong", theme.strong);
+    style.setProperty("--accent-deep", theme.deep);
+    style.setProperty("--accent-link", theme.link);
+    style.setProperty("--ok", theme.accent);
+    style.setProperty("--track-number-color", theme.mode === "light" ? theme.accent : theme.link);
   }
 
   function applyAdaptiveColor(themeId, color){
@@ -147,8 +179,9 @@
     DEFAULT_ADAPTIVE_COLOR,
     THEME_CHOICES,
     applyAdaptiveColor,
+    applyFixedColor,
     applyThemeClass,
-    clearAdaptiveThemeVars,
+    clearAccentThemeVars,
     initialTheme,
     isAdaptiveTheme,
     sampleAdaptiveColor,

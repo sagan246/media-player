@@ -1,7 +1,7 @@
 ﻿    * { box-sizing:border-box; }
     [hidden] { display:none !important; }
     html { background:#000; }
-    html[class*="theme-light"] { background:#f7f8fb; }
+    html[data-theme-mode="light"] { background:#f7f8fb; }
     /* App shell ---------------------------------------------------------- */
     body { --player-bar-space:96px; margin:0; padding-bottom:var(--player-bar-space); font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); -webkit-text-size-adjust:100%; text-size-adjust:100%; }
     body.modalOpen { overflow:hidden; }
@@ -17,13 +17,13 @@
     .topTab { min-width:92px; height:38px; border-radius:8px; }
     .mediaTab.inactive { background:var(--panel); color:var(--text); border-color:var(--line); }
     input,select,button,.iconLink { height:36px; border:1px solid var(--line); border-radius:7px; background:color-mix(in srgb, var(--panel) 86%, black); color:var(--text); padding:0 10px; font:inherit; }
-    body[class*="theme-light"] input,
-    body[class*="theme-light"] select,
-    body[class*="theme-light"] button.secondary,
-    body[class*="theme-light"] button.ghost,
-    body[class*="theme-light"] .iconLink { background:rgba(255,255,255,.86); }
-    body[class*="theme-light"] input:disabled,
-    body[class*="theme-light"] select:disabled { background:rgba(15,23,42,.045); color:var(--muted); opacity:1; }
+    body[data-theme-mode="light"] input,
+    body[data-theme-mode="light"] select,
+    body[data-theme-mode="light"] button.secondary,
+    body[data-theme-mode="light"] button.ghost,
+    body[data-theme-mode="light"] .iconLink { background:var(--input-bg); }
+    body[data-theme-mode="light"] input:disabled,
+    body[data-theme-mode="light"] select:disabled { background:var(--input-disabled-bg); color:var(--muted); opacity:1; }
     input:focus-visible,
     select:focus-visible,
     button:focus-visible,
@@ -93,7 +93,7 @@
     .themeChoice.active { background:var(--accent-soft); border-color:var(--accent-border); }
     .themeSwatch { width:34px; height:34px; border-radius:999px; background:linear-gradient(135deg,var(--swatch-a),var(--swatch-b)); box-shadow:0 0 12px rgba(var(--swatch-rgb),.16); }
     .themeChoice strong { display:block; font-size:14px; line-height:1.2; }
-    body[class*="theme-light"] .themeChoice { background:rgba(255,255,255,.72); }
+    body[data-theme-mode="light"] .themeChoice { background:var(--card-bg); }
     main { display:grid; grid-template-columns:270px minmax(0,1fr); gap:18px; padding:18px 20px; align-items:start; }
     body.listen.music main { grid-template-columns:270px minmax(0,1fr); }
     body.video main { grid-template-columns:270px minmax(0,1fr); }

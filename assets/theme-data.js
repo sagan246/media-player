@@ -1,40 +1,83 @@
-// Theme definitions are kept separate from app state so adding/removing themes
-// does not require digging through playback, queue, or rendering code.
-window.MediaPlayerThemeData = {
-  defaultThemeId: "albumAdaptiveLight",
-  darkAdaptiveThemeId: "albumAdaptive",
-  lightAdaptiveThemeId: "albumAdaptiveLight",
-  defaultAdaptiveColor: {r: 63, g: 111, b: 216},
-  adaptiveStyleVars: [
-    "--accent-rgb",
-    "--accent-strong-rgb",
-    "--accent-glow-rgb",
-    "--accent-sheen-rgb",
-    "--accent",
-    "--accent-strong",
-    "--accent-deep",
-    "--accent-link",
-    "--ok",
-    "--track-number-color",
-  ],
-  choices: [
+// Theme metadata and accent palettes. Layout components consume semantic CSS
+// variables, so adding a color here does not require component-specific CSS.
+(function(){
+  "use strict";
+
+  const families = [
+    {
+      family:"blue",
+      label:"Blue",
+      light:{id:"light", className:"theme-light", accent:"#2563eb", strong:"#3b82f6", deep:"#1d4ed8", rgb:"37,99,235", strongRgb:"59,130,246", glowRgb:"96,165,250", sheenRgb:"147,197,253", link:"#1d4ed8", swatchA:"#f8fafc", swatchB:"#3b82f6", browserColor:"#f7f8fb"},
+      dark:{id:"blue", className:"", accent:"#3f6fd8", strong:"#6f99f2", deep:"#3b82f6", rgb:"63,111,216", strongRgb:"111,153,242", glowRgb:"96,165,250", sheenRgb:"141,183,255", link:"#8db7ff", swatchA:"#3f6fd8", swatchB:"#6f99f2"},
+    },
+    {
+      family:"purple",
+      label:"Purple",
+      light:{id:"lightPurple", className:"theme-light-purple", accent:"#7c3aed", strong:"#a855f7", deep:"#6d28d9", rgb:"124,58,237", strongRgb:"168,85,247", glowRgb:"196,181,253", sheenRgb:"221,214,254", link:"#6d28d9", swatchA:"#f5f3ff", swatchB:"#a855f7", browserColor:"#f5f3ff"},
+      dark:{id:"purple", className:"theme-purple", accent:"#7c3aed", strong:"#a855f7", deep:"#6d28d9", rgb:"124,58,237", strongRgb:"168,85,247", glowRgb:"192,132,252", sheenRgb:"216,180,254", link:"#d8b4fe", swatchA:"#7c3aed", swatchB:"#a855f7"},
+    },
+    {
+      family:"pink",
+      label:"Pink",
+      light:{id:"lightPink", className:"theme-light-pink", accent:"#db2777", strong:"#f472b6", deep:"#be185d", rgb:"219,39,119", strongRgb:"244,114,182", glowRgb:"251,113,133", sheenRgb:"251,207,232", link:"#be185d", swatchA:"#fff1f2", swatchB:"#f472b6", browserColor:"#fdf2f8"},
+      dark:{id:"pink", className:"theme-pink", accent:"#db2777", strong:"#f472b6", deep:"#be185d", rgb:"219,39,119", strongRgb:"244,114,182", glowRgb:"251,113,133", sheenRgb:"251,207,232", link:"#fbcfe8", swatchA:"#db2777", swatchB:"#f472b6"},
+    },
+    {
+      family:"green",
+      label:"Green",
+      light:{id:"lightGreen", className:"theme-light-green", accent:"#059669", strong:"#34d399", deep:"#047857", rgb:"5,150,105", strongRgb:"52,211,153", glowRgb:"110,231,183", sheenRgb:"167,243,208", link:"#047857", swatchA:"#ecfdf5", swatchB:"#34d399", browserColor:"#f0fdf4"},
+      dark:{id:"green", className:"theme-green", accent:"#059669", strong:"#34d399", deep:"#047857", rgb:"5,150,105", strongRgb:"52,211,153", glowRgb:"45,212,191", sheenRgb:"167,243,208", link:"#a7f3d0", swatchA:"#059669", swatchB:"#34d399"},
+    },
+    {
+      family:"gold",
+      label:"Gold",
+      light:{id:"lightGold", className:"theme-light-gold", accent:"#d97706", strong:"#fbbf24", deep:"#b45309", rgb:"217,119,6", strongRgb:"251,191,36", glowRgb:"245,158,11", sheenRgb:"254,240,138", link:"#92400e", swatchA:"#fffbeb", swatchB:"#fbbf24", browserColor:"#fffbeb"},
+      dark:{id:"gold", className:"theme-gold", accent:"#d97706", strong:"#fbbf24", deep:"#b45309", rgb:"217,119,6", strongRgb:"251,191,36", glowRgb:"245,158,11", sheenRgb:"254,240,138", link:"#fef08a", swatchA:"#d97706", swatchB:"#fbbf24"},
+    },
+    {
+      family:"cyan",
+      label:"Cyan",
+      light:{id:"lightCyan", className:"theme-light-cyan", accent:"#0891b2", strong:"#22d3ee", deep:"#0e7490", rgb:"8,145,178", strongRgb:"34,211,238", glowRgb:"56,189,248", sheenRgb:"165,243,252", link:"#0e7490", swatchA:"#ecfeff", swatchB:"#22d3ee", browserColor:"#ecfeff"},
+      dark:{id:"cyan", className:"theme-cyan", accent:"#0891b2", strong:"#22d3ee", deep:"#0e7490", rgb:"8,145,178", strongRgb:"34,211,238", glowRgb:"56,189,248", sheenRgb:"165,243,252", link:"#a5f3fc", swatchA:"#0891b2", swatchB:"#22d3ee"},
+    },
+    {
+      family:"red",
+      label:"Red",
+      light:{id:"lightRed", className:"theme-light-red", accent:"#dc2626", strong:"#f87171", deep:"#b91c1c", rgb:"220,38,38", strongRgb:"248,113,113", glowRgb:"239,68,68", sheenRgb:"254,202,202", link:"#b91c1c", swatchA:"#fef2f2", swatchB:"#f87171", browserColor:"#fef2f2"},
+      dark:{id:"red", className:"theme-red", accent:"#dc2626", strong:"#f87171", deep:"#b91c1c", rgb:"220,38,38", strongRgb:"248,113,113", glowRgb:"239,68,68", sheenRgb:"254,202,202", link:"#fecaca", swatchA:"#dc2626", swatchB:"#f87171"},
+    },
+    {
+      family:"silver",
+      label:"Silver",
+      light:{id:"lightSilver", className:"theme-light-silver", accent:"#64748b", strong:"#94a3b8", deep:"#475569", rgb:"100,116,139", strongRgb:"148,163,184", glowRgb:"148,163,184", sheenRgb:"203,213,225", link:"#475569", swatchA:"#f8fafc", swatchB:"#94a3b8", browserColor:"#f8fafc"},
+      dark:{id:"silver", className:"theme-silver", accent:"#94a3b8", strong:"#e2e8f0", deep:"#64748b", rgb:"148,163,184", strongRgb:"226,232,240", glowRgb:"203,213,225", sheenRgb:"241,245,249", link:"#e2e8f0", swatchA:"#64748b", swatchB:"#e2e8f0"},
+    },
+  ];
+
+  function choice(family, mode, values){
+    return {
+      ...values,
+      family,
+      mode,
+      label:families.find(item => item.family === family)?.label || family,
+      swatchRgb:values.rgb,
+    };
+  }
+
+  const fixedChoices = families.flatMap(item => [
+    choice(item.family, "light", item.light),
+    choice(item.family, "dark", item.dark),
+  ]);
+  const adaptiveChoices = [
     {id:"albumAdaptiveLight", family:"adaptive", mode:"light", label:"Adaptive", className:"theme-light-adaptive", swatchA:"#f8fafc", swatchB:"#8db7ff", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
     {id:"albumAdaptive", family:"adaptive", mode:"dark", label:"Adaptive", className:"theme-adaptive", swatchA:"#020617", swatchB:"#8db7ff", swatchRgb:"141,183,255"},
-    {id:"light", family:"blue", mode:"light", label:"Blue", className:"theme-light", swatchA:"#f8fafc", swatchB:"#3b82f6", swatchRgb:"37,99,235", browserColor:"#f7f8fb"},
-    {id:"blue", family:"blue", mode:"dark", label:"Blue", className:"", swatchA:"#3f6fd8", swatchB:"#6f99f2", swatchRgb:"63,111,216"},
-    {id:"lightPurple", family:"purple", mode:"light", label:"Purple", className:"theme-light-purple", swatchA:"#f5f3ff", swatchB:"#a855f7", swatchRgb:"124,58,237", browserColor:"#f5f3ff"},
-    {id:"purple", family:"purple", mode:"dark", label:"Purple", className:"theme-purple", swatchA:"#7c3aed", swatchB:"#a855f7", swatchRgb:"124,58,237"},
-    {id:"lightPink", family:"pink", mode:"light", label:"Pink", className:"theme-light-pink", swatchA:"#fff1f2", swatchB:"#f472b6", swatchRgb:"219,39,119", browserColor:"#fdf2f8"},
-    {id:"pink", family:"pink", mode:"dark", label:"Pink", className:"theme-pink", swatchA:"#db2777", swatchB:"#f472b6", swatchRgb:"219,39,119"},
-    {id:"lightGreen", family:"green", mode:"light", label:"Green", className:"theme-light-green", swatchA:"#ecfdf5", swatchB:"#34d399", swatchRgb:"5,150,105", browserColor:"#f0fdf4"},
-    {id:"green", family:"green", mode:"dark", label:"Green", className:"theme-green", swatchA:"#059669", swatchB:"#34d399", swatchRgb:"5,150,105"},
-    {id:"lightGold", family:"gold", mode:"light", label:"Gold", className:"theme-light-gold", swatchA:"#fffbeb", swatchB:"#fbbf24", swatchRgb:"217,119,6", browserColor:"#fffbeb"},
-    {id:"gold", family:"gold", mode:"dark", label:"Gold", className:"theme-gold", swatchA:"#d97706", swatchB:"#fbbf24", swatchRgb:"217,119,6"},
-    {id:"lightCyan", family:"cyan", mode:"light", label:"Cyan", className:"theme-light-cyan", swatchA:"#ecfeff", swatchB:"#22d3ee", swatchRgb:"8,145,178", browserColor:"#ecfeff"},
-    {id:"cyan", family:"cyan", mode:"dark", label:"Cyan", className:"theme-cyan", swatchA:"#0891b2", swatchB:"#22d3ee", swatchRgb:"8,145,178"},
-    {id:"lightRed", family:"red", mode:"light", label:"Red", className:"theme-light-red", swatchA:"#fef2f2", swatchB:"#f87171", swatchRgb:"220,38,38", browserColor:"#fef2f2"},
-    {id:"red", family:"red", mode:"dark", label:"Red", className:"theme-red", swatchA:"#dc2626", swatchB:"#f87171", swatchRgb:"220,38,38"},
-    {id:"lightSilver", family:"silver", mode:"light", label:"Silver", className:"theme-light-silver", swatchA:"#f8fafc", swatchB:"#94a3b8", swatchRgb:"100,116,139", browserColor:"#f8fafc"},
-    {id:"silver", family:"silver", mode:"dark", label:"Silver", className:"theme-silver", swatchA:"#64748b", swatchB:"#e2e8f0", swatchRgb:"148,163,184"},
-  ],
-};
+  ];
+
+  window.MediaPlayerThemeData = {
+    defaultThemeId:"albumAdaptiveLight",
+    darkAdaptiveThemeId:"albumAdaptive",
+    lightAdaptiveThemeId:"albumAdaptiveLight",
+    defaultAdaptiveColor:{r:63, g:111, b:216},
+    choices:[adaptiveChoices[0], adaptiveChoices[1], ...fixedChoices],
+  };
+})();

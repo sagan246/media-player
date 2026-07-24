@@ -1,7 +1,7 @@
-﻿    body[class*="theme-light"] .artworkPanel input[type=file] { background:rgba(15,23,42,.035); border-color:var(--line); color:var(--text); }
+﻿    body[data-theme-mode="light"] .artworkPanel input[type=file] { background:var(--input-disabled-bg); border-color:var(--line); color:var(--text); }
     /* Player and queue overlays ---------------------------------------- */
     .playerBar { position:fixed; left:0; right:0; bottom:0; z-index:5; display:grid; grid-template-columns:minmax(280px,420px) auto minmax(280px,1fr) 150px; gap:16px; align-items:center; padding:12px 20px; background:rgba(0,0,0,.92); border-top:1px solid rgba(148,163,184,.08); box-shadow:0 -10px 24px rgba(0,0,0,.38); backdrop-filter:blur(18px); }
-    body[class*="theme-light"] .playerBar { background:rgba(255,255,255,.92); border-top-color:var(--line); box-shadow:0 -8px 20px rgba(15,23,42,.08); }
+    body[data-theme-mode="light"] .playerBar { background:var(--player-bar-bg); border-top-color:var(--line); box-shadow:var(--player-bar-shadow); }
     .now { display:flex; align-items:center; gap:12px; min-width:0; }
     .now img, .now .noArt { width:56px; height:56px; flex:0 0 auto; }
     .nowText { min-width:0; }
@@ -10,8 +10,8 @@
     .transport { display:flex; gap:8px; align-items:center; justify-content:center; }
     .transport button { width:40px; padding:0; }
     .transport .playButton { width:56px; }
-    body[class*="theme-light"] .transport button.secondary,
-    body[class*="theme-light"] .transport button.ghost { background:transparent; border-color:transparent; box-shadow:none; }
+    body[data-theme-mode="light"] .transport button.secondary,
+    body[data-theme-mode="light"] .transport button.ghost { background:transparent; border-color:transparent; box-shadow:none; }
     .iconControl { font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI Symbol","Apple Symbols",sans-serif; font-size:18px; line-height:1; display:inline-grid; place-items:center; }
     .iconControl.addIcon { font-size:22px; font-weight:800; padding-bottom:2px; }
     .repeatButton { position:relative; }
@@ -59,7 +59,7 @@
     audio { display:none; }
     .queueDrawer { position:fixed; top:0; right:0; bottom:calc(var(--player-bar-space) - 10px); z-index:10; width:min(420px,92vw); border-left:1px solid rgba(148,163,184,.09); border-bottom:1px solid rgba(148,163,184,.08); box-shadow:-10px 0 28px rgba(0,0,0,.42); transform:translateX(105%); transition:transform .18s ease; display:grid; grid-template-rows:auto 1fr; }
     .queuePanel { background:rgba(0,0,0,.82); backdrop-filter:blur(18px); }
-    body[class*="theme-light"] .queuePanel { background:rgba(255,255,255,.90); border-color:var(--line); box-shadow:-8px 0 24px rgba(15,23,42,.10); }
+    body[data-theme-mode="light"] .queuePanel { background:var(--floating-panel-bg); border-color:var(--line); box-shadow:var(--drawer-shadow); }
     .queueDrawer.open { transform:translateX(0); }
     body.modalOpen .queueDrawer { bottom:0; }
     .queuePanelHead { padding:14px; border-bottom:1px solid var(--line); display:grid; gap:10px; }
@@ -103,7 +103,7 @@
     /* Now Playing keeps the mini-player simple and puts detailed timing here. */
     .nowPlayingDrawer { position:fixed; inset:0; z-index:12; display:none; box-sizing:border-box; background:#000; overflow-y:auto; overflow-x:hidden; padding:28px 16px 40px; }
     body.queueAboveNowPlaying .queueDrawer.musicOnly { z-index:13; }
-    body[class*="theme-light"] .nowPlayingDrawer { background:var(--bg); }
+    body[data-theme-mode="light"] .nowPlayingDrawer { background:var(--bg); }
     .nowPlayingDrawer.open { display:block; }
     .nowPlayingHead { position:fixed; top:28px; left:calc(50% + 326px); z-index:2; display:flex; justify-content:flex-start; gap:12px; width:44px; height:44px; max-width:none; margin:0; padding:0; background:transparent; pointer-events:none; }
     .nowPlayingHead h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -128,8 +128,8 @@
     .nowPlayingTransport { grid-column:2; display:flex; justify-content:center; align-items:center; gap:12px; }
     .nowPlayingControls button { width:48px; padding:0; }
     .nowPlayingControls .playButton { width:64px; height:46px; font-size:24px; }
-    body[class*="theme-light"] .nowPlayingTransport button { background:transparent; border-color:transparent; box-shadow:none; }
-    body[class*="theme-light"] .nowPlayingTransport button:hover { background:rgba(var(--accent-rgb),.08); }
+    body[data-theme-mode="light"] .nowPlayingTransport button { background:transparent; border-color:transparent; box-shadow:none; }
+    body[data-theme-mode="light"] .nowPlayingTransport button:hover { background:var(--accent-soft); }
     .nowPlayingVolume { grid-column:3; justify-self:end; width:min(180px,100%); display:grid; grid-template-columns:auto minmax(90px,1fr); gap:8px; align-items:center; color:var(--muted); }
     .nowPlayingVolume input { padding:0; }
     .lyricsBox { grid-area:lyrics; min-height:clamp(280px, 42vh, 620px); padding:12px 2px; border-radius:8px; background:transparent; color:var(--muted); }

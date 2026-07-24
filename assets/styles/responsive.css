@@ -130,7 +130,7 @@
       body.browseCollapsed nav { display:grid; }
       nav,
       body.interviews .interviewList { position:fixed; top:10px; left:10px; bottom:calc(var(--player-bar-space) - 10px); z-index:7; width:min(360px,84vw); max-height:none; transform:translateX(calc(-100% - 16px)); transition:transform .18s ease; box-shadow:12px 0 28px var(--shadow); border-radius:10px; }
-      body[class*="theme-light"] .browsePanel { background:var(--card-bg-strong); }
+      body[data-theme-mode="light"] .browsePanel { background:var(--card-bg-strong); }
       nav.open,
       body.interviews .interviewList.open { transform:translateX(0); }
       body.music nav,

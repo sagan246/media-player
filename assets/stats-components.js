@@ -27,7 +27,7 @@
     return value || fallback;
   }
   function statsHeatStyle(minutes, maxMinutes){
-    return `background:rgba(${themeCssValue("--accent-rgb","63,111,216")},${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
+    return `background:rgba(${themeCssValue("--accent-rgb","100,116,139")},${statsIntensity(minutes,maxMinutes).toFixed(2)})`;
   }
   function statsChartSection(title, body){
     return statCardHtml({className:"statsChart", ariaLabel:title, body});

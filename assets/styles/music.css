@@ -4,9 +4,9 @@
     .albumGrid.albumFocus { display:block; max-height:none; overflow:visible; padding-right:0; }
     .resumeCard { grid-column:1 / -1; display:grid; grid-template-columns:72px minmax(0,1fr) 44px; align-items:center; gap:12px; padding:12px; margin-bottom:4px; border:1px solid rgba(var(--accent-glow-rgb),.14); border-radius:8px; background:linear-gradient(135deg,rgba(15,23,42,.98),rgba(3,6,11,.78)); cursor:pointer; }
     .resumeCard:hover, .resumeCard:focus-visible { border-color:rgba(var(--accent-glow-rgb),.34); background:linear-gradient(135deg,rgba(30,41,59,.98),rgba(3,6,11,.84)); outline:none; }
-    body[class*="theme-light"] .resumeCard { border-color:var(--card-border); background:rgba(255,255,255,.94); box-shadow:var(--card-shadow); }
-    body[class*="theme-light"] .resumeCard:hover,
-    body[class*="theme-light"] .resumeCard:focus-visible { border-color:var(--accent-border); background:rgba(var(--accent-rgb),.08); }
+    body[data-theme-mode="light"] .resumeCard { border-color:var(--card-border); background:var(--card-bg-strong); box-shadow:var(--card-shadow); }
+    body[data-theme-mode="light"] .resumeCard:hover,
+    body[data-theme-mode="light"] .resumeCard:focus-visible { border-color:var(--accent-border); background:var(--accent-soft); }
     .resumeCard img, .resumeNoArt { width:72px; height:72px; object-fit:cover; background:var(--media-empty-bg); }
     .resumeNoArt { display:grid; place-items:center; color:var(--muted); font-weight:850; }
     .resumeCopy { min-width:0; display:grid; gap:2px; }
@@ -40,7 +40,7 @@
     .playlistDialog input { width:100%; }
     .dialogActions { display:flex; justify-content:flex-end; gap:8px; }
     .dialogActions .secondary { background:var(--soft); }
-    body[class*="theme-light"] .playlistDialog { background:var(--panel); }
+    body[data-theme-mode="light"] .playlistDialog { background:var(--panel); }
     .albumName { min-height:36px; line-height:1.22; font-size:13px; font-weight:var(--card-title-weight); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
     .albumMeta { color:var(--muted); font-size:12px; font-weight:var(--card-meta-weight); }
     .cardActions { position:absolute; left:8px; right:8px; top:8px; z-index:2; display:flex; gap:6px; justify-content:flex-end; opacity:0; transform:translateY(-4px); pointer-events:none; transition:opacity .15s ease, transform .15s ease; }
@@ -48,8 +48,8 @@
     .cardActions button { height:30px; min-width:34px; padding:0 8px; font-size:12px; box-shadow:0 4px 10px var(--shadow); }
     .cardActions .iconButton { width:32px; min-width:32px; height:32px; padding:0; font-size:16px; line-height:1; border-radius:999px; background:linear-gradient(180deg, rgba(var(--accent-rgb),.22), rgba(2,6,23,.54)); border-color:rgba(var(--accent-strong-rgb),.24); color:rgba(248,250,252,.96); backdrop-filter:blur(10px); }
     .cardActions .iconButton:hover { background:linear-gradient(180deg, rgba(var(--accent-rgb),.34), rgba(2,6,23,.66)); border-color:rgba(var(--accent-strong-rgb),.36); color:#fff; }
-    body[class*="theme-light"] .cardActions .iconButton { background:rgba(255,255,255,.34); border-color:rgba(15,23,42,.08); color:rgba(15,23,42,.76); box-shadow:0 6px 14px rgba(15,23,42,.08); }
-    body[class*="theme-light"] .cardActions .iconButton:hover { background:rgba(255,255,255,.48); border-color:rgba(15,23,42,.12); color:rgba(15,23,42,.9); }
+    body[data-theme-mode="light"] .cardActions .iconButton { background:var(--glass-control-bg); border-color:var(--card-border); color:var(--glass-control-text); box-shadow:var(--card-shadow); }
+    body[data-theme-mode="light"] .cardActions .iconButton:hover { background:var(--glass-control-hover-bg); border-color:var(--line); color:var(--text); }
     .albumDetail { display:none; grid-column:1 / -1; grid-template-columns:210px minmax(0,1fr); max-width:none; gap:20px; margin-top:16px; padding:16px; border:1px solid rgba(148,163,184,.08); border-radius:8px; background:rgba(0,0,0,.42); }
     .albumGrid.albumFocus .albumDetail { margin-top:0; }
     .albumDetail.visible { display:grid; }

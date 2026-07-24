@@ -32,7 +32,7 @@
     .statsTable { width:100%; border-collapse:collapse; }
     .statsTable th, .statsTable td { padding:9px 12px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
     .statsTable th { background:rgba(255,255,255,.025); color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-    body[class*="theme-light"] .statsTable th { background:rgba(15,23,42,.035); }
+    body[data-theme-mode="light"] .statsTable th { background:var(--table-head-bg); }
     .statsTable tr:last-child td { border-bottom:0; }
     .statsTable tr.playableStatsRow { cursor:pointer; }
     .statsTable tr.playableStatsRow:hover,

@@ -1,6 +1,6 @@
 /* Optional embedded game ------------------------------------------------ */
 .gameOnly { display:none; }
-html[class*="theme-light"]:has(body.game) { background:#02030a; }
+html[data-theme-mode="light"]:has(body.game) { background:#02030a; }
 html:has(body.game) { height:100dvh; overflow:hidden; }
 body.game {
   --game-player-height:76px;
@@ -51,31 +51,31 @@ body.game:not(.gameCatMode) .gamePanel {
   border-radius:0;
 }
 body.game header { background:rgba(2,3,10,.91); }
-body.game[class*="theme-light"] header .iconLink {
+body.game[data-theme-mode="light"] header .iconLink {
   background:rgba(255,255,255,.025);
   border-color:rgba(150,174,220,.14);
   color:var(--text);
 }
-body.game[class*="theme-light"] header .iconLink:hover {
+body.game[data-theme-mode="light"] header .iconLink:hover {
   background:var(--accent-soft);
 }
-body.game[class*="theme-light"] .playerBar {
+body.game[data-theme-mode="light"] .playerBar {
   background:rgba(3,5,12,.94);
   border-color:rgba(150,174,220,.14);
   color:var(--text);
   box-shadow:none;
 }
-body.game[class*="theme-light"] .transport button.secondary,
-body.game[class*="theme-light"] .transport button.ghost,
-body.game[class*="theme-light"] .nowPlayingTransport button {
+body.game[data-theme-mode="light"] .transport button.secondary,
+body.game[data-theme-mode="light"] .transport button.ghost,
+body.game[data-theme-mode="light"] .nowPlayingTransport button {
   background:transparent;
   border-color:transparent;
   color:var(--text);
 }
 /* Full-screen playback surfaces follow the selected light theme even though
    the embedded game and its mini player deliberately stay dark. */
-body.game[class*="theme-light"] .queueDrawer,
-body.game[class*="theme-light"] .nowPlayingDrawer {
+body.game[data-theme-mode="light"] .queueDrawer,
+body.game[data-theme-mode="light"] .nowPlayingDrawer {
   color-scheme:light;
   --bg:#f7f8fb;
   --panel:#fff;
@@ -92,10 +92,10 @@ body.game[class*="theme-light"] .nowPlayingDrawer {
   --overlay-close-border:rgba(15,23,42,.012);
   color:var(--text);
 }
-body.game[class*="theme-light"] .nowPlayingDrawer {
+body.game[data-theme-mode="light"] .nowPlayingDrawer {
   background:var(--bg);
 }
-body.game[class*="theme-light"] .queuePanel {
+body.game[data-theme-mode="light"] .queuePanel {
   background:rgba(255,255,255,.90);
   border-color:var(--line);
   box-shadow:-8px 0 24px rgba(15,23,42,.10);

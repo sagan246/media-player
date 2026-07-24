@@ -17,8 +17,8 @@
       return choices.find(theme => theme.id === activeId) || choices[0];
     }
 
-    function clearAdaptiveVariables(){
-      if(engine.clearAdaptiveThemeVars) engine.clearAdaptiveThemeVars();
+    function clearThemeVariables(){
+      if(engine.clearAccentThemeVars) engine.clearAccentThemeVars();
       adaptiveSource = "";
     }
 
@@ -32,7 +32,7 @@
 
     async function applyAdaptive(){
       if(!isAdaptive()){
-        clearAdaptiveVariables();
+        adaptiveSource = "";
         return;
       }
       const source = getArtworkSource();
@@ -82,8 +82,9 @@
         ? engine.themeById(themeId)
         : (choices.find(item => item.id === themeId) || choices[0]);
       if(!theme) return;
-      clearAdaptiveVariables();
+      clearThemeVariables();
       if(engine.applyThemeClass) engine.applyThemeClass(theme);
+      if(engine.applyFixedColor) engine.applyFixedColor(theme);
       activeId = theme.id;
       if(persist){
         localStorage.setItem("accentTheme", activeId);

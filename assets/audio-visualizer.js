@@ -165,7 +165,7 @@
     }
 
     function themeRgba(name, fallback, alpha){return `rgba(${themeValue(name, fallback)},${alpha})`;}
-    function lightTheme(){return [...document.body.classList].some(name=>name.includes("theme-light"));}
+    function lightTheme(){return document.body.dataset.themeMode === "light";}
 
     function drawBars(canvas, count){
       const state = prepare(canvas);
