@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 import sys
 
 import pytest
@@ -27,10 +26,9 @@ def test_game_stats_rejects_invalid_scores(tmp_path, score):
         stats.record(score)
 
 
-def test_game_score_route_is_available_in_guest_mode(tmp_path):
+def test_game_score_route_records_a_valid_score(tmp_path):
     class Routes(ApiRoutesMixin):
         game_stats = GameHighScoreStore(tmp_path / "game.sqlite3")
-        player_config = SimpleNamespace(guest_mode=True)
         payload = None
 
         @staticmethod

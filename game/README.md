@@ -9,8 +9,7 @@ The piece selector cycles through three appearances:
 - Plain aqua pieces
 - Current album artwork
 
-Normal mode defaults to plain aqua pieces. Guest Mode defaults to preset
-photos and remembers its piece selection separately.
+The game defaults to plain aqua pieces and remembers its piece selection.
 
 The paw control independently enables Cat Mode. It keeps the selected piece
 appearance but uses one target, removes hazards, expands paw hit detection,

@@ -32,20 +32,20 @@ body.game {
 /* Let the real header determine its own height, then give every remaining
    pixel above the fixed mini-player to the game. This avoids decorative gaps
    even when the desktop header wraps at narrower widths. */
-body.game:not(.guestMode):not(.gameCatMode) {
+body.game:not(.gameCatMode) {
   display:grid;
   grid-template-rows:auto minmax(0,1fr);
   padding-bottom:var(--game-player-height);
 }
-body.game:not(.guestMode):not(.gameCatMode) main {
+body.game:not(.gameCatMode) main {
   height:100%;
   padding:0;
 }
-body.game:not(.guestMode):not(.gameCatMode) .workspace {
+body.game:not(.gameCatMode) .workspace {
   height:100%;
   min-height:0;
 }
-body.game:not(.guestMode):not(.gameCatMode) .gamePanel {
+body.game:not(.gameCatMode) .gamePanel {
   height:100%;
   min-height:0;
   border-radius:0;
@@ -174,16 +174,6 @@ body.game .playerBar.musicOnly { display:grid !important; }
 body.game .nowPlayingDrawer.musicOnly.open { display:block !important; }
 body.game .queueDrawer.musicOnly.open { display:grid !important; }
 
-/* Guest Mode is a focused Game + player surface. The regular app header is
-   absent, leaving Now Playing and the queue accessible through the mini player. */
-body.guestMode header { display:none !important; }
-body.guestMode.game main { padding:0 0 var(--game-player-height); }
-body.guestMode.game .gamePanel {
-  height:calc(100dvh - var(--game-player-height));
-  min-height:0;
-  border-radius:0;
-}
-
 /* Cat Mode locks the parent shell so a paw cannot leave the game, open Now
    Playing, or change playback accidentally. The in-game paw control remains
    available and restores the normal shell as soon as Cat Mode is disabled. */
@@ -204,7 +194,7 @@ body.game.gameCatMode .gamePanel {
     --game-player-height:53px;
     --game-header-height:59px;
   }
-  body.game:not(.guestMode):not(.gameCatMode) { padding-bottom:var(--game-player-height); }
+  body.game:not(.gameCatMode) { padding-bottom:var(--game-player-height); }
   body.game main { padding:3px 2px 72px; }
   body.game .gamePanel {
     height:calc(100dvh - var(--game-header-height) - var(--game-player-height));
@@ -212,13 +202,9 @@ body.game.gameCatMode .gamePanel {
     border:0;
     border-radius:0;
   }
-  body.guestMode.game main { padding:0 0 var(--game-player-height); }
-  body.guestMode.game .gamePanel { height:calc(100dvh - var(--game-player-height)); }
   body.game.gameCatMode .gamePanel { height:100dvh; }
   .gameVisualizer,
   body.game .gamePanel::before { display:none; }
-  body.guestMode.game .gameVisualizer,
-  body.guestMode.game .gamePanel::before,
   body.mobileGameVisualizerEnabled.game .gameVisualizer,
   body.mobileGameVisualizerEnabled.game .gamePanel::before { display:block; }
 }
@@ -226,8 +212,6 @@ body.game.gameCatMode .gamePanel {
 @media (hover:none) and (pointer:coarse) {
   .gameVisualizer,
   body.game .gamePanel::before { display:none; }
-  body.guestMode.game .gameVisualizer,
-  body.guestMode.game .gamePanel::before,
   body.mobileGameVisualizerEnabled.game .gameVisualizer,
   body.mobileGameVisualizerEnabled.game .gamePanel::before { display:block; }
 }

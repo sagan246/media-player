@@ -180,10 +180,7 @@ class Handler(ApiRoutesMixin, StreamingRoutesMixin, HttpHelpersMixin, BaseHTTPRe
             self.handle_game_score_record()
             return
         if parsed.path.startswith("/api/playlists/") and parsed.path.endswith("/resume"):
-            if self.player_config.guest_mode:
-                self.send_error_json("Playlist changes are disabled for this server.", status=HTTPStatus.FORBIDDEN)
-            else:
-                self.handle_playlist_resume(parsed.path)
+            self.handle_playlist_resume(parsed.path)
             return
         if parsed.path == "/api/playlists":
             if self.require_playlist_access():
@@ -219,15 +216,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Hide local paths for temporary sharing.",
     )
-    guest_group = parser.add_mutually_exclusive_group()
-    guest_group.add_argument("--guest-mode", dest="guest_mode", action="store_true", help="Enable configured Guest Mode.")
-    guest_group.add_argument(
-        "--no-guest-mode",
-        dest="guest_mode",
-        action="store_false",
-        help="Ignore Guest Mode from the config for this server process.",
-    )
-    parser.set_defaults(guest_mode=None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8766, type=int)
     parser.add_argument(
@@ -257,8 +245,6 @@ def main() -> int:
     if not media_dir.is_dir():
         raise SystemExit(f"Media folder not found: {media_dir}")
     config = load_config(args.config)
-    if args.guest_mode is not None:
-        config["guest_mode"] = args.guest_mode
     player_config = PlayerConfig.from_mapping(config)
     web_share = bool(config.get("web_share", False)) or args.web_share
 
@@ -269,26 +255,9 @@ def main() -> int:
         if configured_game_dir is not None and (configured_game_dir / "index.html").is_file()
         else None
     )
-    if player_config.guest_mode and Handler.game_dir is None:
-        raise SystemExit("Guest Mode requires a valid configured game directory.")
     Handler.web_share = web_share
-    Handler.playlist_editable = bool(config.get("playlist_editable", True)) and not player_config.guest_mode
-    guest_music_dir = player_config.guest_music_path(args.config) if player_config.guest_mode else None
-    if guest_music_dir is not None and not guest_music_dir.is_dir():
-        raise SystemExit(f"Guest Mode music folder not found: {guest_music_dir}")
-    Handler.library = Library(
-        media_dir,
-        player_config.library_config(),
-        music_dir_override=guest_music_dir,
-    )
-    if player_config.guest_mode:
-        if not player_config.guest_album:
-            raise SystemExit("Guest Mode requires a non-empty 'guest_album' in the configuration file.")
-        with Handler.library.lock:
-            guest_tracks = [track for track in Handler.library.tracks if player_config.allows_album(track.album)]
-        if not guest_tracks:
-            source = guest_music_dir or Handler.library.music_dir
-            raise SystemExit(f"Guest Mode album was not found in {source}: {player_config.guest_album}")
+    Handler.playlist_editable = bool(config.get("playlist_editable", True))
+    Handler.library = Library(media_dir, player_config.library_config())
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     Handler.listening_stats = ListeningStats(STATS_DB)
     Handler.game_stats = GameHighScoreStore(GAME_STATS_DB)
@@ -301,9 +270,7 @@ def main() -> int:
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"{player_config.app_name} running at http://{args.host}:{args.port}/")
-    if player_config.guest_mode:
-        mode = "guest"
-    elif Handler.web_share:
+    if Handler.web_share:
         mode = "web-share"
     else:
         mode = "local"

@@ -12,7 +12,7 @@ MAX_GAME_SCORE = 1_000_000
 
 
 class GameHighScoreStore:
-    """Store one global high score shared by normal and Guest Mode clients."""
+    """Store one global high score shared by player clients."""
 
     def __init__(self, database_path: Path):
         self.database_path = Path(database_path)

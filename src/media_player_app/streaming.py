@@ -133,9 +133,6 @@ class StreamingRoutesMixin:
         self.send_json({"lyrics": lyrics, "format": lyrics_format})
 
     def handle_video(self, path_text: str) -> None:
-        if self.player_config.guest_mode:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
         video_id = self.parse_last_int(path_text)
         if video_id is None:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -212,9 +209,6 @@ class StreamingRoutesMixin:
         self.write_file_range(path, start, length, label, request_started, debug)
 
     def handle_video_thumbnail(self, path_text: str) -> None:
-        if self.player_config.guest_mode:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
         video_id = self.parse_last_int(path_text)
         if video_id is None:
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -226,9 +220,6 @@ class StreamingRoutesMixin:
         self.send_bytes(path.read_bytes(), content_type_for(path), cache_control="private, max-age=86400")
 
     def handle_video_folder_cover(self, path_text: str) -> None:
-        if self.player_config.guest_mode:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
         folder = unquote(path_text.removeprefix("/video-folder-cover/"))
         path = self.library.video_folder_cover_for_folder(folder)
         if path is None or not path.is_file():

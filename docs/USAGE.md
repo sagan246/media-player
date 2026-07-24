@@ -28,7 +28,6 @@ Important settings:
 - `text_tab_label` - label for the text archive tab.
 - `preferred_categories` and `preferred_video_categories` - browse order.
 - `playlist_editable` - allow playlist create, update, rename, and delete.
-- `guest_mode`, `guest_album`, `guest_album_dir` - focused Game sharing mode.
 
 Media tags and embedded artwork are read-only in every mode.
 
@@ -74,5 +73,4 @@ python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8766
 python media_player.py --media-dir <media-folder> --host 0.0.0.0 --port 8767 --web-share
 ```
 
-`--media-dir` is validated against the configured media root. Guest Mode may
-use its explicitly configured `guest_album_dir`.
+`--media-dir` is validated against the configured media root.

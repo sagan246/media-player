@@ -10,7 +10,6 @@
       frame,
       fetchJson,
       getArtworkUrl,
-      getGuestMode,
       getMobileVisualizerEnabled,
       onCatModeChange,
       onVisualizerOnlyChange,
@@ -27,8 +26,7 @@
       post({
         type:"media-player-game-artwork",
         artworkUrl:getArtworkUrl(),
-        guestMode:Boolean(getGuestMode()),
-        mobileVisualizerEnabled:Boolean(getGuestMode()||getMobileVisualizerEnabled()),
+        mobileVisualizerEnabled:Boolean(getMobileVisualizerEnabled()),
       });
     }
 

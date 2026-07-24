@@ -1,7 +1,6 @@
 ﻿from __future__ import annotations
 
 import base64
-import hashlib
 import json
 import re
 import threading
@@ -56,30 +55,13 @@ class Library:
     The HTTP server reads from this object while scans happen under a lock.
     """
 
-    def __init__(
-        self,
-        media_dir: Path,
-        config: LibraryConfig | None = None,
-        *,
-        music_dir_override: Path | None = None,
-    ) -> None:
+    def __init__(self, media_dir: Path, config: LibraryConfig | None = None) -> None:
         config = config or LibraryConfig()
         self.media_dir = media_dir
         configured_music_dir = media_dir / config.music_dir
-        self.music_dir = (
-            music_dir_override.expanduser().resolve()
-            if music_dir_override is not None
-            else (configured_music_dir if configured_music_dir.is_dir() else media_dir)
-        )
-        # An external Guest source gets its own cache file and artwork namespace
-        # so it cannot overwrite normal-library cache entries with matching names.
-        if music_dir_override is None:
-            self.scan_cache_path = SCAN_CACHE_PATH
-            self.cache_namespace = ""
-        else:
-            source_hash = hashlib.sha256(str(self.music_dir).encode("utf-8")).hexdigest()[:12]
-            self.scan_cache_path = SCAN_CACHE_PATH.with_name(f"{SCAN_CACHE_PATH.stem}-guest-{source_hash}.json")
-            self.cache_namespace = f"guest-{source_hash}"
+        self.music_dir = configured_music_dir if configured_music_dir.is_dir() else media_dir
+        self.scan_cache_path = SCAN_CACHE_PATH
+        self.cache_namespace = ""
         self.video_dir = media_dir / config.video_dir
         self.text_dir = media_dir / config.text_dir
         self.tracks: list[Track] = []

@@ -105,9 +105,6 @@
       preferredCategories:["Albums","Soundtracks","Live","Covers","Features"],
       preferredVideoCategories:["Concerts"],
       gameAvailable:false,
-      guestMode:false,
-      guestAlbum:"",
-      guestTheme:"blue",
     };
     if(!["newest","oldest","sections"].includes(videoSort)) videoSort = "newest";
     if(!["off","all","one"].includes(repeatMode)) repeatMode = "off";
@@ -291,7 +288,6 @@
         const artworkUrl=track ? fullArtUrl(track) : "";
         return artworkUrl ? new URL(artworkUrl,location.origin).href : "";
       },
-      getGuestMode:()=>appConfig.guestMode,
       getMobileVisualizerEnabled:()=>mobileVisualizerEnabled,
       onCatModeChange:enabled=>{
         const active=Boolean(enabled);
@@ -308,16 +304,11 @@
       player,
       byId,
       themeEngine,
-      allowMobileNowPlaying:()=>Boolean(appConfig.guestMode||mobileVisualizerEnabled),
-      allowMobileGame:()=>Boolean(appConfig.guestMode||mobileVisualizerEnabled),
+      allowMobileNowPlaying:()=>mobileVisualizerEnabled,
+      allowMobileGame:()=>mobileVisualizerEnabled,
     });
     const musicPlaybackStore = playbackPersistenceModule.create({
       key:"musicPlaybackState",
-      buildState:musicDomain.buildPlaybackState,
-      parseState:musicDomain.parsePlaybackState,
-    });
-    const guestMusicPlaybackStore = playbackPersistenceModule.create({
-      key:"guestMusicPlaybackState",
       buildState:musicDomain.buildPlaybackState,
       parseState:musicDomain.parsePlaybackState,
     });
@@ -343,7 +334,7 @@
         format:t.format||"",
         duration:knownDurations.get(t.id)||player.duration||0,
       }),
-      send:payload=>appConfig.guestMode?Promise.resolve({ok:true,ignored:true}):fetchJson("/api/listening-stats",{
+      send:payload=>fetchJson("/api/listening-stats",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload),
@@ -447,7 +438,7 @@
     }
     function cycleMusicRepeat(){
       repeatMode=nextRepeatMode(repeatMode);
-      if(!appConfig.guestMode)localStorage.setItem("repeatMode",repeatMode);
+      localStorage.setItem("repeatMode",repeatMode);
       saveMusicState({force:true});
       updateRepeatButtons();
     }
@@ -491,9 +482,8 @@
     function queueMatchesPlaylist(playlist){return playlistController.matchesQueue(playlist);}
     function syncActivePlaylistContext(){playlistController.syncActive();}
     function playlistResumeIndex(playlist){return playlistController.resumeIndex(playlist);}
-    function activeMusicPlaybackStore(){return appConfig.guestMode?guestMusicPlaybackStore:musicPlaybackStore;}
     function saveMusicState({force=false}={}){
-      const playbackStore=activeMusicPlaybackStore();
+      const playbackStore=musicPlaybackStore;
       if(!queue.length){playlistController.setActiveId(null); playbackStore.clear(); return;}
       syncActivePlaylistContext();
       const trackById=new Map(tracks.map(track=>[track.id,track]));
@@ -516,7 +506,7 @@
         ids:new Set(tracks.map(t=>t.id)),
         keyToId:new Map(tracks.filter(t=>t.playback_key).map(t=>[t.playback_key,t.id])),
       };
-      const playbackStore=activeMusicPlaybackStore();
+      const playbackStore=musicPlaybackStore;
       const state=playbackStore.restore(catalog);
       if(!state)return false;
       queue=state.queue;
@@ -537,7 +527,7 @@
       player.pause();
       if(["off","all","one"].includes(state.repeatMode)){
         repeatMode=state.repeatMode;
-        if(!appConfig.guestMode)localStorage.setItem("repeatMode",repeatMode);
+        localStorage.setItem("repeatMode",repeatMode);
       }
       selectTrack(t.id);
       updateNow();
@@ -546,22 +536,6 @@
       return true;
     }
 
-    function initializeGuestQueue(){
-      if(!appConfig.guestMode || queue.length || !tracks.length)return;
-      const guestTracks=albumTrackList(tracks);
-      queue=guestTracks.map(track=>track.id);
-      playbackContext={kind:"Album",label:albumOf(guestTracks[0])};
-      queueIndex=0;
-      const track=guestTracks[0];
-      playingId=track.id;
-      selectedId=track.id;
-      resetPlaybackTimeline(track);
-      musicDomain.prepareSource(player,track);
-      player.pause();
-      saveMusicState({force:true});
-      updateNow();
-      renderQueue();
-    }
     function saveVideoState({force=false}={}){
       if(restoringVideoStateNow)return;
       if(!videoQueue.length){videoPlaybackStore.clear(); return;}
@@ -745,7 +719,6 @@
     function openMusicGroup(group){clearSearchQuery(); selectedGroup=group; selectedAlbum="All"; selectedPlaylistId=null; renderAll();}
     function openMusicAlbum(albumKey){selectedAlbum=albumKey; selectedPlaylistId=null; renderAll();}
     function openNowPlayingAlbum(){
-      if(appConfig.guestMode)return;
       const track=tracks.find(item=>item.id===playingId);
       if(!track?.album)return;
       clearSearchQuery();
@@ -1214,7 +1187,7 @@
         title: t.title,
         subtitle: `${t.artist||"Unknown artist"} - ${t.album||"No album"}`,
       }));
-      queueController.render({listEl:queueListEl,items,activeIndex:queueIndex,emptyTitle:"Queue is empty",playIndex:playQueueIndex,removeIndex:removeQueueIndex,moveItem:moveQueueItem,removable:!appConfig.guestMode});
+      queueController.render({listEl:queueListEl,items,activeIndex:queueIndex,emptyTitle:"Queue is empty",playIndex:playQueueIndex,removeIndex:removeQueueIndex,moveItem:moveQueueItem,removable:true});
       updatePlaylistSaveAction();
     }
     function loadPlaylists(render=true){return playlistController.load(render);}
@@ -1247,14 +1220,14 @@
     function setPlayerMuted(muted,{persist=true}={}){
       player.muted=Boolean(muted);
       updateVolumeControls();
-      if(persist&&!appConfig.guestMode)localStorage.setItem("playerMuted",String(player.muted));
+      if(persist)localStorage.setItem("playerMuted",String(player.muted));
     }
     function setPlayerVolume(value,{persist=true}={}){
       const volume=Math.min(1,Math.max(0,Number(value)));
       player.volume=volume;
       if(volume>0){
         player.muted=false;
-        if(persist&&!appConfig.guestMode){
+        if(persist){
           localStorage.setItem("playerLastAudibleVolume",String(volume));
           localStorage.setItem("playerMuted","false");
         }
@@ -1262,7 +1235,7 @@
       volumeBar.value=String(volume);
       const npVolume=byId("npVolumeBar");
       if(npVolume)npVolume.value=String(volume);
-      if(persist&&!appConfig.guestMode)localStorage.setItem("playerVolume",String(volume));
+      if(persist)localStorage.setItem("playerVolume",String(volume));
       updateVolumeControls();
     }
     function togglePlayerMute(){
@@ -1300,8 +1273,7 @@
     }
     function nowPlayingArtSrc(t){
       if(!t?.has_artwork) return "";
-      // Guest albums may intentionally use different embedded artwork per track.
-      return appConfig.guestMode ? fullArtUrl(t) : stableAlbumArtUrl(t);
+      return stableAlbumArtUrl(t);
     }
     function renderLrcLyrics(box, trackId, text){
       const lines = lyricsHelpers.parseLrc ? lyricsHelpers.parseLrc(text) : [];
@@ -1477,18 +1449,17 @@
     function applyMobileVisualizerPreference(){
       document.body.classList.toggle(
         "mobileGameVisualizerEnabled",
-        Boolean(appConfig.guestMode||mobileVisualizerEnabled)
+        mobileVisualizerEnabled
       );
       gameController.syncArtwork();
     }
     function applyAdaptiveTheme(){return themeController.applyAdaptive();}
     function applyDisplayConfig(){
       const appName=appConfig.appName||"Local Media Player";
-      const displayTitle=appConfig.guestMode ? "Soshi Game" : appName;
       const textLabel=appConfig.textTabLabel||"Interviews";
-      document.title=displayTitle;
+      document.title=appName;
       const titleEl=document.querySelector("header h1");
-      if(titleEl)titleEl.textContent=displayTitle;
+      if(titleEl)titleEl.textContent=appName;
       interviewsTabEl.title=textLabel;
       interviewsTabEl.setAttribute("aria-label", textLabel);
       document.querySelectorAll("[data-text-label]").forEach(el=>{el.textContent=textLabel;});
@@ -1496,18 +1467,6 @@
       if(emptyText)emptyText.textContent=`Text files are loaded locally from media\\${appConfig.textDir||"Interviews"}.`;
       const savePlaylist=byId("saveQueuePlaylist");
       if(savePlaylist)savePlaylist.hidden=!appConfig.playlistEditable;
-      const clearQueue=byId("clearQueue");
-      if(clearQueue)clearQueue.hidden=Boolean(appConfig.guestMode);
-      document.body.classList.toggle("guestMode",Boolean(appConfig.guestMode));
-      // Guest Mode has a predictable dark presentation without overwriting
-      // the theme the owner selected for the normal application.
-      if(appConfig.guestMode && themeController.setAccent){
-        themeController.setAccent(appConfig.guestTheme||"blue", {persist:false});
-      }
-      if(appConfig.guestMode){
-        if(player.volume===0)setPlayerVolume(savedAudibleVolume(), {persist:false});
-        setPlayerMuted(false, {persist:false});
-      }
       applyMobileVisualizerPreference();
       gameTabEl.hidden=!appConfig.gameAvailable;
     }
@@ -1516,7 +1475,6 @@
       catch{}
       try{
         applyDisplayConfig();
-        if(appConfig.guestMode)setMediaType("game");
       }finally{
         document.body.classList.remove("appBooting");
       }
@@ -1592,20 +1550,12 @@
       tracks = trackData.tracks;
       tracksLoaded = true;
       await loadPlaylists(false);
-      const reconciled=refresh ? await reconcileMusicCatalog() : false;
+      if(refresh)await reconcileMusicCatalog();
       if(refresh && videosLoaded) await loadVideos(true);
       if(refresh && interviewsLoaded) await loadInterviews();
       if(refresh && statsController.hasData()) await statsController.load();
       renderCurrentMedia();
-      const restored=refresh ? reconciled : restoreMusicState();
-      if(!restored)initializeGuestQueue();
-      // Demo Mode represents one configured album, so Repeat All is the
-      // natural startup behavior. Users may still change it after loading.
-      if(appConfig.guestMode){
-        repeatMode="all";
-        saveMusicState({force:true});
-        updateRepeatButtons();
-      }
+      if(!refresh)restoreMusicState();
 
       if(keepId !== null && tracks.some(t=>t.id === keepId)){
         selectTrack(keepId);
@@ -1660,7 +1610,6 @@
     // Switching tabs should never stop music, but video is paused so it does
     // not keep decoding in the background while the user is browsing music or stats.
     function setMediaType(type){
-      if(appConfig.guestMode && type!=="game")type="game";
       if(mediaType!==type)clearSearchQuery();
       if(mediaType==="game"&&type!=="game"){
         const frame=byId("gameFrame");

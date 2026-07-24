@@ -31,7 +31,6 @@ private network, or create a temporary web link that hides local paths.
 - Listening stats by day, week, month, year, and all time
 - Desktop and mobile browser UI
 - Built-in touch game that can use current album artwork
-- Configurable Guest Mode for a game-first, single-album listening session
 
 Media files and optional personal game photos are **not included** in this repository.
 
@@ -71,8 +70,6 @@ chmod +x mac_commands/start_launcher.command mac_commands/start_player.command
 ```
 
 Local mode uses port `8766`. Web-share mode uses port `8767`.
-The Windows launcher can also start normal and Guest/demo Cloudflare links
-together; the demo server uses local port `8769`.
 
 For a simple local start without the launcher, use:
 
@@ -112,7 +109,7 @@ http://<lan-address>:8766/
 For safety, `--media-dir` accepts only the repository's expected media folder
 or one of its descendants. It is not a general filesystem browser.
 
-To clear the shared human-game world record before a release or demo, run:
+To clear the shared human-game world record, run:
 
 ```bash
 media-player --reset-game-record

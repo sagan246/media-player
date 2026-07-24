@@ -39,7 +39,6 @@
   let bounds = { width: 1, height: 1 };
   let gameScale = 1;
   let audioSignalTimer = null;
-  let guestPiecesInitialized = false;
   let catMode = false;
 
   const random = (min, max) => min + Math.random() * (max - min);
@@ -86,10 +85,7 @@
     piecesModeButton.title = `${labels[current][0].toUpperCase()}${labels[current].slice(1)} pieces`;
     piecesModeButton.setAttribute("aria-label", `Switch to ${labels[next]} pieces`);
     if (remember) {
-      const storageKey = document.documentElement.dataset.guestMode === "true"
-        ? "drift-touch-guest-pieces"
-        : "drift-touch-pieces";
-      try { localStorage.setItem(storageKey, current); } catch {}
+      try { localStorage.setItem("drift-touch-pieces", current); } catch {}
     }
   }
 
@@ -583,21 +579,13 @@
     }
     if (event.data?.type === "media-player-game-artwork") {
       const artworkUrl = typeof event.data.artworkUrl === "string" ? event.data.artworkUrl : "";
-      const guestMode = Boolean(event.data.guestMode);
       const mobileVisualizerEnabled = Boolean(event.data.mobileVisualizerEnabled);
       document.documentElement.style.setProperty(
         "--album-art-image",
         artworkUrl ? `url(${JSON.stringify(artworkUrl)})` : "none"
       );
       document.documentElement.classList.toggle("has-album-art", Boolean(artworkUrl));
-      document.documentElement.dataset.guestMode = guestMode ? "true" : "false";
       document.documentElement.dataset.mobileVisualizer = mobileVisualizerEnabled ? "true" : "false";
-      // Guest Mode has its own preference and begins in photo mode. Keeping it
-      // separate prevents the normal game's plain default from overriding it.
-      if (guestMode && !guestPiecesInitialized) {
-        guestPiecesInitialized = true;
-        applyPiecesMode(savedPiecesMode("drift-touch-guest-pieces") || "photos");
-      }
       return;
     }
     if (event.data?.type === "media-player-game-audio") {
